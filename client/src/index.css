@@ -743,6 +743,40 @@ h1, h2, h3, h4, h5, h6 {
   to { transform: scale(1); opacity: 1; }
 }
 
+/* Side Panel Right Drawer */
+.side-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 120;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.side-panel-right {
+  background-color: var(--bg-surface);
+  border-left: 1px solid var(--border-color);
+  width: 100%;
+  max-width: 760px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.25);
+  animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 /* Print View - Terminal Student Report Card */
 @media print {
   body {
@@ -752,11 +786,17 @@ h1, h2, h3, h4, h5, h6 {
   .sidebar, .top-navbar, .offline-banner, .btn-no-print, .modal-footer {
     display: none !important;
   }
-  .page-container, .modal-content {
+  .page-container, .modal-content, .side-panel-right {
     padding: 0 !important;
     max-width: 100% !important;
     box-shadow: none !important;
     border: none !important;
+    height: auto !important;
+  }
+  .side-panel-overlay {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
   }
   .print-report-card {
     border: 2px solid #000 !important;
@@ -764,6 +804,7 @@ h1, h2, h3, h4, h5, h6 {
     margin: 0 !important;
   }
 }
+
 
 /* Mobile Responsiveness */
 @media (max-width: 768px) {

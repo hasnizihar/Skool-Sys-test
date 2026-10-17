@@ -64,10 +64,13 @@ router.get('/:id', requireAuth, (req, res) => {
   const studentId = Number(req.params.id);
 
   const student = db.prepare(`
-    SELECT s.*, c.id as class_id, c.name as class_name, c.grade, e.roll_number, ay.name as academic_year
+    SELECT s.*, c.id as class_id, c.name as class_name, c.grade, c.room_number,
+           e.roll_number, ay.name as academic_year,
+           u.full_name as class_teacher_name
     FROM students s
     LEFT JOIN enrollments e ON s.id = e.student_id AND e.status = 'enrolled'
     LEFT JOIN classes c ON e.class_id = c.id
+    LEFT JOIN users u ON c.class_teacher_id = u.id
     LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
     WHERE s.id = ?
   `).get(studentId) as any;
@@ -94,6 +97,17 @@ router.get('/:id', requireAuth, (req, res) => {
   const late = Number(attendanceStats?.late_days || 0);
   const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 100) : 100;
 
+  // Recent detailed attendance logs for student
+  const attendanceHistory = db.prepare(`
+    SELECT ar.status, ar.remarks, sess.date, c.name as class_name
+    FROM attendance_records ar
+    JOIN attendance_sessions sess ON ar.session_id = sess.id
+    JOIN classes c ON sess.class_id = c.id
+    WHERE ar.student_id = ?
+    ORDER BY sess.date DESC
+    LIMIT 30
+  `).all(studentId);
+
   // Recent Exam Marks
   const marks = db.prepare(`
     SELECT m.*, sub.name as subject_name, sub.code as subject_code, ex.name as examination_name, ex.term
@@ -108,11 +122,13 @@ router.get('/:id', requireAuth, (req, res) => {
     student,
     attendance: {
       ...attendanceStats,
-      attendanceRate
+      attendanceRate,
+      history: attendanceHistory
     },
     marks
   });
 });
+
 
 // Create Student (Admin only)
 router.post('/', requireAuth, requireRole(['admin']), (req, res) => {

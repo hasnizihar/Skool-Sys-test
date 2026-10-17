@@ -37,27 +37,36 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '800px', width: '100%' }}>
-        <div className="modal-header btn-no-print">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Award size={20} style={{ color: 'var(--primary)' }} />
-            <h3 style={{ fontSize: '1.15rem' }}>Student Terminal Examination Report Card</h3>
+    <div
+      className="side-panel-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="side-panel-right">
+        <div className="modal-header btn-no-print" style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <Award size={22} style={{ color: 'var(--primary)' }} />
+            <div>
+              <h3 style={{ fontSize: '1.15rem' }}>Student Terminal Report Card</h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Official Examination Results Sheet</p>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button onClick={handlePrint} className="btn btn-primary btn-sm">
-              <Printer size={15} /> Print Report Card
+              <Printer size={15} /> Print Card
             </button>
-            <button onClick={onClose} className="btn btn-secondary btn-icon btn-sm">
+            <button onClick={onClose} className="btn btn-secondary btn-icon btn-sm" title="Close Panel">
               <X size={18} />
             </button>
           </div>
         </div>
 
-        <div className="modal-body" style={{ padding: '2rem' }}>
+        <div className="modal-body" style={{ padding: '1.75rem' }}>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '3rem' }}>
+
               Generating terminal report card...
             </div>
           ) : reportData ? (
@@ -232,12 +241,13 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
 
         <div className="modal-footer btn-no-print">
           <button onClick={onClose} className="btn btn-secondary">
-            Close
+            Close Panel
           </button>
           <button onClick={handlePrint} className="btn btn-primary">
-            <Printer size={15} /> Print Card
+            <Printer size={15} /> Print Report Card
           </button>
         </div>
+
       </div>
     </div>
   );

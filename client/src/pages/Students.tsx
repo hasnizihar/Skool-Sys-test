@@ -13,9 +13,11 @@ import {
   CheckCircle2,
   Phone,
   Calendar,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Maximize2
 } from 'lucide-react';
 import { api } from '../api/client';
+import { StudentFullView } from './StudentFullView';
 
 interface StudentsProps {
   user: any;
@@ -26,6 +28,9 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const [classes, setClasses] = useState<any[]>([]);
   const [grades, setGrades] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Full View State
+  const [fullViewStudentId, setFullViewStudentId] = useState<number | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,6 +44,7 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentDetails, setStudentDetails] = useState<any | null>(null);
+
 
   // Add Student Form State
   const [formData, setFormData] = useState({
@@ -214,9 +220,22 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
 SCH-2026-101,Ravindu Nirmal Perera,Ravindu,2012-06-14,Male,Kamal Perera,Father,0771122334,Grade 8-A
 SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,Mother,0712233445,Grade 8-A`;
 
+  // Render Full View if a student is selected for full view
+  if (fullViewStudentId !== null) {
+    return (
+      <StudentFullView
+        studentId={fullViewStudentId}
+        onBack={() => setFullViewStudentId(null)}
+        user={user}
+        onStudentUpdated={fetchStudents}
+      />
+    );
+  }
+
   return (
     <div>
       {/* Header & Action Bar */}
+
       <div
         style={{
           display: 'flex',
@@ -355,7 +374,11 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                 students.map((st) => (
                   <tr key={st.id}>
                     <td>
-                      <strong style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)' }}>
+                      <strong
+                        onClick={() => setFullViewStudentId(st.id)}
+                        style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)', cursor: 'pointer' }}
+                        title="Click to view comprehensive full record"
+                      >
                         {st.admission_no}
                       </strong>
                     </td>
@@ -363,17 +386,26 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                         <div
                           className="user-avatar"
+                          onClick={() => setFullViewStudentId(st.id)}
                           style={{
                             width: 32,
                             height: 32,
                             fontSize: '0.75rem',
+                            cursor: 'pointer',
                             background: st.gender === 'Female' ? '#db2777' : '#4f46e5'
                           }}
+                          title="Click to view full record"
                         >
                           {st.calling_name?.charAt(0) || 'S'}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600 }}>{st.full_name}</div>
+                          <div
+                            onClick={() => setFullViewStudentId(st.id)}
+                            style={{ fontWeight: 600, cursor: 'pointer' }}
+                            title="Click to view comprehensive full record"
+                          >
+                            {st.full_name}
+                          </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             Call Name: {st.calling_name} • DOB: {st.dob}
                           </div>
@@ -397,15 +429,27 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                         {st.status}
                       </span>
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        onClick={() => handleOpenProfile(st)}
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.35rem 0.65rem' }}
-                      >
-                        <Eye size={14} /> View Profile
-                      </button>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => setFullViewStudentId(st.id)}
+                          className="btn btn-primary btn-sm"
+                          style={{ padding: '0.35rem 0.65rem' }}
+                          title="Open full view dossier"
+                        >
+                          <Maximize2 size={13} /> Full View
+                        </button>
+                        <button
+                          onClick={() => handleOpenProfile(st)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '0.35rem 0.55rem' }}
+                          title="Quick preview modal"
+                        >
+                          <Eye size={13} />
+                        </button>
+                      </div>
                     </td>
+
                   </tr>
                 ))
               )}
@@ -629,10 +673,24 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                   </p>
                 </div>
               </div>
-              <button onClick={() => setShowProfileModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfileModal(false);
+                    setFullViewStudentId(selectedStudent.id);
+                  }}
+                  className="btn btn-primary btn-sm"
+                  title="Expand to Full View Dossier"
+                >
+                  <Maximize2 size={13} /> Full View
+                </button>
+                <button onClick={() => setShowProfileModal(false)} className="btn btn-secondary btn-icon btn-sm">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
+
 
             <div className="modal-body">
               {studentDetails ? (
@@ -737,7 +795,18 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
               <button onClick={() => setShowProfileModal(false)} className="btn btn-secondary">
                 Close
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProfileModal(false);
+                  setFullViewStudentId(selectedStudent.id);
+                }}
+                className="btn btn-primary"
+              >
+                <Maximize2 size={15} /> Open Comprehensive Full View
+              </button>
             </div>
+
           </div>
         </div>
       )}
