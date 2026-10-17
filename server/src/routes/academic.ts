@@ -130,9 +130,10 @@ router.post('/classes', requireAuth, requireRole(['admin']), (req, res) => {
 
   const result = stmt.run(Number(grade), name, room_number || null, currentYear?.id || null, class_teacher_id || null);
 
-  logAudit(req.user!.id, req.user!.username, 'CLASS_CREATE', 'classes', result.lastInsertRowid, { grade, name }, req.ip);
+  const classId = Number(result.lastInsertRowid);
+  logAudit(req.user!.id, req.user!.username, 'CLASS_CREATE', 'classes', classId, { grade, name }, req.ip);
 
-  res.status(201).json({ success: true, id: result.lastInsertRowid });
+  res.status(201).json({ success: true, id: classId });
 });
 
 // Create Subject (Admin)
@@ -149,10 +150,11 @@ router.post('/subjects', requireAuth, requireRole(['admin']), (req, res) => {
   `);
 
   const result = stmt.run(code.toUpperCase(), name, category || 'Core', grade_level || '6-11');
+  const subjectId = Number(result.lastInsertRowid);
 
-  logAudit(req.user!.id, req.user!.username, 'SUBJECT_CREATE', 'subjects', result.lastInsertRowid, { code, name }, req.ip);
+  logAudit(req.user!.id, req.user!.username, 'SUBJECT_CREATE', 'subjects', subjectId, { code, name }, req.ip);
 
-  res.status(201).json({ success: true, id: result.lastInsertRowid });
+  res.status(201).json({ success: true, id: subjectId });
 });
 
 export default router;

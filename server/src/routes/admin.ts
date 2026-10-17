@@ -133,9 +133,10 @@ router.post('/assignments', (req, res) => {
     db.prepare('UPDATE classes SET class_teacher_id = ? WHERE id = ?').run(Number(teacher_id), Number(class_id));
   }
 
-  logAudit(req.user!.id, req.user!.username, 'ASSIGNMENT_CREATE', 'teacher_assignments', result.lastInsertRowid, req.body, req.ip);
+  const newAssignmentId = Number(result.lastInsertRowid);
+  logAudit(req.user!.id, req.user!.username, 'ASSIGNMENT_CREATE', 'teacher_assignments', newAssignmentId, req.body, req.ip);
 
-  res.status(201).json({ success: true, id: result.lastInsertRowid });
+  res.status(201).json({ success: true, id: newAssignmentId });
 });
 
 // Delete Teacher Assignment

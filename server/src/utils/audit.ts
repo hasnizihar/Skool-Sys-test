@@ -5,7 +5,7 @@ export function logAudit(
   username: string | null,
   action: string,
   entityType: string,
-  entityId: string | number | null,
+  entityId: string | number | bigint | null,
   details: any,
   ipAddress: string = '127.0.0.1'
 ) {
