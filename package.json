@@ -8,10 +8,15 @@
     "dev:client": "npm --prefix client run dev",
     "seed": "npm --prefix server run seed",
     "test": "npm --prefix server run test",
+    "test:browser": "npm --prefix server run test:browser",
+    "test:all": "npm --prefix server run test:all",
     "typecheck": "npm --prefix server run typecheck",
     "lint": "npm --prefix client run lint",
     "build": "npm run build:server && npm run build:client",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run build"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
   }
 }

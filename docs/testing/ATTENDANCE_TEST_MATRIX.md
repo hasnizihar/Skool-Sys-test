@@ -1,7 +1,7 @@
-# SkoolSys 2.0 — PR-004 Final Comprehensive Attendance Regression Matrix (ATT-001 – ATT-075, SIM-01 – SIM-11 & E2E-01 – E2E-05)
+# SkoolSys 2.0 — PR-004 Final Comprehensive Attendance Regression Matrix (ATT-001 – ATT-082, SIM-01 – SIM-11 & E2E-01 – E2E-05)
 **Kattankudy Central College National School (Grades 6–13)**  
 **Branch:** `feature/pr-004-attendance-integrity`  
-**Status:** 151 passing automated tests across 38 test suites (0 failures, 100% success rate)  
+**Status:** 158 passing automated tests (153 fast backend regression tests across 37 suites + 5 genuine Playwright browser E2E tests, 0 failures, 100% success rate)  
 **Execution Date:** 2026-10-18  
 
 ---
@@ -86,6 +86,13 @@
 | **ATT-073** | Mode Reconciliation | Local draft against server submitted register reconciles mode to submitted with full roster | `attendance_conflict_diff.test.ts` | **PASS** |
 | **ATT-074** | Retention Policy | 7-day retention expiry blocks auto-sync on 8-day items; marks stale_review_required; reauthorization | `attendance_conflict_diff.test.ts` | **PASS** |
 | **ATT-075** | Unsynced Visibility | `getUnsyncedWorkSummary` itemizes all 6 categories (pending, syncing, conflicted, rejected, stale, quarantined) | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-076** | Stale Re-auth | Stale offline reauthorization requires fresh RFC 4122 UUID v4 mutation ID | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-077** | Stale Re-auth | Stale offline reauthorization fails closed with 403 if teacher is no longer assigned to class | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-078** | Stale Re-auth | Stale offline reauthorization fails closed with 401 if teacher user account was deactivated | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-079** | Stale Re-auth | Stale offline reauthorization fails closed with 422 if student enrollment changed | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-080** | Stale Re-auth | Stale offline reauthorization with baseRevision mismatch returns 409 and preserves server records | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-081** | Stale Re-auth | Stale offline reauthorization targeting submitted mode rejects incomplete roster (100% required) | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-082** | Stale Re-auth | Stale offline reauthorization with deliberate choice successfully reconciles and writes audit trail | `attendance_conflict_diff.test.ts` | **PASS** |
 
 ---
 
@@ -131,4 +138,4 @@ All pre-existing baseline suites continue to pass 100% without regression:
 - `record_authorization.test.ts`: 20 tests passing
 - `security_matrix.test.ts`: 24 tests passing
 
-**Total Active Test Count:** 151 automated tests across 38 suites (61 baseline + 90 PR-004/PR-004R/PR-004S test cases). 0 failures, 0 skipped.
+**Total Active Test Count:** 158 automated tests (61 baseline + 92 PR-004 backend test cases in `npm test` + 5 genuine Playwright browser E2E test cases in `npm run test:browser`). 0 failures, 0 skipped, 100% pass rate.

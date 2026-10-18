@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { WifiOff, Wifi, RefreshCw, AlertTriangle, AlertCircle, CheckCircle, Trash2, X } from 'lucide-react';
+import { WifiOff, Wifi, RefreshCw, AlertTriangle, AlertCircle, CheckCircle, Trash2, X, ArrowLeft } from 'lucide-react';
 import {
   getPendingAttendanceQueue,
   syncPendingQueue,
-  reauthorizeStaleItem,
   removePendingItem,
   OfflineAttendanceMutation
 } from '../api/offlineQueue';
-import { getAuthToken, getCurrentUser, api } from '../api/client';
+import { getAuthToken, getCurrentUser, api, HttpError } from '../api/client';
+import { buildStudentDiffList, ConflictStudentDiff } from '../utils/conflictDiffUtils';
 
 export const OfflineBanner: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -17,6 +17,16 @@ export const OfflineBanner: React.FC = () => {
   const [showStaleModal, setShowStaleModal] = useState(false);
   const [reauthorizingId, setReauthorizingId] = useState<string | null>(null);
   const [staleError, setStaleError] = useState<string | null>(null);
+
+  // Active per-student discrepancy review state for aged/stale mutations
+  const [activeStaleReview, setActiveStaleReview] = useState<{
+    item: OfflineAttendanceMutation;
+    freshSession: any;
+    diffs: ConflictStudentDiff[];
+    targetMode: 'draft' | 'submitted';
+    saving: boolean;
+    error: string | null;
+  } | null>(null);
 
   const currentUser = getCurrentUser();
 
@@ -89,41 +99,180 @@ export const OfflineBanner: React.FC = () => {
     }
   };
 
-  const handleReconcileStale = async (item: OfflineAttendanceMutation) => {
+  // Step 1: Start per-student discrepancy review comparing stale offline draft against live server
+  const handleStartStaleReview = async (item: OfflineAttendanceMutation) => {
     if (!currentUser?.id) return;
     setStaleError(null);
     setReauthorizingId(item.clientMutationId);
     try {
-      // 1. Fetch fresh server session to reconcile current revision and fingerprint
+      // 1. Fetch fresh server session and roster
       const freshSession = await api.getAttendanceSession(item.classId, item.date);
+      const students = freshSession.students || [];
+      const serverRecords = freshSession.records || [];
 
-      // 2. Reauthorize stale item under the authenticated user's ID
-      await reauthorizeStaleItem(
-        item.clientMutationId,
-        currentUser.id,
-        freshSession.serverRevision,
-        freshSession.rosterFingerprint
+      // 2. Build student-by-student diff list.
+      // Deliberate Safety: by default, any student with discrepancy defaults to chosen = 'server'
+      // to strictly prevent blind overwriting of newer server decisions.
+      const diffs = buildStudentDiffList(
+        students,
+        item,
+        serverRecords,
+        {}
       );
 
-      // 3. Immediately attempt synchronization
-      const token = getAuthToken();
-      if (token) {
-        await syncPendingQueue(token, currentUser.id);
-      }
+      // Rule ATT-014: If server is already submitted, target mode MUST be submitted.
+      const isServerSubmitted = freshSession.session?.status === 'submitted';
+      const isLocalSubmitted = item.mode === 'submitted';
+      const targetMode: 'draft' | 'submitted' = (isServerSubmitted || isLocalSubmitted) ? 'submitted' : 'draft';
 
-      await checkQueue();
-      setLastSyncMsg(`Re-authorized and queued register for ${item.date} successfully.`);
-      setTimeout(() => setLastSyncMsg(null), 5000);
+      setActiveStaleReview({
+        item,
+        freshSession,
+        diffs,
+        targetMode,
+        saving: false,
+        error: null
+      });
     } catch (err: any) {
-      setStaleError(`Failed to re-authorize item: ${err.message}`);
+      setStaleError(`Failed to fetch live server session for review: ${err.message}`);
     } finally {
       setReauthorizingId(null);
+    }
+  };
+
+  // Step 2: Toggle teacher's deliberate choice for a specific pupil
+  const handleToggleStaleChoice = (studentId: number, chosen: 'local' | 'server') => {
+    setActiveStaleReview((prev) => {
+      if (!prev) return null;
+      const updatedDiffs = prev.diffs.map((d) => (d.student_id === studentId ? { ...d, chosen } : d));
+      return { ...prev, diffs: updatedDiffs };
+    });
+  };
+
+  // Step 3: Apply deliberate reconciliation with atomic revision verification and new mutation ID
+  const handleApplyStaleReconciliation = async () => {
+    if (!activeStaleReview) return;
+    const { item, freshSession, diffs, targetMode } = activeStaleReview;
+
+    // Build resolved records from explicit choices
+    const resolvedRecords = diffs
+      .map((d) => {
+        let status = d.chosen === 'server' ? d.serverStatus : d.localStatus;
+        if (targetMode === 'submitted' && (!status || status === 'unmarked')) {
+          if (d.serverStatus && d.serverStatus !== 'unmarked') {
+            status = d.serverStatus;
+          } else if (d.localStatus && d.localStatus !== 'unmarked') {
+            status = d.localStatus;
+          }
+        }
+        const remarks = d.chosen === 'server' ? d.serverRemarks : d.localRemarks;
+        return {
+          student_id: d.student_id,
+          status: status as any,
+          remarks: remarks || null
+        };
+      })
+      .filter((r) => r.status && r.status !== 'unmarked');
+
+    // Rule ATT-015: Submitted register requires 100% complete roster marking
+    const totalStudents = freshSession.students?.length || 0;
+    if (targetMode === 'submitted' && resolvedRecords.length < totalStudents) {
+      setActiveStaleReview((prev) =>
+        prev
+          ? {
+              ...prev,
+              error: `Finalized register requires complete attendance. ${totalStudents - resolvedRecords.length} pupil(s) remain unmarked. Please choose a status for every pupil before submitting.`
+            }
+          : null
+      );
+      return;
+    }
+
+    setActiveStaleReview((prev) => (prev ? { ...prev, saving: true, error: null } : null));
+
+    try {
+      // Generate a BRAND NEW RFC 4122 UUID v4 mutation ID
+      const newMutationId = crypto.randomUUID();
+
+      const res = await api.saveAttendanceSession({
+        classId: item.classId,
+        date: item.date,
+        mode: targetMode,
+        baseRevision: freshSession.serverRevision,
+        clientMutationId: newMutationId,
+        rosterFingerprint: freshSession.rosterFingerprint,
+        notes: `Reconciled from aged offline register (original ${item.clientMutationId})`,
+        records: resolvedRecords
+      });
+
+      // Atomic write succeeded on server -> remove stale draft from IndexedDB
+      await removePendingItem(item.clientMutationId);
+      setActiveStaleReview(null);
+      setShowStaleModal(false);
+      await checkQueue();
+      setLastSyncMsg(`Reconciled attendance for ${item.date} successfully saved at Revision ${res.revision}!`);
+      setTimeout(() => setLastSyncMsg(null), 6000);
+    } catch (err: any) {
+      if (err instanceof HttpError && err.status === 409) {
+        // Concurrency conflict occurred while teacher was reviewing!
+        // Immediately fetch the fresh server session and update diffs, invalidating choices for modified pupils.
+        try {
+          const reFresh = await api.getAttendanceSession(item.classId, item.date);
+          const priorChoices = new Map<number, 'local' | 'server'>();
+          diffs.forEach((d) => priorChoices.set(d.student_id, d.chosen));
+
+          const reDiffs = buildStudentDiffList(
+            reFresh.students || [],
+            item,
+            reFresh.records || [],
+            {},
+            priorChoices,
+            freshSession.records || []
+          );
+
+          setActiveStaleReview((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  saving: false,
+                  freshSession: reFresh,
+                  diffs: reDiffs,
+                  error: `Collision recurred! Another user submitted an update while you were reviewing. Server advanced to Revision ${reFresh.serverRevision}. Comparison refreshed; please re-verify choices.`
+                }
+              : null
+          );
+        } catch (fetchErr: any) {
+          setActiveStaleReview((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  saving: false,
+                  error: `Collision occurred and failed to re-fetch server state: ${fetchErr.message}`
+                }
+              : null
+          );
+        }
+      } else {
+        // Validation, authorization, or network error: DO NOT delete local draft. Preserve in IndexedDB!
+        setActiveStaleReview((prev) =>
+          prev
+            ? {
+                ...prev,
+                saving: false,
+                error: `Submission rejected (${err.message}). Stale draft is safely preserved on device.`
+              }
+            : null
+        );
+      }
     }
   };
 
   const handleDiscardStale = async (clientMutationId: string) => {
     if (confirm('Are you sure you want to discard this aged offline register? This cannot be undone.')) {
       await removePendingItem(clientMutationId);
+      if (activeStaleReview?.item.clientMutationId === clientMutationId) {
+        setActiveStaleReview(null);
+      }
       await checkQueue();
     }
   };
@@ -237,98 +386,259 @@ export const OfflineBanner: React.FC = () => {
               backgroundColor: 'var(--bg-card, #ffffff)'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <AlertTriangle size={24} color="#4f46e5" />
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#312e81' }}>
-                  Aged Offline Attendance Review (7-Day Retention Expiry)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowStaleModal(false)}
-                className="btn btn-icon"
-                style={{ padding: '0.25rem', border: 'none', background: 'transparent', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
-              In accordance with institutional policy <strong>KCC-POL-004</strong>, offline mutations older than 7 days require deliberate re-verification by the recording teacher before synchronization is allowed.
-            </p>
-
-            {staleError && (
-              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', fontSize: '0.825rem', marginBottom: '0.75rem' }}>
-                ⚠️ {staleError}
-              </div>
-            )}
-
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {staleItems.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
-                  All aged items have been reconciled or removed.
-                </div>
-              ) : (
-                staleItems.map((item) => (
-                  <div
-                    key={item.clientMutationId}
-                    style={{
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '1rem',
-                      background: 'var(--bg-subtle)'
+            {activeStaleReview ? (
+              // -------------------------------------------------------------
+              // SUB-VIEW: Per-Student Discrepancy & Deliberate Resolution
+              // -------------------------------------------------------------
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveStaleReview(null)}
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '0.25rem 0.5rem' }}
+                      title="Back to list"
+                    >
+                      <ArrowLeft size={14} style={{ marginRight: '0.25rem' }} /> Back
+                    </button>
+                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#312e81' }}>
+                      Reconcile {activeStaleReview.item.className || `Class ${activeStaleReview.item.classId}`} — {activeStaleReview.item.date}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveStaleReview(null);
+                      setShowStaleModal(false);
                     }}
+                    className="btn btn-icon"
+                    style={{ padding: '0.25rem', border: 'none', background: 'transparent', cursor: 'pointer' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                      <div>
-                        <strong>{item.className || `Class ID ${item.classId}`}</strong> — Date: <strong>{item.date}</strong>
-                        <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                          Recorded on: {new Date(item.originalTimestamp || item.timestamp).toLocaleString()} ({item.records?.length || 0} students, {item.mode} mode)
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                  <strong>Institutional Policy KCC-POL-004 Enforcement:</strong> Aged offline records cannot automatically overwrite live server data. Review discrepancies below. Deliberate per-pupil choices are required before saving against Server Revision {activeStaleReview.freshSession.serverRevision}.
+                </div>
+
+                {activeStaleReview.error && (
+                  <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', fontSize: '0.825rem', marginBottom: '0.75rem' }}>
+                    ⚠️ {activeStaleReview.error}
+                  </div>
+                )}
+
+                <div style={{ flex: 1, overflowY: 'auto', marginBottom: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+                  <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-subtle)', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
+                        <th style={{ padding: '0.5rem 0.75rem' }}>Pupil</th>
+                        <th style={{ padding: '0.5rem 0.75rem' }}>Stale Offline Entry</th>
+                        <th style={{ padding: '0.5rem 0.75rem' }}>Live Server Record</th>
+                        <th style={{ padding: '0.5rem 0.75rem', textAlign: 'center' }}>Deliberate Choice</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeStaleReview.diffs.map((d) => (
+                        <tr
+                          key={d.student_id}
+                          style={{
+                            borderBottom: '1px solid var(--border-color)',
+                            background: d.serverChangedAgain ? '#fef2f2' : d.isDiff ? '#fffbeb' : undefined
+                          }}
+                        >
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <div style={{ fontWeight: 600 }}>{d.calling_name}</div>
+                            <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>{d.admission_no}</div>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <span className="badge" style={{ textTransform: 'capitalize', background: '#e0e7ff', color: '#3730a3' }}>
+                              {d.localStatus || 'unmarked'}
+                            </span>
+                            {d.localRemarks && <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>{d.localRemarks}</div>}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <span className="badge" style={{ textTransform: 'capitalize', background: '#dcfce7', color: '#166534' }}>
+                              {d.serverStatus || 'unmarked'}
+                            </span>
+                            {d.serverRemarks && <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>{d.serverRemarks}</div>}
+                            {d.serverChangedAgain && (
+                              <div style={{ fontSize: '0.7rem', color: '#dc2626', fontWeight: 600, marginTop: '0.2rem' }}>
+                                ⚠️ Server Changed Again
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center' }}>
+                            {d.isDiff ? (
+                              <div style={{ display: 'inline-flex', gap: '0.25rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.15rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleStaleChoice(d.student_id, 'server')}
+                                  className="btn btn-sm"
+                                  style={{
+                                    padding: '0.2rem 0.45rem',
+                                    fontSize: '0.725rem',
+                                    background: d.chosen === 'server' ? '#166534' : 'transparent',
+                                    color: d.chosen === 'server' ? '#ffffff' : 'inherit',
+                                    border: 'none',
+                                    fontWeight: d.chosen === 'server' ? 700 : 400
+                                  }}
+                                >
+                                  Keep Server
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleStaleChoice(d.student_id, 'local')}
+                                  className="btn btn-sm"
+                                  style={{
+                                    padding: '0.2rem 0.45rem',
+                                    fontSize: '0.725rem',
+                                    background: d.chosen === 'local' ? '#4f46e5' : 'transparent',
+                                    color: d.chosen === 'local' ? '#ffffff' : 'inherit',
+                                    border: 'none',
+                                    fontWeight: d.chosen === 'local' ? 700 : 400
+                                  }}
+                                >
+                                  Keep Stale
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>✓ Match</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
+                    Mode: <strong>{activeStaleReview.targetMode.toUpperCase()}</strong> | Reconciling at Rev {activeStaleReview.freshSession.serverRevision}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleDiscardStale(activeStaleReview.item.clientMutationId)}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', color: '#dc2626' }}
+                    >
+                      <Trash2 size={13} style={{ marginRight: '0.35rem' }} />
+                      Discard Draft
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyStaleReconciliation}
+                      disabled={activeStaleReview.saving}
+                      className="btn btn-primary"
+                      style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                    >
+                      <CheckCircle size={13} style={{ marginRight: '0.35rem' }} />
+                      {activeStaleReview.saving ? 'Saving...' : 'Confirm & Apply Reconciled Register'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              // -------------------------------------------------------------
+              // LIST VIEW: All Aged Offline Queue Items
+              // -------------------------------------------------------------
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <AlertTriangle size={24} color="#4f46e5" />
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#312e81' }}>
+                      Aged Offline Attendance Review (7-Day Retention Expiry)
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowStaleModal(false)}
+                    className="btn btn-icon"
+                    style={{ padding: '0.25rem', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
+                  In accordance with institutional policy <strong>KCC-POL-004</strong>, offline mutations older than 7 days require deliberate re-verification by the recording teacher before synchronization is allowed.
+                </p>
+
+                {staleError && (
+                  <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', fontSize: '0.825rem', marginBottom: '0.75rem' }}>
+                    ⚠️ {staleError}
+                  </div>
+                )}
+
+                <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {staleItems.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
+                      All aged items have been reconciled or removed.
+                    </div>
+                  ) : (
+                    staleItems.map((item) => (
+                      <div
+                        key={item.clientMutationId}
+                        style={{
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '1rem',
+                          background: 'var(--bg-subtle)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                          <div>
+                            <strong>{item.className || `Class ID ${item.classId}`}</strong> — Date: <strong>{item.date}</strong>
+                            <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                              Recorded on: {new Date(item.originalTimestamp || item.timestamp).toLocaleString()} ({item.records?.length || 0} students, {item.mode} mode)
+                            </div>
+                          </div>
+                          <span className="badge" style={{ background: '#e0e7ff', color: '#3730a3', fontSize: '0.725rem' }}>
+                            Author: {currentUser.username}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleDiscardStale(item.clientMutationId)}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', color: '#dc2626' }}
+                          >
+                            <Trash2 size={13} style={{ marginRight: '0.35rem' }} />
+                            Discard
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleStartStaleReview(item)}
+                            disabled={reauthorizingId === item.clientMutationId}
+                            className="btn btn-primary"
+                            style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                          >
+                            <CheckCircle size={13} style={{ marginRight: '0.35rem' }} />
+                            {reauthorizingId === item.clientMutationId ? 'Loading Session...' : 'Review & Reconcile'}
+                          </button>
                         </div>
                       </div>
-                      <span className="badge" style={{ background: '#e0e7ff', color: '#3730a3', fontSize: '0.725rem' }}>
-                        Author: {currentUser.username}
-                      </span>
-                    </div>
+                    ))
+                  )}
+                </div>
 
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleDiscardStale(item.clientMutationId)}
-                        className="btn btn-secondary"
-                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', color: '#dc2626' }}
-                      >
-                        <Trash2 size={13} style={{ marginRight: '0.35rem' }} />
-                        Discard
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleReconcileStale(item)}
-                        disabled={reauthorizingId === item.clientMutationId}
-                        className="btn btn-primary"
-                        style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
-                      >
-                        <CheckCircle size={13} style={{ marginRight: '0.35rem' }} />
-                        {reauthorizingId === item.clientMutationId ? 'Reconciling...' : 'Reconcile & Queue for Sync'}
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setShowStaleModal(false)}
-                className="btn btn-secondary"
-                style={{ padding: '0.45rem 1rem' }}
-              >
-                Close
-              </button>
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowStaleModal(false)}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.45rem 1rem' }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

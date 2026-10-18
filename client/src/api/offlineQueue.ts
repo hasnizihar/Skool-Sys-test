@@ -147,16 +147,21 @@ export function openOfflineDB(): Promise<IDBDatabase> {
           for (const item of items) {
             // Quarantine legacy item lacking required revision / fingerprint
             qStore.put({
-              id: item.id || `legacy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              id: item.id || item.clientMutationId || `legacy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               schoolId: SCHOOL_ID,
               originalData: item,
               quarantinedAt: new Date().toISOString(),
               reason: 'Legacy V1 entry lacking required revision, mode, or roster fingerprint.'
             });
           }
+          if (oldStore.keyPath !== 'clientMutationId') {
+            db.deleteObjectStore('pending_attendance');
+            const pendingStore = db.createObjectStore('pending_attendance', { keyPath: 'clientMutationId' });
+            pendingStore.createIndex('by_user', 'userId', { unique: false });
+            pendingStore.createIndex('by_status', 'status', { unique: false });
+            pendingStore.createIndex('by_user_class_date', ['userId', 'classId', 'date'], { unique: false });
+          }
         };
-
-        db.deleteObjectStore('pending_attendance');
       }
 
       if (!db.objectStoreNames.contains('pending_attendance')) {
