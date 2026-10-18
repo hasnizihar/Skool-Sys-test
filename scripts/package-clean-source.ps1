@@ -24,7 +24,6 @@ $ExcludedPatterns = @(
     ".git",
     ".agents",
     "backups",
-    ".env",
     "*.db",
     "*.db-wal",
     "*.db-shm",
@@ -44,10 +43,9 @@ Get-ChildItem -Path $RepoRoot -Recurse | ForEach-Object {
         }
     }
     
-    if ($item.Name -eq ".env" -or $item.Name.EndsWith(".env") -or $item.Name.StartsWith(".env.")) {
-        if ($item.Name -ne ".env.example") {
-            $exclude = $true
-        }
+    # Strictly exclude real .env files, but explicitly preserve .env.example templates
+    if ($item.Name -eq ".env" -or ($item.Name -like ".env.*" -and $item.Name -ne ".env.example")) {
+        $exclude = $true
     }
 
     if ($item.Extension -in @(".db", ".db-wal", ".db-shm", ".db-journal")) {
@@ -74,9 +72,13 @@ Compress-Archive -Path "$StageDir\*" -DestinationPath $OutputFile -CompressionLe
 
 $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $OutputFile))
 $violations = @()
+$examplesFound = @()
 foreach ($entry in $archive.Entries) {
-    if ($entry.FullName -like "*.db" -or $entry.FullName -like "*.db-*" -or $entry.Name -eq ".env") {
+    if ($entry.FullName -like "*.db" -or $entry.FullName -like "*.db-*" -or ($entry.Name -like ".env*" -and $entry.Name -ne ".env.example")) {
         $violations += $entry.FullName
+    }
+    if ($entry.Name -eq ".env.example") {
+        $examplesFound += $entry.FullName
     }
 }
 $archive.Dispose()
@@ -95,4 +97,5 @@ if ($violations.Count -gt 0) {
     $zipMb = [Math]::Round(($zipBytes / 1048576), 2)
     Write-Host "Verified clean source archive created: $OutputFile ($zipMb MB)" -ForegroundColor Green
     Write-Host "Zero .env, zero database files, zero WAL/SHM files included." -ForegroundColor Green
+    Write-Host "Preserved templates: $($examplesFound -join ', ')" -ForegroundColor Cyan
 }
