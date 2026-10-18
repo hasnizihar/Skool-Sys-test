@@ -8,4 +8,5 @@ skoolsys.db*
 test_*.db*
 .env
 .env.*
+!.env.example
 *.log
