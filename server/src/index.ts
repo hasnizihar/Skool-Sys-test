@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { app } from './app.js';
 import { getJwtSecret } from './middleware/auth.js';
 
