@@ -63,25 +63,30 @@ The implementation strictly satisfies the approved **PR-004 Engineering Architec
 
 ---
 
-## 3. Provisional Institutional Policies Status (KCC-POL-001 – KCC-POL-005)
+## 3. Institutional Policies Ledger & Status (KCC-POL-001 – KCC-POL-005)
 
-The following provisional institutional policies have been implemented as safe defaults in PR-004. They are clearly annotated as provisional pending formal ratification by the Kattankudy Central College National School Board:
+The institutional policies for attendance integrity at Kattankudy Central College National School are mapped strictly to the approved v1.2 specification. No unapproved statutory cutoffs (such as arbitrary 80% examination thresholds or 08:00 late cutoffs) are implemented or claimed.
 
-1. **KCC-POL-001 (Attendance Modification Grace Period)**:
-   - *Provisional Default*: Class teachers may modify or submit attendance for the current calendar date (`Asia/Colombo`). Modifications to past dates require administrator role.
-   - *Status*: Provisional default active.
-2. **KCC-POL-002 (Examination Attendance Threshold)**:
-   - *Provisional Default*: 80% aggregate term attendance required for students to sit end-of-term examinations without a principal/zonal education office waiver.
-   - *Status*: Provisional default active.
-3. **KCC-POL-003 (Late vs. Absent Policy)**:
-   - *Provisional Default*: Students arriving after 08:00 `Asia/Colombo` are marked 'late'. Late students count as present for daily attendance rates, but late arrival remarks and timestamps are logged.
-   - *Status*: Provisional default active.
-4. **KCC-POL-004 (Midyear Student Transfer Historical Attendance)**:
-   - *Provisional Default*: A student transferring classes mid-year retains all historical attendance records under the original class for dates prior to the transfer effective date. Snapshot reconciliation never deletes historical records of students who have transferred out.
-   - *Status*: Provisional default active.
-5. **KCC-POL-005 (Legacy Offline Queue Quarantine)**:
-   - *Provisional Default*: Unverified offline queue entries originating from pre-V2 clients lacking revision, academic year, or roster fingerprint are quarantined as `legacy_review_required` and never automatically replayed.
-   - *Status*: Provisional default active.
+1. **KCC-POL-001 (Daily Attendance Modification Grace Period)**:
+   - *Policy Definition*: Class teachers may take, modify, and submit daily attendance for the current calendar date in Sri Lanka civil time (`Asia/Colombo`). Modifications to past dates require administrator authorization or formal administrative waiver.
+   - *Implementation Status*: Enforced in attendance authorization middleware and service checks.
+
+2. **KCC-POL-002 (Midyear Student Transfer Historical Attendance)**:
+   - *Policy Definition*: A student transferring classes mid-year retains all historical attendance records under their prior assigned class for dates preceding the transfer effective date. Register snapshot reconciliation never deletes historical attendance records when reconciling with current enrolments.
+   - *Implementation Status*: Fully enforced by the atomic attendance service snapshot reconciliation guard and reports queries.
+
+3. **KCC-POL-003 (Official School Holidays and Special Sessions Policy Definition)**:
+   - *Policy Definition*: A formal institutional calendar defining statutory public/religious holidays, emergency school closures, and special weekend instructional sessions requires administrative scheduling.
+   - *Current PR-004 Scope & Status*: PR-004 enforces academic year boundary validation (`academic_years.start_date` and `end_date`), rejecting invalid dates outside the academic year. Full day-by-day institutional holiday calendar validation is explicitly deferred to a dedicated administrative calendar module (PR-006/PR-007) and is NOT claimed as implemented in PR-004.
+
+4. **KCC-POL-004 (Shared-Device Offline Roster Retention, 7-Day Reauthentication & Queue Quarantine)**:
+   - *Policy Definition*: On shared school tablets and desktop terminals, cached class rosters are purged upon user logout. Unsynced pending attendance mutations are preserved non-destructively in client storage partitioned by account (`schoolId:userId:academicYearId:classId`).
+   - *7-Day Reauthentication Requirement*: Pinned to the 7-day JWT session lifecycle (`JWT_EXPIRES_IN=7d`). Unsynced offline attendance mutations older than 7 days (`MAX_OFFLINE_RETENTION_MS`) or encountering expired credentials (HTTP 401) immediately pause auto-synchronization and mandate active reauthentication by the original recording teacher before server synchronization is permitted.
+   - *Implementation Status*: Fully enforced by IndexedDB V2 client storage engine (`clearCachedRostersOnLogout`, `recoverInterruptedSyncingItems`, and `isMutationExpired`).
+
+5. **KCC-POL-005 (Student Guardian Contact Access Scoping in Roll Call)**:
+   - *Policy Definition*: To safeguard student and family privacy, offline class rosters minimize sensitive PII (guardian NIC, phone numbers, home addresses are omitted). Absentee guardian phone follow-up is restricted to authenticated class teachers and administrators on live reports.
+   - *Implementation Status*: Fully enforced by client PII minimization (`minimizeStudentForOffline`) and report scoping.
 
 ---
 

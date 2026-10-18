@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { runMigration004 } from './migrations/004_attendance_integrity.js';
+import { createSafeDatabaseBackup, generateTimestampedBackupPath } from './backupUtils.js';
 
 export function getDbPath(): string {
   return process.env.DB_PATH || path.join(process.cwd(), 'skoolsys.db');
@@ -219,9 +220,52 @@ export function initDatabase() {
   }
 
   // Safe migration 004: Attendance integrity, revisions & receipts
-  try {
-    runMigration004(db);
-  } catch (err) {
-    console.error('Warning: Migration 004 failed during initDatabase:', err);
+  // Inspect whether migration 004 is needed
+  const versionRow = db.prepare('PRAGMA user_version;').get() as { user_version: number };
+  const currentVersion = Number(versionRow?.user_version || 0);
+
+  const revisionColCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM pragma_table_info('attendance_sessions') WHERE name = 'revision';"
+  ).get() as { cnt: number };
+  const hasRevisionCol = Number(revisionColCheck?.cnt || 0) > 0;
+
+  const receiptsTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'attendance_sync_receipts';"
+  ).get() as { cnt: number };
+  const hasReceiptsTable = Number(receiptsTableCheck?.cnt || 0) > 0;
+
+  const needsMigration004 = currentVersion < 4 || !hasRevisionCol || !hasReceiptsTable;
+
+  if (needsMigration004) {
+    let backupPath: string | null = null;
+    // For file-backed databases, create a verified point-in-time snapshot before migration
+    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
+      try {
+        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
+        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
+        createSafeDatabaseBackup(db, backupPath);
+        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 004!');
+        console.error(backupErr.message);
+        console.error('Server startup halted. No schema changes were applied.\n');
+        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
+      }
+    }
+
+    try {
+      const result = runMigration004(db);
+      if (result.applied) {
+        console.log(`[Database Migration] Migration 004 applied successfully (Schema V${result.version}).`);
+      }
+    } catch (migErr: any) {
+      console.error('\n❌ FATAL: Migration 004 failed during server startup!');
+      console.error(migErr.message);
+      if (backupPath) {
+        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
+      }
+      console.error('Server startup halted to prevent schema corruption or partial state.\n');
+      throw new Error(`Migration 004 failed: ${migErr.message}. Server startup halted.`);
+    }
   }
 }

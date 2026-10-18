@@ -547,7 +547,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
               padding: '0.65rem 0.9rem',
               borderRadius: 'var(--radius-md)',
               background: attRate >= 80 ? 'var(--present-bg)' : 'var(--absent-bg)',
-              color: attRate >= 80 ? 'var(--present)' : 'var(--absent)',
+              color: 'var(--text-main)',
               fontSize: '0.8rem',
               fontWeight: 600,
               display: 'flex',
@@ -555,12 +555,8 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
               gap: '0.4rem'
             }}
           >
-            {attRate >= 80 ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            <span>
-              {attRate >= 80
-                ? 'Student meets the 80% minimum school attendance requirement.'
-                : 'Attention: Student attendance is below the 80% minimum school requirement.'}
-            </span>
+            <CheckCircle2 size={16} color="var(--primary)" />
+            <span>Cumulative Term Attendance Rate: {attRate}%</span>
           </div>
         </div>
       </div>

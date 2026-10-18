@@ -274,6 +274,7 @@ export async function getPendingAttendanceQueue(
   userId: number
 ): Promise<OfflineAttendanceMutation[]> {
   try {
+    await recoverInterruptedSyncingItems();
     const db = await openOfflineDB();
 
     return new Promise((resolve, reject) => {
@@ -385,11 +386,51 @@ export async function clearCachedRostersForUser(userId: number): Promise<void> {
 }
 
 /**
+ * Recovers any mutations stuck in 'syncing' status (e.g. following browser close,
+ * crash, or interrupted network) and resets them back to 'pending'.
+ */
+export async function recoverInterruptedSyncingItems(): Promise<number> {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('pending_attendance', 'readwrite');
+      const store = tx.objectStore('pending_attendance');
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const items: OfflineAttendanceMutation[] = req.result || [];
+        let count = 0;
+        for (const item of items) {
+          if (item.status === 'syncing') {
+            item.status = 'pending';
+            store.put(item);
+            count++;
+          }
+        }
+        tx.oncomplete = () => resolve(count);
+      };
+      req.onerror = () => reject(req.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to recover interrupted syncing items:', err);
+    return 0;
+  }
+}
+
+// Module-level concurrency guard to prevent simultaneous sync executions
+let isSyncInProgress = false;
+
+/**
  * Synchronizes pending attendance mutations to the backend.
  * Strict rules:
+ * - Mutex guard ensures no double sync for the same account/session
+ * - Automatically recovers interrupted 'syncing' items before evaluating queue
  * - Only syncs items belonging to the active logged-in userId
- * - Conflicted items (409) pause auto-sync for that item and require human resolution
- * - Rejected items (403, 422) are marked as rejected and not retried
+ * - Differentiates 401, 403, 409, 422, 429, 5xx and network transport errors
+ * - 401 pauses sync and signals re-authentication without infinite retry loops
+ * - 403 and 422 mark items as rejected and never retry automatically
+ * - Conflicted items (409) require deliberate student-level resolution
  */
 export async function syncPendingQueue(
   token: string,
@@ -399,48 +440,119 @@ export async function syncPendingQueue(
   conflicted: number;
   rejected: number;
   results: any[];
+  authRequired?: boolean;
+  rateLimited?: boolean;
+  inProgress?: boolean;
 }> {
-  const queue = await getPendingAttendanceQueue(userId);
-  const eligible = queue.filter((item) => item.status === 'pending');
-
-  if (eligible.length === 0) {
-    return { synced: 0, conflicted: 0, rejected: 0, results: [] };
+  if (isSyncInProgress) {
+    console.warn('Sync is already in progress. Skipping duplicate concurrent sync trigger.');
+    return { synced: 0, conflicted: 0, rejected: 0, results: [], inProgress: true };
   }
 
-  // Mark in-flight as syncing
-  for (const item of eligible) {
-    await updatePendingItemStatus(item.clientMutationId, 'syncing');
-  }
-
+  isSyncInProgress = true;
   try {
-    const payloadQueue = eligible.map((item) => ({
-      classId: item.classId,
-      date: item.date,
-      mode: item.mode,
-      baseRevision: item.baseRevision,
-      clientMutationId: item.clientMutationId,
-      rosterFingerprint: item.rosterFingerprint,
-      notes: item.notes || null,
-      records: item.records
-    }));
+    // 1. Recover any prior in-flight items left in 'syncing' state
+    await recoverInterruptedSyncingItems();
 
-    const response = await fetch('/api/attendance/sync', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ queue: payloadQueue })
-    });
+    const queue = await getPendingAttendanceQueue(userId);
+    const eligible = queue.filter((item) => item.status === 'pending');
 
-    if (!response.ok) {
-      // Revert in-flight items back to pending
+    if (eligible.length === 0) {
+      return { synced: 0, conflicted: 0, rejected: 0, results: [] };
+    }
+
+    // 2. Mark in-flight as syncing
+    for (const item of eligible) {
+      await updatePendingItemStatus(item.clientMutationId, 'syncing');
+    }
+
+    let response: Response;
+    try {
+      const payloadQueue = eligible.map((item) => ({
+        classId: item.classId,
+        date: item.date,
+        mode: item.mode,
+        baseRevision: item.baseRevision,
+        clientMutationId: item.clientMutationId,
+        rosterFingerprint: item.rosterFingerprint,
+        notes: item.notes || null,
+        records: item.records
+      }));
+
+      response = await fetch('/api/attendance/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ queue: payloadQueue })
+      });
+    } catch (networkErr: any) {
+      // True network transport failure: revert items back to pending for future retry
       for (const item of eligible) {
         await updatePendingItemStatus(item.clientMutationId, 'pending');
       }
-      throw new Error(`Sync HTTP error: ${response.status}`);
+      throw new Error(`Network transport error during sync: ${networkErr.message}`);
     }
 
+    // 3. Differentiate HTTP error statuses
+    if (response.status === 401) {
+      // Session expired / invalid token: Revert to pending, pause sync, signal auth renewal
+      for (const item of eligible) {
+        await updatePendingItemStatus(item.clientMutationId, 'pending');
+      }
+      window.dispatchEvent(new CustomEvent('auth-sync-expired'));
+      return {
+        synced: 0,
+        conflicted: 0,
+        rejected: 0,
+        results: [],
+        authRequired: true
+      };
+    }
+
+    if (response.status === 403) {
+      // Scoped permission denied
+      for (const item of eligible) {
+        await updatePendingItemStatus(item.clientMutationId, 'rejected', {
+          code: 'FORBIDDEN_SYNC_AUTHORITY',
+          detail: 'Unauthorized: User is not authorized to submit attendance for one or more classes.',
+          receivedAt: new Date().toISOString()
+        });
+      }
+      return { synced: 0, conflicted: 0, rejected: eligible.length, results: [] };
+    }
+
+    if (response.status === 400 || response.status === 422) {
+      // Batch-level validation rejection
+      const errData = await response.json().catch(() => ({}));
+      for (const item of eligible) {
+        await updatePendingItemStatus(item.clientMutationId, 'rejected', {
+          code: errData.code || 'BATCH_VALIDATION_REJECTED',
+          detail: errData.detail || errData.error || 'Batch submission rejected by server validation.',
+          receivedAt: new Date().toISOString()
+        });
+      }
+      return { synced: 0, conflicted: 0, rejected: eligible.length, results: [] };
+    }
+
+    if (response.status === 429) {
+      // Rate limited: revert to pending
+      for (const item of eligible) {
+        await updatePendingItemStatus(item.clientMutationId, 'pending');
+      }
+      return { synced: 0, conflicted: 0, rejected: 0, results: [], rateLimited: true };
+    }
+
+    if (response.status >= 500) {
+      // Server error: revert to pending
+      for (const item of eligible) {
+        await updatePendingItemStatus(item.clientMutationId, 'pending');
+      }
+      throw new Error(`Server returned HTTP ${response.status} during batch sync.`);
+    }
+
+    // 4. Process processed batch response (200 OK)
     const data = await response.json();
     const results = data.results || [];
     let synced = 0;
@@ -467,16 +579,14 @@ export async function syncPendingQueue(
           detail: res.error || 'Submission was rejected by the server.',
           receivedAt: new Date().toISOString()
         });
+      } else {
+        await updatePendingItemStatus(mutationId, 'pending');
       }
     }
 
     return { synced, conflicted, rejected, results };
-  } catch (err) {
-    // Revert items back to pending for network retry
-    for (const item of eligible) {
-      await updatePendingItemStatus(item.clientMutationId, 'pending');
-    }
-    throw err;
+  } finally {
+    isSyncInProgress = false;
   }
 }
 
@@ -521,14 +631,48 @@ export async function resolveConflictReapply(
 }
 
 /**
+ * Maximum offline queue retention period (7 days) matching JWT token lifetime.
+ * Reconciled under KCC-POL-004: records older than 7 days require re-authentication.
+ */
+export const MAX_OFFLINE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+export function isMutationExpired(mutation: OfflineAttendanceMutation): boolean {
+  const mutationTime = new Date(mutation.timestamp).getTime();
+  if (isNaN(mutationTime)) return false;
+  return (Date.now() - mutationTime) > MAX_OFFLINE_RETENTION_MS;
+}
+
+/**
  * Exports a local pending/conflicted mutation as formatted JSON text for backup.
+ * Enforces Student Data Privacy Controls:
+ * - Omits guardian phone, NIC, home address, and personal identifiers
+ * - Restricts data to minimal student IDs, attendance statuses, and teacher remarks
+ * - Prepends confidential school data banner and export metadata
  */
 export function exportMutationJson(mutation: OfflineAttendanceMutation): string {
+  // Strip any unexpected sensitive properties and retain only authorized roll-call data
+  const sanitizedRecords = (mutation.records || []).map((r) => ({
+    student_id: Number(r.student_id),
+    status: r.status,
+    remarks: r.remarks ? String(r.remarks).slice(0, 255) : null
+  }));
+
   return JSON.stringify(
     {
+      confidentialityNotice:
+        'CONFIDENTIAL ATTENDANCE RECORD — KATTANKUDY CENTRAL COLLEGE NATIONAL SCHOOL. ' +
+        'Authorized administrative recovery only. PII minimized: Contains no guardian NIC, phone, or home address.',
       exportedAt: new Date().toISOString(),
       institution: 'Kattankudy Central College National School',
-      mutation
+      academicYearId: mutation.academicYearId,
+      classId: mutation.classId,
+      className: mutation.className || null,
+      date: mutation.date,
+      mode: mutation.mode,
+      baseRevision: mutation.baseRevision,
+      clientMutationId: mutation.clientMutationId,
+      recordsCount: sanitizedRecords.length,
+      records: sanitizedRecords
     },
     null,
     2

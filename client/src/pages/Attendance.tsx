@@ -20,6 +20,18 @@ import {
 } from '../api/offlineQueue';
 import { getColomboCivilDate } from '../utils/dateUtils';
 
+export interface ConflictStudentDiff {
+  student_id: number;
+  admission_no: string;
+  calling_name: string;
+  localStatus: string;
+  localRemarks: string;
+  serverStatus: string;
+  serverRemarks: string;
+  isDiff: boolean;
+  chosen: 'local' | 'server';
+}
+
 interface AttendanceProps {
   user: any;
 }
@@ -45,11 +57,16 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine);
 
-  // Concurrency Conflict Modal State
+  // Concurrency Conflict Modal State with Per-Student Diff Comparison
   const [conflictModal, setConflictModal] = useState<{
     isOpen: boolean;
     problemDetails?: any;
     pendingMutation?: OfflineAttendanceMutation;
+    latestServerSession?: any;
+    latestServerRevision?: number;
+    diffs?: ConflictStudentDiff[];
+    filterConflictingOnly?: boolean;
+    concurrencyError?: string | null;
   }>({ isOpen: false });
 
   const [copiedDraft, setCopiedDraft] = useState(false);
@@ -337,69 +354,139 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
       setTimeout(() => setSaveSuccessMsg(null), 6000);
     } catch (err: any) {
-      if (err instanceof HttpError && err.status === 409) {
-        // 409 Concurrency Conflict or Fingerprint Mismatch -> Open Side-by-Side Modal
-        setConflictModal({
-          isOpen: true,
-          problemDetails: err.problemDetails,
-          pendingMutation: mutationPayload
-        });
-      } else if (err instanceof HttpError && (err.status === 401 || err.status === 403 || err.status === 422)) {
-        setErrorMessage(`Server Error (${err.code}): ${err.message}`);
+      if (err instanceof HttpError) {
+        // Online HTTP Server Responses: NEVER masquerade as connection loss or queue offline
+        if (err.status === 409) {
+          // 409 Concurrency Conflict or Fingerprint Mismatch -> Open Student-by-Student Diff Modal
+          await openConflictResolutionModal(mutationPayload, err.problemDetails);
+        } else if (err.status === 400 || err.status === 422) {
+          setErrorMessage(`Validation / Policy Error (${err.code}): ${err.message}`);
+        } else if (err.status === 401) {
+          setErrorMessage('Your session has expired. Please log in again to save attendance.');
+        } else if (err.status === 403) {
+          setErrorMessage(`Access Denied (${err.code}): ${err.message}`);
+        } else if (err.status === 429) {
+          setErrorMessage('Too many requests. Please wait a moment before saving again.');
+        } else if (err.status >= 500) {
+          setErrorMessage(`Server Error (${err.status}): ${err.message}. Your draft remains intact on screen. Do not treat as network disconnect.`);
+        } else {
+          setErrorMessage(`Server Error (${err.status}): ${err.message}`);
+        }
       } else {
-        // Network failure -> queue offline
-        console.warn('Network error during save, queueing offline mutation:', err);
+        // Genuine network transport failure (e.g. !navigator.onLine, TypeError: Failed to fetch)
+        console.warn('Network transport failure during save, queueing offline mutation:', err);
         await queueOfflineAttendance(mutationPayload);
         setIsOfflineMode(true);
-        setSaveSuccessMsg('Connection lost: Register safely queued in offline browser storage.');
+        setSaveSuccessMsg('Network transport failure: Register safely queued in offline browser storage.');
       }
     } finally {
       setSaving(false);
     }
   };
 
-  // Conflict Resolution Handlers
-  const handleKeepServer = async () => {
-    setConflictModal({ isOpen: false });
-    if (selectedClassId && selectedDate) {
-      await loadAttendanceSession(selectedClassId, selectedDate);
-    }
-    setSaveSuccessMsg('Reloaded latest attendance register from server.');
-  };
-
-  const handleReviewAndReapply = async () => {
+  // Student-by-Student Concurrency Conflict Reconciliation
+  const openConflictResolutionModal = async (
+    pendingMutation: OfflineAttendanceMutation,
+    problemDetails?: any
+  ) => {
     if (!selectedClassId || !selectedDate) return;
     try {
-      setSaving(true);
-      setConflictModal({ isOpen: false });
-
-      // Fetch fresh server revision and roster fingerprint
+      setLoading(true);
       const latest = await api.getAttendanceSession(selectedClassId, selectedDate);
-      setServerRevision(latest.serverRevision);
-      setRosterFingerprint(latest.rosterFingerprint);
+      const serverRecords = latest.records || [];
+      const serverMap = new Map<number, any>();
+      serverRecords.forEach((r: any) => serverMap.set(r.student_id, r));
 
-      // Re-apply local records with new base revision
-      const activeRecords = students
-        .filter((st) => {
-          const s = attendanceMap[st.student_id]?.status;
-          return s && s !== 'unmarked';
-        })
-        .map((st) => ({
+      const diffList: ConflictStudentDiff[] = students.map((st) => {
+        const localRec = pendingMutation.records.find((r) => r.student_id === st.student_id);
+        const serverRec = serverMap.get(st.student_id);
+
+        const localStatus = localRec?.status || attendanceMap[st.student_id]?.status || 'unmarked';
+        const localRemarks = localRec?.remarks || attendanceMap[st.student_id]?.remarks || '';
+        const serverStatus = serverRec?.status || 'unmarked';
+        const serverRemarks = serverRec?.remarks || '';
+
+        const isDiff = localStatus !== serverStatus || localRemarks !== serverRemarks;
+
+        return {
           student_id: st.student_id,
-          status: attendanceMap[st.student_id].status as any,
-          remarks: attendanceMap[st.student_id].remarks || null
-        }));
+          admission_no: st.admission_no,
+          calling_name: st.calling_name || st.full_name,
+          localStatus,
+          localRemarks,
+          serverStatus,
+          serverRemarks,
+          isDiff,
+          chosen: isDiff ? 'server' : 'local'
+        };
+      });
 
+      setConflictModal({
+        isOpen: true,
+        problemDetails,
+        pendingMutation,
+        latestServerSession: latest,
+        latestServerRevision: latest.serverRevision,
+        diffs: diffList,
+        filterConflictingOnly: true,
+        concurrencyError: null
+      });
+    } catch (err: any) {
+      console.error('Failed to prepare conflict resolution diff:', err);
+      setErrorMessage(`Failed to fetch latest server revision for conflict resolution: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleStudentChoice = (studentId: number, chosen: 'local' | 'server') => {
+    setConflictModal((prev) => {
+      if (!prev.diffs) return prev;
+      const updated = prev.diffs.map((d) => (d.student_id === studentId ? { ...d, chosen } : d));
+      return { ...prev, diffs: updated };
+    });
+  };
+
+  const handleChooseAll = (choice: 'local' | 'server') => {
+    setConflictModal((prev) => {
+      if (!prev.diffs) return prev;
+      const updated = prev.diffs.map((d) => ({ ...d, chosen: choice }));
+      return { ...prev, diffs: updated };
+    });
+  };
+
+  const handleApplyDeliberateResolution = async () => {
+    if (!selectedClassId || !selectedDate || !conflictModal.diffs) return;
+    try {
+      setSaving(true);
+      const targetRev = conflictModal.latestServerRevision!;
+      const targetFingerprint =
+        conflictModal.latestServerSession?.rosterFingerprint || rosterFingerprint;
+
+      const resolvedRecords = conflictModal.diffs
+        .map((d) => {
+          const status = d.chosen === 'server' ? d.serverStatus : d.localStatus;
+          const remarks = d.chosen === 'server' ? d.serverRemarks : d.localRemarks;
+          return {
+            student_id: d.student_id,
+            status: status as any,
+            remarks: remarks || null
+          };
+        })
+        .filter((r) => r.status && r.status !== 'unmarked');
+
+      const mode = existingSession?.status === 'submitted' ? 'submitted' : 'draft';
       const newMutationId = crypto.randomUUID();
+
       const res = await api.saveAttendanceSession({
         classId: selectedClassId,
         date: selectedDate,
-        mode: existingSession?.status === 'submitted' ? 'submitted' : 'draft',
-        baseRevision: latest.serverRevision,
+        mode,
+        baseRevision: targetRev,
         clientMutationId: newMutationId,
-        rosterFingerprint: latest.rosterFingerprint,
+        rosterFingerprint: targetFingerprint,
         notes: sessionNotes || null,
-        records: activeRecords
+        records: resolvedRecords
       });
 
       setServerRevision(res.revision);
@@ -409,12 +496,41 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         status: res.mode,
         revision: res.revision
       });
-      setSaveSuccessMsg(`Reapplied local changes successfully on top of Revision ${res.revision}!`);
+
+      const updatedMap = { ...attendanceMap };
+      resolvedRecords.forEach((r) => {
+        updatedMap[r.student_id] = { status: r.status, remarks: r.remarks || '' };
+      });
+      setAttendanceMap(updatedMap);
+
+      setConflictModal({ isOpen: false });
+      setSaveSuccessMsg(
+        `Conflict resolved! Deliberate choices successfully applied and saved at Revision ${res.revision}.`
+      );
     } catch (err: any) {
-      setErrorMessage(`Failed to re-apply changes: ${err.message}`);
+      if (err instanceof HttpError && err.status === 409) {
+        // Second optimistic revision check caught concurrent update!
+        const fresh = await api.getAttendanceSession(selectedClassId, selectedDate);
+        setConflictModal((prev) => ({
+          ...prev,
+          latestServerSession: fresh,
+          latestServerRevision: fresh.serverRevision,
+          concurrencyError: `Revision conflict recurred: Server advanced to Revision ${fresh.serverRevision}. Please re-verify choices.`
+        }));
+      } else {
+        setErrorMessage(`Failed to apply deliberate conflict resolution: ${err.message}`);
+      }
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleKeepServer = async () => {
+    setConflictModal({ isOpen: false });
+    if (selectedClassId && selectedDate) {
+      await loadAttendanceSession(selectedClassId, selectedDate);
+    }
+    setSaveSuccessMsg('Discarded local edits and reloaded latest server register.');
   };
 
   const handleExportLocalDraft = () => {
@@ -956,96 +1072,278 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Side-by-Side Conflict Resolution Modal */}
+      {/* Side-by-Side Student-by-Student Conflict Resolution Modal */}
       {conflictModal.isOpen && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.65)',
+            background: 'rgba(0,0,0,0.7)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
-            padding: '1rem'
+            padding: '1rem',
+            backdropFilter: 'blur(3px)'
           }}
         >
           <div
             className="card"
             style={{
-              maxWidth: '620px',
+              maxWidth: '880px',
               width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
               padding: '1.75rem',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
-              border: '2px solid #f59e0b'
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+              border: '2px solid #f59e0b',
+              backgroundColor: 'var(--bg-card, #ffffff)'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <AlertTriangle size={24} color="#d97706" />
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#92400e' }}>
-                Concurrency Conflict Detected (Revision Mismatch)
-              </h3>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <AlertTriangle size={26} color="#d97706" />
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#92400e' }}>
+                  Student-by-Student Concurrency Conflict Resolution
+                </h3>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem' }}>
+                <span className="badge" style={{ background: 'var(--bg-subtle)', padding: '0.25rem 0.5rem' }}>
+                  Base Rev: <strong>{conflictModal.pendingMutation?.baseRevision ?? serverRevision}</strong>
+                </span>
+                <span className="badge" style={{ background: '#fef3c7', color: '#92400e', padding: '0.25rem 0.5rem' }}>
+                  Server Rev: <strong>{conflictModal.latestServerRevision ?? (serverRevision + 1)}</strong>
+                </span>
+              </div>
             </div>
 
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-              This attendance register was updated on the school server by another authorized user while you were editing.
-              To guarantee attendance integrity and prevent accidental data loss, blind overwrite is prohibited.
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.45 }}>
+              This register was modified on the school server while you were working. Blind overwriting is strictly prohibited.
+              Review the differences below and deliberately select which attendance record to keep for each student.
             </p>
 
+            {/* Recurrence Warning Banner */}
+            {conflictModal.concurrencyError && (
+              <div
+                style={{
+                  background: '#fee2e2',
+                  border: '1px solid #ef4444',
+                  color: '#991b1b',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                  marginBottom: '0.75rem'
+                }}
+              >
+                ⚠️ {conflictModal.concurrencyError}
+              </div>
+            )}
+
+            {/* Bulk Controls & Filtering Bar */}
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1rem',
-                padding: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.65rem 0.85rem',
                 background: 'var(--bg-subtle)',
                 borderRadius: 'var(--radius-md)',
-                marginBottom: '1.5rem',
-                fontSize: '0.825rem'
+                marginBottom: '0.85rem',
+                fontSize: '0.825rem',
+                flexWrap: 'wrap',
+                gap: '0.5rem'
               }}
             >
-              <div>
-                <strong>Your Local Draft:</strong>
-                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
-                  <li>Base Revision: {conflictModal.pendingMutation?.baseRevision}</li>
-                  <li>Records Marked: {conflictModal.pendingMutation?.records.length}</li>
-                  <li>Mode: {conflictModal.pendingMutation?.mode}</li>
-                </ul>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span>
+                  Discrepancies: <strong>{conflictModal.diffs?.filter((d) => d.isDiff).length || 0}</strong> /{' '}
+                  {conflictModal.diffs?.length || 0} students
+                </span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={conflictModal.filterConflictingOnly ?? true}
+                    onChange={(e) =>
+                      setConflictModal((prev) => ({ ...prev, filterConflictingOnly: e.target.checked }))
+                    }
+                  />
+                  <span>Show only discrepancies</span>
+                </label>
               </div>
 
-              <div>
-                <strong>Server State:</strong>
-                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
-                  <li>Server Revision: {conflictModal.problemDetails?.serverRevision || serverRevision + 1}</li>
-                  <li>Code: {conflictModal.problemDetails?.code || 'ATTENDANCE_CONCURRENCY_CONFLICT'}</li>
-                </ul>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                  onClick={() => handleChooseAll('server')}
+                  title="Choose server version for all students"
+                >
+                  Accept All Server
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                  onClick={() => handleChooseAll('local')}
+                  title="Choose local draft version for all students"
+                >
+                  Keep All My Draft
+                </button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <button
-                onClick={handleKeepServer}
-                className="btn btn-secondary"
-                style={{ justifyContent: 'center' }}
-              >
-                <span>1. Keep Server Version (Discard Local Edits & Reload)</span>
-              </button>
+            {/* Scrollable Student-by-Student Comparison Table */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: '1rem',
+                maxHeight: '380px'
+              }}
+            >
+              <table className="table" style={{ width: '100%', fontSize: '0.825rem' }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card, #ffffff)', zIndex: 10 }}>
+                  <tr>
+                    <th style={{ width: '22%' }}>Student</th>
+                    <th style={{ width: '25%', background: '#fef3c7' }}>Server Record (Rev {conflictModal.latestServerRevision})</th>
+                    <th style={{ width: '25%', background: '#e0e7ff' }}>Your Local Draft</th>
+                    <th style={{ width: '28%', textAlign: 'center' }}>Chosen Resolution</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(conflictModal.diffs || [])
+                    .filter((d) => (conflictModal.filterConflictingOnly ? d.isDiff : true))
+                    .map((d) => {
+                      return (
+                        <tr
+                          key={d.student_id}
+                          style={{
+                            background: d.isDiff ? (d.chosen === 'server' ? '#fffbeb' : '#eef2ff') : 'transparent',
+                            borderBottom: '1px solid var(--border-color)'
+                          }}
+                        >
+                          <td>
+                            <strong>{d.admission_no}</strong>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{d.calling_name}</div>
+                          </td>
+
+                          {/* Server State */}
+                          <td style={{ background: 'rgba(254, 243, 199, 0.4)' }}>
+                            <span
+                              className={`badge att-status-${d.serverStatus}`}
+                              style={{ textTransform: 'capitalize', fontWeight: 600 }}
+                            >
+                              {d.serverStatus}
+                            </span>
+                            {d.serverRemarks && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                <em>"{d.serverRemarks}"</em>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Local Draft State */}
+                          <td style={{ background: 'rgba(224, 231, 255, 0.4)' }}>
+                            <span
+                              className={`badge att-status-${d.localStatus}`}
+                              style={{ textTransform: 'capitalize', fontWeight: 600 }}
+                            >
+                              {d.localStatus}
+                            </span>
+                            {d.localRemarks && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                <em>"{d.localRemarks}"</em>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Resolution Choice Toggles */}
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStudentChoice(d.student_id, 'server')}
+                                style={{
+                                  padding: '0.35rem 0.65rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: d.chosen === 'server' ? 700 : 400,
+                                  background: d.chosen === 'server' ? '#d97706' : 'transparent',
+                                  color: d.chosen === 'server' ? '#ffffff' : 'inherit',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}
+                                title="Keep server status for this student"
+                              >
+                                Server: {d.serverStatus}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStudentChoice(d.student_id, 'local')}
+                                style={{
+                                  padding: '0.35rem 0.65rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: d.chosen === 'local' ? 700 : 400,
+                                  background: d.chosen === 'local' ? '#4f46e5' : 'transparent',
+                                  color: d.chosen === 'local' ? '#ffffff' : 'inherit',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}
+                                title="Keep your draft status for this student"
+                              >
+                                Draft: {d.localStatus}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom Actions Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={handleKeepServer}
+                  className="btn btn-secondary"
+                  title="Discard local edits and reload latest server register"
+                >
+                  <RotateCcw size={14} />
+                  <span>Discard & Reload Server</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportLocalDraft}
+                  className="btn btn-secondary"
+                  title="Copy local draft JSON to clipboard"
+                >
+                  <Download size={14} />
+                  <span>{copiedDraft ? '✓ Copied Draft JSON!' : 'Export Draft JSON'}</span>
+                </button>
+              </div>
 
               <button
-                onClick={handleReviewAndReapply}
+                type="button"
+                onClick={handleApplyDeliberateResolution}
                 className="btn btn-primary"
-                style={{ justifyContent: 'center' }}
+                disabled={saving}
+                style={{ padding: '0.6rem 1.25rem', fontWeight: 700 }}
               >
-                <span>2. Review & Re-apply (Rebase My Edits on Latest Revision)</span>
-              </button>
-
-              <button
-                onClick={handleExportLocalDraft}
-                className="btn btn-secondary"
-                style={{ justifyContent: 'center' }}
-              >
-                <Download size={14} />
-                <span>{copiedDraft ? '✓ Copied Draft JSON to Clipboard!' : '3. Export Local Draft (Copy JSON Backup)'}</span>
+                <CheckCircle2 size={16} />
+                <span>
+                  {saving
+                    ? 'Submitting Resolution...'
+                    : `Apply Deliberate Choices (Revision ${conflictModal.latestServerRevision ?? (serverRevision + 1)})`}
+                </span>
               </button>
             </div>
           </div>

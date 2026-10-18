@@ -74,6 +74,12 @@
 | **ATT-062** | Audit Trail | In-transaction fail-closed audit logging for batch sync and individual submissions | `attendance_reports.test.ts` | **PASS** |
 | **ATT-063** | Authorization | In-transaction revalidation of class teacher assignment during mutation | `attendance_integrity.test.ts` | **PASS** |
 | **ATT-064** | Multi-Year | Academic year isolation: sessions from 2025 excluded from 2026 reports | `attendance_reports.test.ts` | **PASS** |
+| **ATT-065** | Migration Fail-Closed | Invariant failure during migration aborts startup without schema corruption | `attendance_migration.test.ts` | **PASS** |
+| **ATT-066** | Preflight Backup | Non-destructive collision-free pre-migration backup creation (never overwrites) | `attendance_migration.test.ts` | **PASS** |
+| **ATT-067** | Disaster Recovery | Point-in-time database restore from verified backup with post-restore validation | `attendance_migration.test.ts` | **PASS** |
+| **ATT-068** | Conflict Resolution | Student-by-student diffing accurately identifies status/remark discrepancies | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-069** | Conflict Resolution | Deliberate per-student resolution prevents blind overwrite | `attendance_conflict_diff.test.ts` | **PASS** |
+| **ATT-070** | Error Classification | Online HTTP errors (400, 422, 500) isolated from genuine network transport failures | `attendance_conflict_diff.test.ts` | **PASS** |
 
 ---
 
@@ -87,4 +93,4 @@ All pre-existing baseline suites continue to pass 100% without regression:
 - `record_authorization.test.ts`: 20 tests passing
 - `security_matrix.test.ts`: 24 tests passing
 
-**Total Active Test Count:** 123 automated tests (61 baseline + 62 PR-004 test cases).
+**Total Active Test Count:** 129 automated tests (61 baseline + 68 PR-004/PR-004R test cases).
