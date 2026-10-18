@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
+import { runMigration004 } from './migrations/004_attendance_integrity.js';
 
 export function getDbPath(): string {
   return process.env.DB_PATH || path.join(process.cwd(), 'skoolsys.db');
@@ -12,6 +13,7 @@ let activeDb: DatabaseSync = new DatabaseSync(DB_PATH);
 try {
   activeDb.exec('PRAGMA journal_mode = WAL;');
   activeDb.exec('PRAGMA foreign_keys = ON;');
+  activeDb.exec('PRAGMA busy_timeout = 5000;');
 } catch {
   // Silently ignore PRAGMA setup error if in special mode
 }
@@ -27,6 +29,7 @@ export function switchDatabase(filePath?: string): DatabaseSync {
   try {
     activeDb.exec('PRAGMA journal_mode = WAL;');
     activeDb.exec('PRAGMA foreign_keys = ON;');
+    activeDb.exec('PRAGMA busy_timeout = 5000;');
   } catch {
     // Silently ignore
   }
@@ -213,5 +216,12 @@ export function initDatabase() {
     db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1;');
   } catch {
     // Column already exists
+  }
+
+  // Safe migration 004: Attendance integrity, revisions & receipts
+  try {
+    runMigration004(db);
+  } catch (err) {
+    console.error('Warning: Migration 004 failed during initDatabase:', err);
   }
 }

@@ -16,6 +16,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { api } from '../api/client';
+import { getColomboCivilDate } from '../utils/dateUtils';
 
 interface DashboardProps {
   onNavigate: (tab: string) => void;
@@ -23,10 +24,16 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<{
+    totalStudents: number;
+    classesCount: number;
+    attendanceRate: number | null;
+    presentCount: number;
+    absentCount: number;
+  }>({
     totalStudents: 0,
     classesCount: 0,
-    attendanceRate: 0,
+    attendanceRate: null,
     presentCount: 0,
     absentCount: 0
   });
@@ -42,26 +49,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
+      const today = getColomboCivilDate();
       const [studentsRes, classesRes, dailyRes] = await Promise.all([
         api.getStudents(),
         api.getClasses(),
-        api.getDailyAttendanceReport('2026-10-17') // latest seeded date for rich demo metrics
+        api.getDailyAttendanceReport(today)
       ]);
 
       let totalPresent = 0;
       let totalAbsent = 0;
       let totalEnrolled = studentsRes.count || 0;
+      let recordedClasses = 0;
 
       if (dailyRes.classes) {
         setDailyReport(dailyRes.classes);
         dailyRes.classes.forEach((c: any) => {
-          totalPresent += Number(c.present_count || 0);
-          totalAbsent += Number(c.absent_count || 0);
+          if (c.session_id) {
+            recordedClasses++;
+            totalPresent += Number(c.present_count || 0);
+            totalAbsent += Number(c.absent_count || 0);
+          }
         });
       }
 
       const totalMarked = totalPresent + totalAbsent;
-      const rate = totalMarked > 0 ? Math.round((totalPresent / totalMarked) * 100) : 92;
+      const rate = recordedClasses > 0 && totalMarked > 0
+        ? Math.round((totalPresent / totalMarked) * 100)
+        : null;
 
       setStats({
         totalStudents: totalEnrolled,
@@ -178,16 +192,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <TrendingUp size={24} />
           </div>
           <div style={{ flex: 1 }}>
-            <div className="stat-val">{stats.attendanceRate}%</div>
+            <div className="stat-val" style={{ fontSize: stats.attendanceRate !== null ? undefined : '1.35rem' }}>
+              {stats.attendanceRate !== null ? `${stats.attendanceRate}%` : 'Not Recorded'}
+            </div>
             <div className="stat-label">Today's Attendance Rate</div>
             <div
               className="stat-trend"
               style={{
-                background: stats.attendanceRate >= 80 ? 'var(--present-bg)' : 'var(--late-bg)',
-                color: stats.attendanceRate >= 80 ? 'var(--present)' : 'var(--late)'
+                background: stats.attendanceRate === null
+                  ? 'var(--bg-subtle)'
+                  : stats.attendanceRate >= 80
+                  ? 'var(--present-bg)'
+                  : 'var(--late-bg)',
+                color: stats.attendanceRate === null
+                  ? 'var(--text-muted)'
+                  : stats.attendanceRate >= 80
+                  ? 'var(--present)'
+                  : 'var(--late)'
               }}
             >
-              <span>{stats.presentCount} present • {stats.absentCount} absent</span>
+              <span>
+                {stats.attendanceRate !== null
+                  ? `${stats.presentCount} present • ${stats.absentCount} absent`
+                  : 'No registers submitted yet today'}
+              </span>
             </div>
           </div>
         </div>

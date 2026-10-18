@@ -199,6 +199,11 @@ describe('PR-003: Record-Level Permissions & Scoped Authorization Tests', () => 
     });
 
     it('class teacher can submit daily attendance for assigned Class A (200)', async () => {
+      const sessRes = await server.request(`/api/attendance/session?classId=${fixtures.testClassA.id}&date=2026-10-18`, {
+        headers: { Authorization: `Bearer ${classTeacherToken}` }
+      });
+      const sessData = await sessRes.json();
+
       const res = await server.request('/api/attendance/session', {
         method: 'POST',
         headers: {
@@ -208,7 +213,12 @@ describe('PR-003: Record-Level Permissions & Scoped Authorization Tests', () => 
         body: JSON.stringify({
           classId: fixtures.testClassA.id,
           date: '2026-10-18',
-          records: [{ student_id: fixtures.studentA.id, status: 'present' }]
+          mode: 'submitted',
+          baseRevision: sessData.serverRevision || 0,
+          clientMutationId: '00000000-0000-4000-8000-000000000099',
+          rosterFingerprint: sessData.rosterFingerprint,
+          notes: null,
+          records: [{ student_id: fixtures.studentA.id, status: 'present', remarks: null }]
         })
       });
 

@@ -1,27 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import {
-  CalendarCheck,
-  Calendar,
-  Users,
   CheckCircle2,
   XCircle,
-  Clock,
-  HelpCircle,
   Save,
-  WifiOff,
   AlertTriangle,
   RotateCcw,
-  Sparkles,
   Search,
-  Filter,
-  Check
+  Send,
+  Download,
+  Info
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, HttpError } from '../api/client';
 import {
   cacheClassRoster,
   getCachedClassRoster,
-  queueOfflineAttendance
+  queueOfflineAttendance,
+  OfflineAttendanceMutation,
+  exportMutationJson
 } from '../api/offlineQueue';
+import { getColomboCivilDate } from '../utils/dateUtils';
 
 interface AttendanceProps {
   user: any;
@@ -30,21 +27,32 @@ interface AttendanceProps {
 export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const [selectedDate, setSelectedDate] = useState<string>(getColomboCivilDate());
 
   const [students, setStudents] = useState<any[]>([]);
   const [attendanceMap, setAttendanceMap] = useState<Record<number, { status: string; remarks: string }>>({});
   const [existingSession, setExistingSession] = useState<any | null>(null);
+  const [serverRevision, setServerRevision] = useState<number>(0);
+  const [rosterFingerprint, setRosterFingerprint] = useState<string>('');
+  const [sessionNotes, setSessionNotes] = useState<string>('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterView, setFilterView] = useState<'all' | 'absent' | 'late'>('all');
+  const [filterView, setFilterView] = useState<'all' | 'absent' | 'late' | 'unmarked'>('all');
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine);
+
+  // Concurrency Conflict Modal State
+  const [conflictModal, setConflictModal] = useState<{
+    isOpen: boolean;
+    problemDetails?: any;
+    pendingMutation?: OfflineAttendanceMutation;
+  }>({ isOpen: false });
+
+  const [copiedDraft, setCopiedDraft] = useState(false);
 
   useEffect(() => {
     loadClasses();
@@ -71,7 +79,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       const res = await api.getClasses();
       let availableClasses = res.classes || [];
 
-      // If user is class teacher, prioritize their assigned classes
+      // If user is class teacher, prioritize assigned classes
       if (user.role === 'class_teacher' && user.assignedClassIds?.length > 0) {
         const filtered = availableClasses.filter((c: any) =>
           user.assignedClassIds.includes(c.id)
@@ -94,49 +102,70 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     try {
       setLoading(true);
       setSaveSuccessMsg(null);
+      setErrorMessage(null);
 
-      // Check online or offline
+      const targetClass = classes.find((c) => c.id === classId);
+      const academicYearId = targetClass?.academic_year_id || 1;
+
       if (navigator.onLine) {
         const res = await api.getAttendanceSession(classId, date);
         setExistingSession(res.session);
+        setServerRevision(res.serverRevision || res.session?.revision || 0);
+        setRosterFingerprint(res.rosterFingerprint || '');
+        setSessionNotes(res.session?.notes || '');
         setStudents(res.students || []);
 
-        // Cache roster for offline use
-        cacheClassRoster(classId, res.students || []);
+        // Cache roster in IndexedDB v2 with PII minimization
+        await cacheClassRoster(
+          user.id,
+          academicYearId,
+          classId,
+          date,
+          res.serverRevision || 0,
+          res.rosterFingerprint || '',
+          res.students || [],
+          targetClass?.name
+        );
 
-        // Initialize attendance map
+        // Attendance mapping: UNMARKED BY DEFAULT if no prior record exists!
         const newMap: Record<number, { status: string; remarks: string }> = {};
-        res.students.forEach((st: any) => {
+        (res.students || []).forEach((st: any) => {
           newMap[st.student_id] = {
-            status: st.attendance_status || 'present', // Default to present for rapid roll call
+            status: st.attendance_status || 'unmarked',
             remarks: st.attendance_remarks || ''
           };
         });
         setAttendanceMap(newMap);
       } else {
-        // Offline: Load from IndexedDB cache
+        // Offline: Load from IndexedDB v2 cache
         setIsOfflineMode(true);
-        const cachedRoster = await getCachedClassRoster(classId);
-        if (cachedRoster) {
-          setStudents(cachedRoster);
+        const cached = await getCachedClassRoster(user.id, academicYearId, classId);
+        if (cached) {
+          setStudents(cached.students || []);
+          setServerRevision(cached.serverRevision || 0);
+          setRosterFingerprint(cached.rosterFingerprint || '');
           const newMap: Record<number, { status: string; remarks: string }> = {};
-          cachedRoster.forEach((st: any) => {
+          (cached.students || []).forEach((st: any) => {
             newMap[st.student_id] = {
-              status: 'present',
-              remarks: ''
+              status: st.attendance_status || 'unmarked',
+              remarks: st.attendance_remarks || ''
             };
           });
           setAttendanceMap(newMap);
         } else {
           setStudents([]);
+          setErrorMessage('No offline roster cached for this class. Connect to school network to download roster.');
         }
       }
     } catch (err: any) {
-      console.warn('Network error loading session, trying offline cache:', err);
+      console.warn('Network error loading session, falling back to offline cache:', err);
       setIsOfflineMode(true);
-      const cachedRoster = await getCachedClassRoster(classId);
-      if (cachedRoster) {
-        setStudents(cachedRoster);
+      const targetClass = classes.find((c) => c.id === classId);
+      const cached = await getCachedClassRoster(user.id, targetClass?.academic_year_id || 1, classId);
+      if (cached) {
+        setStudents(cached.students || []);
+        setServerRevision(cached.serverRevision || 0);
+        setRosterFingerprint(cached.rosterFingerprint || '');
       }
     } finally {
       setLoading(false);
@@ -144,13 +173,18 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   };
 
   const handleStatusChange = (studentId: number, status: string) => {
-    setAttendanceMap((prev) => ({
-      ...prev,
-      [studentId]: {
-        ...prev[studentId],
-        status
-      }
-    }));
+    setAttendanceMap((prev) => {
+      const current = prev[studentId]?.status;
+      // Toggle back to unmarked if same status clicked
+      const nextStatus = current === status ? 'unmarked' : status;
+      return {
+        ...prev,
+        [studentId]: {
+          ...prev[studentId],
+          status: nextStatus
+        }
+      };
+    });
   };
 
   const handleRemarksChange = (studentId: number, remarks: string) => {
@@ -174,64 +208,21 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     students.forEach((st: any) => {
       newMap[st.student_id] = {
         status,
-        remarks: prevRemarks(st.student_id)
+        remarks: attendanceMap[st.student_id]?.remarks || ''
       };
     });
     setAttendanceMap(newMap);
   };
 
-  const prevRemarks = (id: number) => attendanceMap[id]?.remarks || '';
-
-  const handleSaveAttendance = async () => {
-    if (!selectedClassId || students.length === 0) return;
-
-    const records = students.map((st) => ({
-      student_id: st.student_id,
-      status: attendanceMap[st.student_id]?.status || 'present',
-      remarks: attendanceMap[st.student_id]?.remarks || ''
-    }));
-
-    const targetClass = classes.find((c) => c.id === selectedClassId);
-
-    try {
-      setSaving(true);
-
-      if (navigator.onLine) {
-        await api.saveAttendanceSession({
-          classId: selectedClassId,
-          date: selectedDate,
-          records
-        });
-        setSaveSuccessMsg(`Daily register for ${selectedDate} recorded successfully!`);
-        setExistingSession({ date: selectedDate });
-      } else {
-        // Offline: save to IndexedDB queue
-        await queueOfflineAttendance(
-          selectedClassId,
-          targetClass?.name || `Class #${selectedClassId}`,
-          selectedDate,
-          records
-        );
-        setSaveSuccessMsg(
-          'Offline Mode: Register safely saved to browser storage and queued for synchronization!'
-        );
-      }
-
-      setTimeout(() => setSaveSuccessMsg(null), 6000);
-    } catch (err: any) {
-      // Fallback to offline queue if server is unreachable
-      await queueOfflineAttendance(
-        selectedClassId,
-        targetClass?.name || `Class #${selectedClassId}`,
-        selectedDate,
-        records
-      );
-      setSaveSuccessMsg(
-        'Server unreachable: Register queued in offline browser storage!'
-      );
-    } finally {
-      setSaving(false);
-    }
+  const handleClearAll = () => {
+    const newMap: Record<number, { status: string; remarks: string }> = {};
+    students.forEach((st: any) => {
+      newMap[st.student_id] = {
+        status: 'unmarked',
+        remarks: attendanceMap[st.student_id]?.remarks || ''
+      };
+    });
+    setAttendanceMap(newMap);
   };
 
   // Real-time Counts
@@ -239,6 +230,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   let countAbsent = 0;
   let countLate = 0;
   let countExcused = 0;
+  let countUnmarked = 0;
 
   students.forEach((st) => {
     const s = attendanceMap[st.student_id]?.status;
@@ -246,16 +238,199 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     else if (s === 'absent') countAbsent++;
     else if (s === 'late') countLate++;
     else if (s === 'excused') countExcused++;
+    else countUnmarked++;
   });
 
   const total = students.length;
-  const attendancePercentage = total > 0 ? Math.round(((countPresent + countLate) / total) * 100) : 0;
+  const isRecorded = existingSession !== null || (total > 0 && countUnmarked < total);
+  const attendanceRate = total > 0 && (countPresent + countLate > 0)
+    ? Math.round(((countPresent + countLate) / total) * 100)
+    : 0;
 
-  // Filter students by search and status tab
+  // Execute Submission (Draft or Final)
+  const handleSaveAttendance = async (mode: 'draft' | 'submitted') => {
+    if (!selectedClassId || students.length === 0) return;
+
+    setErrorMessage(null);
+    setSaveSuccessMsg(null);
+
+    // Validation for final submitted register: 100% of roster must be marked
+    if (mode === 'submitted' && countUnmarked > 0) {
+      setErrorMessage(
+        `Cannot submit final register: ${countUnmarked} student(s) remain unmarked. Please mark all students as Present, Absent, Late, or Excused, or click "Save Draft".`
+      );
+      return;
+    }
+
+    const targetClass = classes.find((c) => c.id === selectedClassId);
+    const academicYearId = targetClass?.academic_year_id || 1;
+
+    // Filter out unmarked students for draft payloads
+    const activeRecords = students
+      .filter((st) => {
+        const s = attendanceMap[st.student_id]?.status;
+        return s && s !== 'unmarked';
+      })
+      .map((st) => ({
+        student_id: st.student_id,
+        status: attendanceMap[st.student_id].status as any,
+        remarks: attendanceMap[st.student_id].remarks || null
+      }));
+
+    const clientMutationId = crypto.randomUUID();
+
+    const mutationPayload: OfflineAttendanceMutation = {
+      clientMutationId,
+      schoolId: 'kcc',
+      userId: user.id,
+      academicYearId,
+      classId: selectedClassId,
+      className: targetClass?.name,
+      date: selectedDate,
+      mode,
+      baseRevision: serverRevision,
+      rosterFingerprint,
+      records: activeRecords,
+      notes: sessionNotes || null,
+      timestamp: new Date().toISOString(),
+      status: 'pending'
+    };
+
+    try {
+      setSaving(true);
+
+      if (navigator.onLine) {
+        const apiPayload = {
+          classId: selectedClassId,
+          date: selectedDate,
+          mode,
+          baseRevision: serverRevision,
+          clientMutationId,
+          rosterFingerprint,
+          notes: sessionNotes || null,
+          records: activeRecords
+        };
+
+        const res = await api.saveAttendanceSession(apiPayload);
+
+        setServerRevision(res.revision);
+        setExistingSession({
+          id: res.sessionId,
+          date: selectedDate,
+          status: mode,
+          revision: res.revision,
+          notes: sessionNotes
+        });
+
+        setSaveSuccessMsg(
+          mode === 'submitted'
+            ? `Finalized attendance register for ${selectedDate} submitted successfully (Revision ${res.revision}).`
+            : `Attendance draft saved successfully (Revision ${res.revision}).`
+        );
+      } else {
+        // Offline: enqueue in IndexedDB v2
+        await queueOfflineAttendance(mutationPayload);
+        setSaveSuccessMsg(
+          `Offline: ${mode === 'submitted' ? 'Final register' : 'Draft'} saved locally on device and queued for sync.`
+        );
+      }
+
+      setTimeout(() => setSaveSuccessMsg(null), 6000);
+    } catch (err: any) {
+      if (err instanceof HttpError && err.status === 409) {
+        // 409 Concurrency Conflict or Fingerprint Mismatch -> Open Side-by-Side Modal
+        setConflictModal({
+          isOpen: true,
+          problemDetails: err.problemDetails,
+          pendingMutation: mutationPayload
+        });
+      } else if (err instanceof HttpError && (err.status === 401 || err.status === 403 || err.status === 422)) {
+        setErrorMessage(`Server Error (${err.code}): ${err.message}`);
+      } else {
+        // Network failure -> queue offline
+        console.warn('Network error during save, queueing offline mutation:', err);
+        await queueOfflineAttendance(mutationPayload);
+        setIsOfflineMode(true);
+        setSaveSuccessMsg('Connection lost: Register safely queued in offline browser storage.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Conflict Resolution Handlers
+  const handleKeepServer = async () => {
+    setConflictModal({ isOpen: false });
+    if (selectedClassId && selectedDate) {
+      await loadAttendanceSession(selectedClassId, selectedDate);
+    }
+    setSaveSuccessMsg('Reloaded latest attendance register from server.');
+  };
+
+  const handleReviewAndReapply = async () => {
+    if (!selectedClassId || !selectedDate) return;
+    try {
+      setSaving(true);
+      setConflictModal({ isOpen: false });
+
+      // Fetch fresh server revision and roster fingerprint
+      const latest = await api.getAttendanceSession(selectedClassId, selectedDate);
+      setServerRevision(latest.serverRevision);
+      setRosterFingerprint(latest.rosterFingerprint);
+
+      // Re-apply local records with new base revision
+      const activeRecords = students
+        .filter((st) => {
+          const s = attendanceMap[st.student_id]?.status;
+          return s && s !== 'unmarked';
+        })
+        .map((st) => ({
+          student_id: st.student_id,
+          status: attendanceMap[st.student_id].status as any,
+          remarks: attendanceMap[st.student_id].remarks || null
+        }));
+
+      const newMutationId = crypto.randomUUID();
+      const res = await api.saveAttendanceSession({
+        classId: selectedClassId,
+        date: selectedDate,
+        mode: existingSession?.status === 'submitted' ? 'submitted' : 'draft',
+        baseRevision: latest.serverRevision,
+        clientMutationId: newMutationId,
+        rosterFingerprint: latest.rosterFingerprint,
+        notes: sessionNotes || null,
+        records: activeRecords
+      });
+
+      setServerRevision(res.revision);
+      setExistingSession({
+        id: res.sessionId,
+        date: selectedDate,
+        status: res.mode,
+        revision: res.revision
+      });
+      setSaveSuccessMsg(`Reapplied local changes successfully on top of Revision ${res.revision}!`);
+    } catch (err: any) {
+      setErrorMessage(`Failed to re-apply changes: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportLocalDraft = () => {
+    if (!conflictModal.pendingMutation) return;
+    const jsonStr = exportMutationJson(conflictModal.pendingMutation);
+    navigator.clipboard.writeText(jsonStr);
+    setCopiedDraft(true);
+    setTimeout(() => setCopiedDraft(false), 3000);
+  };
+
+  // Filter students by search query and status tab
   const filteredStudents = students.filter((st) => {
-    const s = attendanceMap[st.student_id]?.status || 'present';
+    const s = attendanceMap[st.student_id]?.status || 'unmarked';
     if (filterView === 'absent' && s !== 'absent') return false;
     if (filterView === 'late' && s !== 'late') return false;
+    if (filterView === 'unmarked' && s !== 'unmarked') return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -267,9 +442,11 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     );
   });
 
+  const isSubmittedState = existingSession?.status === 'submitted';
+
   return (
     <div>
-      {/* Header */}
+      {/* Header with Title and Dual Action Buttons */}
       <div
         style={{
           display: 'flex',
@@ -281,22 +458,47 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         }}
       >
         <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Daily Class Attendance Register</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            Touch-friendly 44px segmented roll call with duplicate prevention and offline sync.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0 }}>Daily Class Attendance Register</h2>
+            {isOfflineMode && (
+              <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', fontSize: '0.75rem' }}>
+                Working Offline (IndexedDB v2)
+              </span>
+            )}
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Touch-friendly roll call with atomic revision concurrency, date boundaries, and offline sync.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.65rem' }}>
+        <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
+          {/* Draft Button: Allows partial records */}
           <button
-            onClick={handleSaveAttendance}
-            disabled={saving || students.length === 0}
-            className="btn btn-primary"
-            style={{ minWidth: '160px' }}
-            aria-label="Submit or update attendance register"
+            onClick={() => handleSaveAttendance('draft')}
+            disabled={saving || students.length === 0 || isSubmittedState}
+            className="btn btn-secondary"
+            title={isSubmittedState ? 'Submitted registers cannot be downgraded to draft' : 'Save partial roll-call progress'}
           >
             <Save size={16} />
-            <span>{saving ? 'Saving...' : existingSession ? 'Update Register' : 'Submit Register'}</span>
+            <span>{saving ? 'Saving...' : 'Save Draft'}</span>
+          </button>
+
+          {/* Final Submit Button: Requires 100% complete records */}
+          <button
+            onClick={() => handleSaveAttendance('submitted')}
+            disabled={saving || students.length === 0}
+            className="btn btn-primary"
+            style={{ minWidth: '170px' }}
+            title="Submit official finalized attendance register"
+          >
+            <Send size={16} />
+            <span>
+              {saving
+                ? 'Submitting...'
+                : isSubmittedState
+                ? `Update Register (Rev ${serverRevision})`
+                : 'Submit Final Register'}
+            </span>
           </button>
         </div>
       </div>
@@ -304,7 +506,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       {/* Class & Date Selector Card */}
       <div className="card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ minWidth: '220px', flex: '1 1 220px' }}>
+          <div style={{ minWidth: '240px', flex: '1 1 240px' }}>
             <label className="form-label">Select Class (Grade 6–13)</label>
             <select
               className="form-select"
@@ -320,7 +522,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           </div>
 
           <div style={{ minWidth: '180px' }}>
-            <label className="form-label">Register Date</label>
+            <label className="form-label">Register Date (Asia/Colombo)</label>
             <input
               type="date"
               className="form-input"
@@ -347,10 +549,19 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
               <XCircle size={14} style={{ color: 'var(--absent)' }} />
               <span>Mark All Absent</span>
             </button>
+
+            <button
+              onClick={handleClearAll}
+              className="btn btn-secondary btn-sm"
+              title="Reset all students to Unmarked"
+            >
+              <RotateCcw size={14} />
+              <span>Clear to Unmarked</span>
+            </button>
           </div>
         </div>
 
-        {/* Status Feedback Messages */}
+        {/* Feedback / Alert Banners */}
         {saveSuccessMsg && (
           <div
             style={{
@@ -371,32 +582,79 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           </div>
         )}
 
-        {existingSession && (
+        {errorMessage && (
           <div
             style={{
               marginTop: '1rem',
-              padding: '0.65rem 1rem',
-              background: 'var(--primary-light)',
-              color: 'var(--primary)',
+              padding: '0.85rem 1rem',
+              background: 'var(--absent-bg)',
+              color: 'var(--absent)',
+              border: '1px solid var(--absent-border)',
               borderRadius: 'var(--radius-md)',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '0.825rem',
-              border: '1px solid rgba(67, 56, 202, 0.2)'
+              gap: '0.6rem',
+              fontSize: '0.875rem'
             }}
           >
-            <span>
-              ✓ An attendance register has already been submitted for this class on {selectedDate}. Any edits will update the official record.
-            </span>
-            <span className="badge" style={{ background: 'var(--primary)', color: 'white', fontSize: '0.725rem' }}>
-              Submitted
-            </span>
+            <AlertTriangle size={18} />
+            <strong>{errorMessage}</strong>
           </div>
         )}
+
+        {/* Truthful Session Status Indicator */}
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem 1rem',
+            background: isSubmittedState
+              ? 'rgba(5, 150, 105, 0.08)'
+              : existingSession
+              ? 'rgba(217, 119, 6, 0.08)'
+              : 'var(--bg-subtle)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.825rem',
+            border: `1px solid ${
+              isSubmittedState
+                ? 'var(--present-border)'
+                : existingSession
+                ? 'rgba(217, 119, 6, 0.25)'
+                : 'var(--border-color)'
+            }`
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Info size={16} />
+            <span>
+              {isSubmittedState
+                ? `Official Register Finalized for ${selectedDate} (Revision ${serverRevision}). Submitted by ${existingSession?.taken_by_name || 'Class Teacher'}.`
+                : existingSession
+                ? `Draft Attendance in Progress for ${selectedDate} (Revision ${serverRevision}). ${countUnmarked} student(s) unmarked.`
+                : `No attendance record exists for ${selectedDate}. Select students and submit final register or draft.`}
+            </span>
+          </div>
+
+          <span
+            className="badge"
+            style={{
+              background: isSubmittedState
+                ? 'var(--present)'
+                : existingSession
+                ? 'var(--late)'
+                : 'var(--text-muted)',
+              color: 'white',
+              fontSize: '0.725rem'
+            }}
+          >
+            {isSubmittedState ? `Final (Rev ${serverRevision})` : existingSession ? `Draft (Rev ${serverRevision})` : 'Not Recorded'}
+          </span>
+        </div>
       </div>
 
-      {/* Live Attendance Summary Banner */}
+      {/* Live Roll Summary & Metrics Banner */}
       <div
         className="card"
         style={{
@@ -412,7 +670,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       >
         <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Class Roster:</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Class Enrolment:</span>
             <strong style={{ marginLeft: 6, fontSize: '0.95rem' }}>{total} Students</strong>
           </div>
 
@@ -429,20 +687,23 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             <span className="badge badge-excused" style={{ fontSize: '0.8rem' }}>
               Excused: {countExcused}
             </span>
+            <span className="badge badge-unmarked" style={{ fontSize: '0.8rem' }}>
+              Unmarked: {countUnmarked}
+            </span>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <span style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>Roll Attendance:</span>
+          <span style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>Truthful Attendance:</span>
           <span
             style={{
               fontFamily: 'var(--font-display)',
               fontSize: '1.4rem',
               fontWeight: 800,
-              color: attendancePercentage >= 80 ? 'var(--present)' : 'var(--absent)'
+              color: !isRecorded ? 'var(--text-muted)' : attendanceRate >= 80 ? 'var(--present)' : 'var(--absent)'
             }}
           >
-            {attendancePercentage}%
+            {!isRecorded ? '—' : `${attendanceRate}%`}
           </span>
         </div>
       </div>
@@ -479,7 +740,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           <button
             onClick={() => setFilterView('all')}
             className={`btn btn-sm ${filterView === 'all' ? 'btn-primary' : 'btn-secondary'}`}
@@ -487,10 +748,16 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             All Students ({students.length})
           </button>
           <button
+            onClick={() => setFilterView('unmarked')}
+            className={`btn btn-sm ${filterView === 'unmarked' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            Unmarked ({countUnmarked})
+          </button>
+          <button
             onClick={() => setFilterView('absent')}
             className={`btn btn-sm ${filterView === 'absent' ? 'btn-danger' : 'btn-secondary'}`}
           >
-            Absentees Only ({countAbsent})
+            Absentees ({countAbsent})
           </button>
           <button
             onClick={() => setFilterView('late')}
@@ -513,7 +780,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
               <tr>
                 <th style={{ width: 65, textAlign: 'center' }}>Roll #</th>
                 <th>Admission & Student Name</th>
-                <th style={{ width: 320, textAlign: 'center' }}>Attendance Status (Touch / Tap)</th>
+                <th style={{ width: 340, textAlign: 'center' }}>Attendance Status (Touch / Tap)</th>
                 <th>Remarks & Quick Reason</th>
               </tr>
             </thead>
@@ -535,7 +802,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 </tr>
               ) : (
                 filteredStudents.map((st) => {
-                  const currentStatus = attendanceMap[st.student_id]?.status || 'present';
+                  const currentStatus = attendanceMap[st.student_id]?.status || 'unmarked';
                   const currentRemark = attendanceMap[st.student_id]?.remarks || '';
 
                   return (
@@ -570,13 +837,22 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                                   ? 'var(--absent)'
                                   : currentStatus === 'late'
                                   ? 'var(--late)'
-                                  : 'var(--excused)'
+                                  : currentStatus === 'excused'
+                                  ? 'var(--excused)'
+                                  : '#64748b'
                             }}
                           >
                             {st.calling_name?.charAt(0) || 'S'}
                           </div>
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: '0.925rem' }}>{st.full_name}</div>
+                            <div style={{ fontWeight: 600, fontSize: '0.925rem' }}>
+                              {st.full_name}
+                              {st.is_currently_enrolled === 0 && (
+                                <span className="badge badge-unmarked" style={{ marginLeft: 6, fontSize: '0.65rem' }}>
+                                  Transferred (Historical)
+                                </span>
+                              )}
+                            </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                               {st.admission_no} • {st.calling_name}
                             </div>
@@ -585,7 +861,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                       </td>
 
                       <td style={{ textAlign: 'center' }}>
-                        {/* 4-Way Large Touch Segmented Control (Min 44px Touch Target) */}
+                        {/* 5-Way Touch Segmented Control (Min 44px Touch Target) */}
                         <div className="attendance-btn-group" style={{ margin: '0 auto' }}>
                           <button
                             type="button"
@@ -640,7 +916,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                               backgroundColor: currentStatus === 'absent' ? 'var(--absent-bg)' : 'transparent',
                               borderColor: currentStatus === 'absent' ? 'var(--absent-border)' : undefined
                             }}
-                            placeholder={currentStatus === 'absent' ? 'Reason for absence...' : 'Optional notes...'}
+                            placeholder={currentStatus === 'absent' ? 'Reason for absence...' : 'Optional remarks...'}
                             value={currentRemark}
                             onChange={(e) => handleRemarksChange(st.student_id, e.target.value)}
                           />
@@ -648,7 +924,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                           {/* Quick Reason Chips for Absentees / Late */}
                           {(currentStatus === 'absent' || currentStatus === 'late' || currentStatus === 'excused') && (
                             <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                              {['Sick Leave', 'Medical', 'Transport', 'Family Event', 'Duty'].map((tag) => (
+                              {['Medical', 'Sick Leave', 'Transport', 'Family Event', 'Official Duty'].map((tag) => (
                                 <button
                                   key={tag}
                                   type="button"
@@ -679,6 +955,102 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           </table>
         </div>
       </div>
+
+      {/* Side-by-Side Conflict Resolution Modal */}
+      {conflictModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: '620px',
+              width: '100%',
+              padding: '1.75rem',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+              border: '2px solid #f59e0b'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <AlertTriangle size={24} color="#d97706" />
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#92400e' }}>
+                Concurrency Conflict Detected (Revision Mismatch)
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+              This attendance register was updated on the school server by another authorized user while you were editing.
+              To guarantee attendance integrity and prevent accidental data loss, blind overwrite is prohibited.
+            </p>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '1rem',
+                padding: '1rem',
+                background: 'var(--bg-subtle)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: '1.5rem',
+                fontSize: '0.825rem'
+              }}
+            >
+              <div>
+                <strong>Your Local Draft:</strong>
+                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+                  <li>Base Revision: {conflictModal.pendingMutation?.baseRevision}</li>
+                  <li>Records Marked: {conflictModal.pendingMutation?.records.length}</li>
+                  <li>Mode: {conflictModal.pendingMutation?.mode}</li>
+                </ul>
+              </div>
+
+              <div>
+                <strong>Server State:</strong>
+                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+                  <li>Server Revision: {conflictModal.problemDetails?.serverRevision || serverRevision + 1}</li>
+                  <li>Code: {conflictModal.problemDetails?.code || 'ATTENDANCE_CONCURRENCY_CONFLICT'}</li>
+                </ul>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <button
+                onClick={handleKeepServer}
+                className="btn btn-secondary"
+                style={{ justifyContent: 'center' }}
+              >
+                <span>1. Keep Server Version (Discard Local Edits & Reload)</span>
+              </button>
+
+              <button
+                onClick={handleReviewAndReapply}
+                className="btn btn-primary"
+                style={{ justifyContent: 'center' }}
+              >
+                <span>2. Review & Re-apply (Rebase My Edits on Latest Revision)</span>
+              </button>
+
+              <button
+                onClick={handleExportLocalDraft}
+                className="btn btn-secondary"
+                style={{ justifyContent: 'center' }}
+              >
+                <Download size={14} />
+                <span>{copiedDraft ? '✓ Copied Draft JSON to Clipboard!' : '3. Export Local Draft (Copy JSON Backup)'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

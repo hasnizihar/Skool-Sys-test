@@ -1,16 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { WifiOff, Wifi, RefreshCw } from 'lucide-react';
-import { getPendingAttendanceQueue, syncPendingQueue, OfflineAttendanceItem } from '../api/offlineQueue';
-import { getAuthToken } from '../api/client';
+import { WifiOff, Wifi, RefreshCw, AlertTriangle, AlertCircle } from 'lucide-react';
+import {
+  getPendingAttendanceQueue,
+  syncPendingQueue,
+  OfflineAttendanceMutation
+} from '../api/offlineQueue';
+import { getAuthToken, getCurrentUser } from '../api/client';
 
 export const OfflineBanner: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceItem[]>([]);
+  const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceMutation[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncMsg, setLastSyncMsg] = useState<string | null>(null);
 
+  const currentUser = getCurrentUser();
+
   const checkQueue = async () => {
-    const queue = await getPendingAttendanceQueue();
+    if (!currentUser?.id) {
+      setPendingQueue([]);
+      return;
+    }
+    const queue = await getPendingAttendanceQueue(currentUser.id);
     setPendingQueue(queue);
   };
 
@@ -32,21 +42,21 @@ export const OfflineBanner: React.FC = () => {
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
-  }, []);
+  }, [currentUser?.id]);
 
   const handleAutoSync = async () => {
     const token = getAuthToken();
-    if (!token) return;
+    if (!token || !currentUser?.id) return;
     try {
       setIsSyncing(true);
-      const res = await syncPendingQueue(token);
+      const res = await syncPendingQueue(token, currentUser.id);
       if (res.synced > 0) {
-        setLastSyncMsg(`Synchronized ${res.synced} offline registers!`);
+        setLastSyncMsg(`Synchronized ${res.synced} offline register(s)!`);
         setTimeout(() => setLastSyncMsg(null), 5000);
       }
       checkQueue();
     } catch {
-      // Keep in queue
+      // Keep in queue for retry
     } finally {
       setIsSyncing(false);
     }
@@ -54,15 +64,18 @@ export const OfflineBanner: React.FC = () => {
 
   const handleManualSync = async () => {
     const token = getAuthToken();
-    if (!token) {
-      alert('Please log in to synchronize offline data.');
+    if (!token || !currentUser?.id) {
+      alert('Please log in to synchronize offline attendance.');
       return;
     }
     try {
       setIsSyncing(true);
-      const res = await syncPendingQueue(token);
-      setLastSyncMsg(`Synchronized ${res.synced} records (${res.failed} errors).`);
-      setTimeout(() => setLastSyncMsg(null), 5000);
+      const res = await syncPendingQueue(token, currentUser.id);
+      let msg = `Sync complete: ${res.synced} applied`;
+      if (res.conflicted > 0) msg += `, ${res.conflicted} conflicted (manual review required)`;
+      if (res.rejected > 0) msg += `, ${res.rejected} rejected`;
+      setLastSyncMsg(msg);
+      setTimeout(() => setLastSyncMsg(null), 6000);
       checkQueue();
     } catch (err: any) {
       alert(`Sync failed: ${err.message}`);
@@ -71,22 +84,51 @@ export const OfflineBanner: React.FC = () => {
     }
   };
 
+  if (!currentUser) return null;
+
+  const pendingCount = pendingQueue.filter((i) => i.status === 'pending').length;
+  const conflictedCount = pendingQueue.filter((i) => i.status === 'conflicted').length;
+  const rejectedCount = pendingQueue.filter((i) => i.status === 'rejected').length;
+
   if (isOnline && pendingQueue.length === 0 && !lastSyncMsg) {
     return null;
   }
 
+  const isConflictState = conflictedCount > 0;
+  const isRejectedState = rejectedCount > 0;
+
   return (
-    <div className={`offline-banner ${isOnline && pendingQueue.length === 0 ? 'synced' : ''}`}>
+    <div
+      className={`offline-banner ${isOnline && pendingQueue.length === 0 ? 'synced' : ''}`}
+      style={{
+        background: isConflictState ? '#fef3c7' : isRejectedState ? '#fee2e2' : undefined,
+        color: isConflictState ? '#92400e' : isRejectedState ? '#991b1b' : undefined,
+        borderBottom: isConflictState ? '1px solid #f59e0b' : isRejectedState ? '1px solid #ef4444' : undefined
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-        {!isOnline ? <WifiOff size={18} /> : <Wifi size={18} />}
+        {!isOnline ? (
+          <WifiOff size={18} />
+        ) : isConflictState ? (
+          <AlertTriangle size={18} color="#d97706" />
+        ) : isRejectedState ? (
+          <AlertCircle size={18} color="#dc2626" />
+        ) : (
+          <Wifi size={18} />
+        )}
+
         <span>
           {!isOnline
-            ? `Offline Mode Active — ${pendingQueue.length} attendance session(s) safely queued in browser storage.`
-            : lastSyncMsg || `Online — ${pendingQueue.length} pending register(s) ready to sync.`}
+            ? `Offline Mode Active — ${pendingQueue.length} attendance register(s) safely stored on device for ${currentUser.username}.`
+            : isConflictState
+            ? `⚠️ Concurrency Conflict: ${conflictedCount} register(s) modified on server. Please resolve in the Attendance Register view.`
+            : isRejectedState
+            ? `❌ Submission Rejected: ${rejectedCount} register(s) failed server authorization or academic-year validation.`
+            : lastSyncMsg || `Online — ${pendingCount} pending register(s) ready to sync.`}
         </span>
       </div>
 
-      {pendingQueue.length > 0 && isOnline && (
+      {pendingCount > 0 && isOnline && (
         <button
           onClick={handleManualSync}
           disabled={isSyncing}
@@ -94,7 +136,7 @@ export const OfflineBanner: React.FC = () => {
           style={{ background: 'white', color: '#1e293b' }}
         >
           <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-          {isSyncing ? 'Syncing...' : `Sync Now (${pendingQueue.length})`}
+          {isSyncing ? 'Syncing...' : `Sync Now (${pendingCount})`}
         </button>
       )}
     </div>

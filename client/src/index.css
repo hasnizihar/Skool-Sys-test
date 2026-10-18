@@ -806,6 +806,12 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
 }
 
+.att-btn.unmarked.active {
+  background-color: #64748b;
+  color: white;
+  box-shadow: 0 2px 6px rgba(100, 116, 139, 0.35);
+}
+
 /* Status Badges */
 .badge {
   display: inline-flex;
@@ -816,6 +822,12 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1;
+}
+
+.badge-unmarked {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1px dashed var(--border-color);
 }
 
 .badge-present {

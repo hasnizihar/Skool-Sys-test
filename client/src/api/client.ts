@@ -22,6 +22,20 @@ export function getCurrentUser(): any | null {
   return raw ? JSON.parse(raw) : null;
 }
 
+export class HttpError extends Error {
+  status: number;
+  code: string;
+  problemDetails?: any;
+
+  constructor(status: number, message: string, code: string = 'UNKNOWN_ERROR', problemDetails?: any) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+    this.code = code;
+    this.problemDetails = problemDetails;
+  }
+}
+
 export async function apiFetch<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers(options.headers || {});
@@ -42,13 +56,15 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
   if (response.status === 401) {
     clearAuthSession();
     window.dispatchEvent(new CustomEvent('auth-invalid'));
-    throw new Error('Session expired or unauthorized. Please log in again.');
+    throw new HttpError(401, 'Session expired or unauthorized. Please log in again.', 'UNAUTHENTICATED_SESSION');
   }
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.error || `Request failed with status ${response.status}`);
+    const errorMsg = data.detail || data.error || `Request failed with status ${response.status}`;
+    const errorCode = data.code || `HTTP_${response.status}`;
+    throw new HttpError(response.status, errorMsg, errorCode, data);
   }
 
   return data as T;

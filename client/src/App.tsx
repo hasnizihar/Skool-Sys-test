@@ -11,6 +11,7 @@ import { AttendanceReports } from './pages/AttendanceReports';
 import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
+import { getUnsyncedCountForUser, clearCachedRostersForUser } from './api/offlineQueue';
 
 const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
 
@@ -71,7 +72,21 @@ export function App() {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (user?.id) {
+      try {
+        const unsynced = await getUnsyncedCountForUser(user.id);
+        if (unsynced > 0) {
+          const proceed = window.confirm(
+            `Notice: You have ${unsynced} unsynced attendance register(s) stored locally on this device.\n\nThey will be safely retained on this computer, but will not sync to the school server until you log in again.\n\nDo you wish to log out now?`
+          );
+          if (!proceed) return;
+        }
+        await clearCachedRostersForUser(user.id);
+      } catch (err) {
+        console.warn('Error during logout offline cleanup:', err);
+      }
+    }
     clearAuthSession();
     setUser(null);
     setCurrentTab('dashboard');
