@@ -232,7 +232,7 @@ router.get('/backup', (req, res) => {
   res.json(exportPayload);
 });
 
-// Restore System Backup (CONTAINMENT GUARD: Disabled for data safety until transactional restore in PR-004)
+// Restore System Backup (CONTAINMENT GUARD: Disabled for data safety; live transactional restore scheduled for PR-006)
 router.post('/restore', (req, res) => {
   logAudit(
     req.user!.id,
@@ -245,9 +245,9 @@ router.post('/restore', (req, res) => {
   );
 
   res.status(503).json({
-    error: 'Database restore is temporarily disabled for data safety until transactional atomic recovery is implemented in PR-004.',
+    error: 'Database restore is disabled during live operations. Live atomic transactional recovery is scheduled for PR-006. Restore must be performed strictly during offline maintenance with server process and all database connections shut down.',
     status: 'disabled',
-    safety_notice: 'Destructive non-transactional restore has been blocked to prevent data loss on foreign key constraint failures.'
+    safety_notice: 'Destructive live restore is blocked to prevent database corruption. Use verified offline backup utilities under controlled maintenance.'
   });
 });
 

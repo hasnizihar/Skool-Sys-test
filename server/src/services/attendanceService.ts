@@ -165,42 +165,10 @@ export function processAttendanceSubmission(
       );
     }
 
-    // 5. Query canonical eligible roster (Active, enrolled students in this class and year)
-    const enrolledStudents = db.prepare(`
-      SELECT s.id, s.admission_no, s.full_name, s.status as student_status, e.roll_number
-      FROM enrollments e
-      JOIN students s ON e.student_id = s.id
-      WHERE e.class_id = ? AND e.academic_year_id = ? AND e.status = 'enrolled' AND s.status = 'Active'
-      ORDER BY s.id ASC
-    `).all(payload.classId, academicYearId) as Array<{
-      id: number;
-      admission_no: string;
-      full_name: string;
-      student_status: string;
-      roll_number: number | null;
-    }>;
-
-    // 6. Server-owned canonical roster fingerprint check
-    const serverFingerprint = computeServerRosterFingerprint(
-      payload.classId,
-      academicYearId,
-      payload.date,
-      enrolledStudents
-    );
-
-    if (payload.rosterFingerprint !== serverFingerprint) {
-      throw new AttendanceServiceError(
-        createProblemDetails(
-          409,
-          'ROSTER_FINGERPRINT_MISMATCH',
-          'Roster Fingerprint Mismatch',
-          'The class roster was modified (students added, deactivated, or transferred) since your offline snapshot was captured. Please refresh the roster.',
-          '/api/attendance/session'
-        )
-      );
-    }
-
-    // 7. Atomic Idempotency Check
+    // 5. Atomic Idempotency & Replay Check
+    // Evaluated BEFORE current-roster fingerprint checks:
+    // If this mutation was already successfully committed, a client retry (e.g. after network drop)
+    // must return 'replayed' without failing on subsequent roster membership or fingerprint changes.
     const existingReceipt = db.prepare(
       'SELECT client_mutation_id, user_id, payload_hash, resulting_revision FROM attendance_sync_receipts WHERE client_mutation_id = ?'
     ).get(payload.clientMutationId) as {
@@ -239,8 +207,8 @@ export function processAttendanceSubmission(
 
       // Identical payload replayed by same user: return prior success without re-executing
       const currentSession = db.prepare(
-        'SELECT id FROM attendance_sessions WHERE class_id = ? AND date = ?'
-      ).get(payload.classId, payload.date) as { id: number } | undefined;
+        'SELECT id, status FROM attendance_sessions WHERE class_id = ? AND date = ?'
+      ).get(payload.classId, payload.date) as { id: number; status: string } | undefined;
 
       db.exec('COMMIT;');
 
@@ -251,11 +219,46 @@ export function processAttendanceSubmission(
         revision: existingReceipt.resulting_revision,
         classId: payload.classId,
         date: payload.date,
-        mode: payload.mode,
+        mode: (currentSession?.status as any) || payload.mode,
         recordsCount: payload.records.length,
         clientMutationId: payload.clientMutationId,
         message: 'Mutation already successfully processed (Idempotent Replay).'
       };
+    }
+
+    // 6. Query canonical eligible roster (Active, enrolled students in this class and year)
+    const enrolledStudents = db.prepare(`
+      SELECT s.id, s.admission_no, s.full_name, s.status as student_status, e.roll_number
+      FROM enrollments e
+      JOIN students s ON e.student_id = s.id
+      WHERE e.class_id = ? AND e.academic_year_id = ? AND e.status = 'enrolled' AND s.status = 'Active'
+      ORDER BY s.id ASC
+    `).all(payload.classId, academicYearId) as Array<{
+      id: number;
+      admission_no: string;
+      full_name: string;
+      student_status: string;
+      roll_number: number | null;
+    }>;
+
+    // 7. Server-owned canonical roster fingerprint check
+    const serverFingerprint = computeServerRosterFingerprint(
+      payload.classId,
+      academicYearId,
+      payload.date,
+      enrolledStudents
+    );
+
+    if (payload.rosterFingerprint !== serverFingerprint) {
+      throw new AttendanceServiceError(
+        createProblemDetails(
+          409,
+          'ROSTER_FINGERPRINT_MISMATCH',
+          'Roster Fingerprint Mismatch',
+          'The class roster was modified (students added, deactivated, or transferred) since your offline snapshot was captured. Please refresh the roster.',
+          '/api/attendance/session'
+        )
+      );
     }
 
     // 8. Roster Boundary & Enrolment Verification

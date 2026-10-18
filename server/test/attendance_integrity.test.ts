@@ -273,6 +273,69 @@ describe('PR-004 Stage 3: Attendance Integrity & Atomic Submission Tests (ATT-00
     assert.strictEqual(sessions.count, 1);
   });
 
+  // ATT-008B (PR-004S): Idempotent replay succeeds even after subsequent student enrollment changes roster fingerprint
+  it('ATT-008B (PR-004S): replays committed mutation idempotently even after subsequent student enrollment changes roster fingerprint', () => {
+    const date = '2026-03-07';
+    const oldFp = getValidFingerprint(fixture.testClassA.id, 1, date);
+    const mutationId = crypto.randomUUID();
+
+    const payload = {
+      classId: fixture.testClassA.id,
+      date,
+      mode: 'submitted' as const,
+      baseRevision: 0,
+      clientMutationId: mutationId,
+      rosterFingerprint: oldFp,
+      notes: 'Initial register taken before student transfer',
+      records: [{ student_id: fixture.studentA.id, status: 'present' as const, remarks: null }]
+    };
+
+    // 1. First submission commits successfully
+    const firstResult = processAttendanceSubmission(db, fixture.classTeacher, payload);
+    assert.strictEqual(firstResult.status, 'applied');
+    assert.strictEqual(firstResult.revision, 1);
+
+    // 2. Intervening event: A new student is admitted to Class A
+    const newStudentResult = db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone, status)
+      VALUES ('KCC-2026-NEW99', 'New Admitted Pupil', 'Pupil', '2010-05-15', 'Male', 'Guardian Name', 'Father', '0771234567', 'Active')
+    `).run();
+    const newStudentId = Number(newStudentResult.lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status)
+      VALUES (?, ?, 1, 99, 'enrolled')
+    `).run(newStudentId, fixture.testClassA.id);
+
+    // 3. Verify server fingerprint has genuinely changed due to new enrollment
+    const newServerFp = getValidFingerprint(fixture.testClassA.id, 1, date);
+    assert.notStrictEqual(newServerFp, oldFp);
+
+    // 4. Exact retry of committed mutation with OLD fingerprint must succeed with 'replayed' (NOT 409)
+    const replayedResult = processAttendanceSubmission(db, fixture.classTeacher, payload);
+    assert.strictEqual(replayedResult.status, 'replayed');
+    assert.strictEqual(replayedResult.revision, 1);
+    assert.strictEqual(replayedResult.sessionId, firstResult.sessionId);
+
+    // 5. Conversely, a NEW mutation with the old fingerprint must still be rejected with 409
+    const newPayload = {
+      ...payload,
+      clientMutationId: crypto.randomUUID(),
+      rosterFingerprint: oldFp // Stale fingerprint on new write
+    };
+    assert.throws(
+      () => {
+        processAttendanceSubmission(db, fixture.classTeacher, newPayload);
+      },
+      (err: any) => {
+        assert(err instanceof AttendanceServiceError);
+        assert.strictEqual(err.problemDetails.status, 409);
+        assert.strictEqual(err.problemDetails.code, 'ROSTER_FINGERPRINT_MISMATCH');
+        return true;
+      }
+    );
+  });
+
   // ATT-009: Idempotency key reuse with differing payload rejected with 409
   it('ATT-009: rejects mutation ID reuse with altered payload with 409 IDEMPOTENCY_KEY_REUSE', () => {
     const date = '2026-03-08';

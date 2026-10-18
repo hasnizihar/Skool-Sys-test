@@ -19,18 +19,10 @@ import {
   exportMutationJson
 } from '../api/offlineQueue';
 import { getColomboCivilDate } from '../utils/dateUtils';
-
-export interface ConflictStudentDiff {
-  student_id: number;
-  admission_no: string;
-  calling_name: string;
-  localStatus: string;
-  localRemarks: string;
-  serverStatus: string;
-  serverRemarks: string;
-  isDiff: boolean;
-  chosen: 'local' | 'server';
-}
+import {
+  ConflictStudentDiff,
+  buildStudentDiffList
+} from '../utils/conflictDiffUtils';
 
 interface AttendanceProps {
   user: any;
@@ -394,32 +386,13 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       setLoading(true);
       const latest = await api.getAttendanceSession(selectedClassId, selectedDate);
       const serverRecords = latest.records || [];
-      const serverMap = new Map<number, any>();
-      serverRecords.forEach((r: any) => serverMap.set(r.student_id, r));
 
-      const diffList: ConflictStudentDiff[] = students.map((st) => {
-        const localRec = pendingMutation.records.find((r) => r.student_id === st.student_id);
-        const serverRec = serverMap.get(st.student_id);
-
-        const localStatus = localRec?.status || attendanceMap[st.student_id]?.status || 'unmarked';
-        const localRemarks = localRec?.remarks || attendanceMap[st.student_id]?.remarks || '';
-        const serverStatus = serverRec?.status || 'unmarked';
-        const serverRemarks = serverRec?.remarks || '';
-
-        const isDiff = localStatus !== serverStatus || localRemarks !== serverRemarks;
-
-        return {
-          student_id: st.student_id,
-          admission_no: st.admission_no,
-          calling_name: st.calling_name || st.full_name,
-          localStatus,
-          localRemarks,
-          serverStatus,
-          serverRemarks,
-          isDiff,
-          chosen: isDiff ? 'server' : 'local'
-        };
-      });
+      const diffList = buildStudentDiffList(
+        students,
+        pendingMutation,
+        serverRecords,
+        attendanceMap
+      );
 
       setConflictModal({
         isOpen: true,
@@ -463,9 +436,26 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       const targetFingerprint =
         conflictModal.latestServerSession?.rosterFingerprint || rosterFingerprint;
 
+      // BLOCKER C: Determine allowed mode from server-current register state
+      // Rule ATT-014: Once a register has been finalized ('submitted') on server, it can NEVER be downgraded to draft.
+      const isServerSubmitted = conflictModal.latestServerSession?.status === 'submitted';
+      const isLocalSubmitted =
+        existingSession?.status === 'submitted' || conflictModal.pendingMutation?.mode === 'submitted';
+      const targetMode: 'draft' | 'submitted' =
+        (isServerSubmitted || isLocalSubmitted) ? 'submitted' : 'draft';
+
       const resolvedRecords = conflictModal.diffs
         .map((d) => {
-          const status = d.chosen === 'server' ? d.serverStatus : d.localStatus;
+          let status = d.chosen === 'server' ? d.serverStatus : d.localStatus;
+          // When reconciling against a server-finalized register, unmarked is not allowed:
+          // inherit server status if local was unmarked, or local status if valid
+          if (targetMode === 'submitted' && (!status || status === 'unmarked')) {
+            if (d.serverStatus && d.serverStatus !== 'unmarked') {
+              status = d.serverStatus;
+            } else if (d.localStatus && d.localStatus !== 'unmarked') {
+              status = d.localStatus;
+            }
+          }
           const remarks = d.chosen === 'server' ? d.serverRemarks : d.localRemarks;
           return {
             student_id: d.student_id,
@@ -475,17 +465,25 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         })
         .filter((r) => r.status && r.status !== 'unmarked');
 
-      const mode = existingSession?.status === 'submitted' ? 'submitted' : 'draft';
+      // If submitting finalized register, enforce 100% complete roster check
+      if (targetMode === 'submitted' && resolvedRecords.length < students.length) {
+        setConflictModal((prev) => ({
+          ...prev,
+          concurrencyError: `Finalized register requires complete attendance. ${students.length - resolvedRecords.length} student(s) remain unmarked. Please choose a status for every pupil before submitting.`
+        }));
+        return;
+      }
+
       const newMutationId = crypto.randomUUID();
 
       const res = await api.saveAttendanceSession({
         classId: selectedClassId,
         date: selectedDate,
-        mode,
+        mode: targetMode,
         baseRevision: targetRev,
         clientMutationId: newMutationId,
         rosterFingerprint: targetFingerprint,
-        notes: sessionNotes || null,
+        notes: sessionNotes || (isServerSubmitted ? 'Reconciled against server-finalized register' : null),
         records: resolvedRecords
       });
 
@@ -505,17 +503,32 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
       setConflictModal({ isOpen: false });
       setSaveSuccessMsg(
-        `Conflict resolved! Deliberate choices successfully applied and saved at Revision ${res.revision}.`
+        `Conflict resolved! Deliberate choices successfully applied and saved at Revision ${res.revision} (${res.mode} mode).`
       );
     } catch (err: any) {
       if (err instanceof HttpError && err.status === 409) {
-        // Second optimistic revision check caught concurrent update!
+        // BLOCKER B: Second optimistic revision check caught concurrent collision!
+        // Immediately fetch the fresh server state and REBUILD student diff comparisons
         const fresh = await api.getAttendanceSession(selectedClassId, selectedDate);
+        
+        // Preserve prior choices where possible, but require re-review of newly modified records
+        const priorChoices = new Map<number, 'local' | 'server'>();
+        conflictModal.diffs.forEach(d => priorChoices.set(d.student_id, d.chosen));
+
+        const freshDiffs = buildStudentDiffList(
+          students,
+          conflictModal.pendingMutation!,
+          fresh.records || [],
+          attendanceMap,
+          priorChoices
+        );
+
         setConflictModal((prev) => ({
           ...prev,
           latestServerSession: fresh,
           latestServerRevision: fresh.serverRevision,
-          concurrencyError: `Revision conflict recurred: Server advanced to Revision ${fresh.serverRevision}. Please re-verify choices.`
+          diffs: freshDiffs,
+          concurrencyError: `Collision recurred! Another user submitted an update while you were reviewing. Server advanced to Revision ${fresh.serverRevision}. The student comparison has been refreshed with the latest server records. Please re-verify choices before re-submitting.`
         }));
       } else {
         setErrorMessage(`Failed to apply deliberate conflict resolution: ${err.message}`);

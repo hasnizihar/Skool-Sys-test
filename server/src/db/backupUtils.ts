@@ -100,6 +100,14 @@ export function createSafeDatabaseBackup(
 
 /**
  * Restores a SQLite database from a verified point-in-time backup snapshot.
+ * 
+ * RESTRICTION & SAFETY NOTICE:
+ * OFFLINE MAINTENANCE ONLY — REQUIRES COMPLETE SERVER AND CONNECTION SHUTDOWN.
+ * Do not invoke this function while the application server or any active SQLite
+ * database connections are running.
+ * Live transactional hot-swapping, exclusive connection draining, and staged rollback
+ * are outside the PR-004 scope and are scheduled for PR-006 disaster recovery.
+ *
  * Verifies backup integrity before copying, and verifies restored destination.
  */
 export function restoreFromBackup(backupPath: string, targetRestorePath: string): { restored: boolean; bytes: number } {

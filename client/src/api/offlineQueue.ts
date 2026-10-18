@@ -61,7 +61,7 @@ export interface OfflineAttendanceMutation {
   }>;
   notes?: string | null;
   timestamp: string;
-  status: 'pending' | 'syncing' | 'conflicted' | 'legacy_review_required' | 'rejected';
+  status: 'pending' | 'syncing' | 'conflicted' | 'legacy_review_required' | 'stale_review_required' | 'rejected';
   conflictDetails?: {
     code: string;
     detail: string;
@@ -297,12 +297,79 @@ export async function getPendingAttendanceQueue(
   }
 }
 
+export interface UnsyncedWorkSummary {
+  total: number;
+  pending: number;
+  conflicted: number;
+  rejected: number;
+  syncing: number;
+  staleReviewRequired: number;
+  quarantined: number;
+  hasUnsyncedWork: boolean;
+}
+
 /**
- * Counts total unsynced items for a user. Used to warn on logout.
+ * Returns a comprehensive, itemized accounting of all unsaved and uncommitted work
+ * stored in local IndexedDB (pending, conflicted, rejected, syncing, aged review, and quarantined).
+ */
+export async function getUnsyncedWorkSummary(userId?: number): Promise<UnsyncedWorkSummary> {
+  const db = await openOfflineDB();
+
+  const pendingItems = await new Promise<OfflineAttendanceMutation[]>((resolve, reject) => {
+    const tx = db.transaction('pending_attendance', 'readonly');
+    const store = tx.objectStore('pending_attendance');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = (req.result || []) as OfflineAttendanceMutation[];
+      if (userId !== undefined) {
+        resolve(all.filter((item) => item.userId === userId));
+      } else {
+        resolve(all);
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+
+  const quarantinedItems = await new Promise<any[]>((resolve, reject) => {
+    if (!db.objectStoreNames.contains('quarantined_attendance')) {
+      resolve([]);
+      return;
+    }
+    const tx = db.transaction('quarantined_attendance', 'readonly');
+    const store = tx.objectStore('quarantined_attendance');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+
+  const pending = pendingItems.filter((i) => i.status === 'pending').length;
+  const conflicted = pendingItems.filter((i) => i.status === 'conflicted').length;
+  const rejected = pendingItems.filter((i) => i.status === 'rejected').length;
+  const syncing = pendingItems.filter((i) => i.status === 'syncing').length;
+  const staleReviewRequired = pendingItems.filter(
+    (i) => i.status === 'stale_review_required' || i.status === 'legacy_review_required'
+  ).length;
+  const quarantined = quarantinedItems.length;
+  const total = pending + conflicted + rejected + syncing + staleReviewRequired + quarantined;
+
+  return {
+    total,
+    pending,
+    conflicted,
+    rejected,
+    syncing,
+    staleReviewRequired,
+    quarantined,
+    hasUnsyncedWork: total > 0
+  };
+}
+
+/**
+ * Counts total unsynced items across all categories for a user. Used to warn on logout.
  */
 export async function getUnsyncedCountForUser(userId: number): Promise<number> {
-  const queue = await getPendingAttendanceQueue(userId);
-  return queue.filter((item) => item.status === 'pending' || item.status === 'conflicted').length;
+  const summary = await getUnsyncedWorkSummary(userId);
+  return summary.total;
 }
 
 /**
@@ -443,6 +510,7 @@ export async function syncPendingQueue(
   authRequired?: boolean;
   rateLimited?: boolean;
   inProgress?: boolean;
+  staleReviewCount?: number;
 }> {
   if (isSyncInProgress) {
     console.warn('Sync is already in progress. Skipping duplicate concurrent sync trigger.');
@@ -455,10 +523,38 @@ export async function syncPendingQueue(
     await recoverInterruptedSyncingItems();
 
     const queue = await getPendingAttendanceQueue(userId);
-    const eligible = queue.filter((item) => item.status === 'pending');
+
+    // KCC-POL-004: Validate 7-day retention age on pending mutations
+    // Any record older than 7 days (MAX_OFFLINE_RETENTION_MS) MUST NOT be auto-synced.
+    // It is preserved in storage, flagged as 'stale_review_required', and mandates manual teacher review.
+    const eligible: OfflineAttendanceMutation[] = [];
+    const expired: OfflineAttendanceMutation[] = [];
+
+    for (const item of queue) {
+      if (item.status === 'pending') {
+        if (isMutationExpired(item)) {
+          expired.push(item);
+          await updatePendingItemStatus(item.clientMutationId, 'stale_review_required', {
+            code: 'OFFLINE_RETENTION_EXPIRED',
+            detail: `Offline attendance mutation recorded on ${item.timestamp} exceeds 7-day maximum retention. Manual teacher re-verification required before synchronization.`,
+            receivedAt: new Date().toISOString()
+          });
+        } else {
+          eligible.push(item);
+        }
+      }
+    }
+
+    if (expired.length > 0) {
+      window.dispatchEvent(
+        new CustomEvent('offline-stale-item-detected', {
+          detail: { count: expired.length, expiredItems: expired }
+        })
+      );
+    }
 
     if (eligible.length === 0) {
-      return { synced: 0, conflicted: 0, rejected: 0, results: [] };
+      return { synced: 0, conflicted: 0, rejected: 0, results: [], staleReviewCount: expired.length };
     }
 
     // 2. Mark in-flight as syncing
@@ -636,10 +732,38 @@ export async function resolveConflictReapply(
  */
 export const MAX_OFFLINE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-export function isMutationExpired(mutation: OfflineAttendanceMutation): boolean {
+export function isMutationExpired(mutation: OfflineAttendanceMutation, nowMs: number = Date.now()): boolean {
   const mutationTime = new Date(mutation.timestamp).getTime();
   if (isNaN(mutationTime)) return false;
-  return (Date.now() - mutationTime) > MAX_OFFLINE_RETENTION_MS;
+  return (nowMs - mutationTime) > MAX_OFFLINE_RETENTION_MS;
+}
+
+/**
+ * Re-authorizes an expired offline item after explicit teacher review, refreshing timestamp.
+ */
+export async function reauthorizeStaleItem(clientMutationId: string): Promise<void> {
+  const db = await openOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pending_attendance', 'readwrite');
+    const store = tx.objectStore('pending_attendance');
+    const getReq = store.get(clientMutationId);
+
+    getReq.onsuccess = () => {
+      const item = getReq.result as OfflineAttendanceMutation | undefined;
+      if (!item) {
+        resolve();
+        return;
+      }
+      item.status = 'pending';
+      item.conflictDetails = null;
+      item.timestamp = new Date().toISOString();
+      store.put(item);
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 /**

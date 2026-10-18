@@ -11,7 +11,7 @@ import { AttendanceReports } from './pages/AttendanceReports';
 import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
-import { getUnsyncedCountForUser, clearCachedRostersForUser } from './api/offlineQueue';
+import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 
 const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
 
@@ -75,10 +75,23 @@ export function App() {
   const handleLogout = async () => {
     if (user?.id) {
       try {
-        const unsynced = await getUnsyncedCountForUser(user.id);
-        if (unsynced > 0) {
+        const summary = await getUnsyncedWorkSummary(user.id);
+        if (summary.hasUnsyncedWork) {
+          const breakdown: string[] = [];
+          if (summary.pending > 0) breakdown.push(`${summary.pending} pending sync`);
+          if (summary.conflicted > 0) breakdown.push(`${summary.conflicted} conflict(s) awaiting resolution`);
+          if (summary.rejected > 0) breakdown.push(`${summary.rejected} rejected record(s)`);
+          if (summary.staleReviewRequired > 0) breakdown.push(`${summary.staleReviewRequired} aged record(s) requiring review (>7d)`);
+          if (summary.syncing > 0) breakdown.push(`${summary.syncing} in-flight sync operation(s)`);
+          if (summary.quarantined > 0) breakdown.push(`${summary.quarantined} quarantined legacy record(s)`);
+
           const proceed = window.confirm(
-            `Notice: You have ${unsynced} unsynced attendance register(s) stored locally on this device.\n\nThey will be safely retained on this computer, but will not sync to the school server until you log in again.\n\nDo you wish to log out now?`
+            `Notice: Unsynced attendance records are stored locally on this computer:\n\n` +
+            breakdown.map((b) => ` • ${b}`).join('\n') +
+            `\n\nTotal: ${summary.total} unsynced item(s).\n\n` +
+            `These records are securely partitioned for user "${user.username}" and will be retained without data loss.\n` +
+            `They will NOT sync to the school server until you log in again.\n\n` +
+            `Do you wish to proceed with logout?`
           );
           if (!proceed) return;
         }

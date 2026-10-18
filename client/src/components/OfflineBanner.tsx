@@ -89,6 +89,7 @@ export const OfflineBanner: React.FC = () => {
   const pendingCount = pendingQueue.filter((i) => i.status === 'pending').length;
   const conflictedCount = pendingQueue.filter((i) => i.status === 'conflicted').length;
   const rejectedCount = pendingQueue.filter((i) => i.status === 'rejected').length;
+  const staleCount = pendingQueue.filter((i) => i.status === 'stale_review_required').length;
 
   if (isOnline && pendingQueue.length === 0 && !lastSyncMsg) {
     return null;
@@ -96,14 +97,15 @@ export const OfflineBanner: React.FC = () => {
 
   const isConflictState = conflictedCount > 0;
   const isRejectedState = rejectedCount > 0;
+  const isStaleState = staleCount > 0;
 
   return (
     <div
       className={`offline-banner ${isOnline && pendingQueue.length === 0 ? 'synced' : ''}`}
       style={{
-        background: isConflictState ? '#fef3c7' : isRejectedState ? '#fee2e2' : undefined,
-        color: isConflictState ? '#92400e' : isRejectedState ? '#991b1b' : undefined,
-        borderBottom: isConflictState ? '1px solid #f59e0b' : isRejectedState ? '1px solid #ef4444' : undefined
+        background: isConflictState ? '#fef3c7' : isRejectedState ? '#fee2e2' : isStaleState ? '#e0e7ff' : undefined,
+        color: isConflictState ? '#92400e' : isRejectedState ? '#991b1b' : isStaleState ? '#3730a3' : undefined,
+        borderBottom: isConflictState ? '1px solid #f59e0b' : isRejectedState ? '1px solid #ef4444' : isStaleState ? '1px solid #6366f1' : undefined
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -113,6 +115,8 @@ export const OfflineBanner: React.FC = () => {
           <AlertTriangle size={18} color="#d97706" />
         ) : isRejectedState ? (
           <AlertCircle size={18} color="#dc2626" />
+        ) : isStaleState ? (
+          <AlertTriangle size={18} color="#4f46e5" />
         ) : (
           <Wifi size={18} />
         )}
@@ -124,6 +128,8 @@ export const OfflineBanner: React.FC = () => {
             ? `⚠️ Concurrency Conflict: ${conflictedCount} register(s) modified on server. Please resolve in the Attendance Register view.`
             : isRejectedState
             ? `❌ Submission Rejected: ${rejectedCount} register(s) failed server authorization or academic-year validation.`
+            : isStaleState
+            ? `⏳ Retention Expired: ${staleCount} register(s) older than 7 days require teacher re-verification before synchronization.`
             : lastSyncMsg || `Online — ${pendingCount} pending register(s) ready to sync.`}
         </span>
       </div>
