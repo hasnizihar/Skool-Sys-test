@@ -2,13 +2,55 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'skoolsys.db');
+export function getDbPath(): string {
+  return process.env.DB_PATH || path.join(process.cwd(), 'skoolsys.db');
+}
 
-export const db = new DatabaseSync(DB_PATH);
+export let DB_PATH = getDbPath();
 
-// Enable WAL mode and foreign keys for high performance and integrity
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+let activeDb: DatabaseSync = new DatabaseSync(DB_PATH);
+try {
+  activeDb.exec('PRAGMA journal_mode = WAL;');
+  activeDb.exec('PRAGMA foreign_keys = ON;');
+} catch {
+  // Silently ignore PRAGMA setup error if in special mode
+}
+
+export function switchDatabase(filePath?: string): DatabaseSync {
+  try {
+    activeDb.close();
+  } catch {
+    // Silently ignore if already closed
+  }
+  DB_PATH = filePath || getDbPath();
+  activeDb = new DatabaseSync(DB_PATH);
+  try {
+    activeDb.exec('PRAGMA journal_mode = WAL;');
+    activeDb.exec('PRAGMA foreign_keys = ON;');
+  } catch {
+    // Silently ignore
+  }
+  return activeDb;
+}
+
+export function closeDatabase(): void {
+  try {
+    activeDb.close();
+  } catch {
+    // Silently ignore if already closed
+  }
+}
+
+// Transparent Proxy wrapper so all routes importing `db` seamlessly execute against activeDb
+export const db: DatabaseSync = new Proxy({} as DatabaseSync, {
+  get(_target, prop) {
+    const value = Reflect.get(activeDb, prop);
+    if (typeof value === 'function') {
+      return value.bind(activeDb);
+    }
+    return value;
+  }
+});
 
 export function initDatabase() {
   const schema = `
