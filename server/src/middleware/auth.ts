@@ -51,14 +51,112 @@ export function getUserAssignments(userId: number) {
   `).all(userId) as any[];
 
   const assignedClassIds = new Set<number>();
-  directClasses.forEach(c => assignedClassIds.add(c.class_id));
-  classAssignments.forEach(a => assignedClassIds.add(a.class_id));
+  const classTeacherClassIds = new Set<number>();
+
+  directClasses.forEach(c => {
+    assignedClassIds.add(Number(c.class_id));
+    classTeacherClassIds.add(Number(c.class_id));
+  });
+
+  classAssignments.forEach(a => {
+    assignedClassIds.add(Number(a.class_id));
+    if (a.assignment_type === 'class_teacher') {
+      classTeacherClassIds.add(Number(a.class_id));
+    }
+  });
 
   return {
     assignments: classAssignments,
     assignedClassIds: Array.from(assignedClassIds),
-    isClassTeacherFor: directClasses.map(c => c.class_id)
+    classTeacherClassIds: Array.from(classTeacherClassIds),
+    isClassTeacherFor: Array.from(classTeacherClassIds)
   };
+}
+
+/**
+ * Record-Level Authorization Policy Checks (PR-003)
+ */
+export function canAccessClass(user: AuthUser, classId: number): boolean {
+  if (user.role === 'admin') return true;
+  const assignments = getUserAssignments(user.id);
+  return assignments.assignedClassIds.includes(Number(classId));
+}
+
+export function canManageClassAttendance(user: AuthUser, classId: number): boolean {
+  if (user.role === 'admin') return true;
+  if (user.role === 'class_teacher') {
+    const assignments = getUserAssignments(user.id);
+    return assignments.classTeacherClassIds.includes(Number(classId));
+  }
+  return false;
+}
+
+export function canViewClassAttendance(user: AuthUser, classId: number): boolean {
+  if (user.role === 'admin') return true;
+  const assignments = getUserAssignments(user.id);
+  return assignments.assignedClassIds.includes(Number(classId));
+}
+
+export function canManageMarks(user: AuthUser, classId: number, subjectId: number): boolean {
+  if (user.role === 'admin') return true;
+
+  const assignments = getUserAssignments(user.id);
+  const cId = Number(classId);
+  const sId = Number(subjectId);
+
+  // 1. Direct assignment as subject teacher for this class & subject
+  const isAssignedSubjectTeacher = assignments.assignments.some(
+    (a: any) => a.assignment_type === 'subject_teacher' && a.class_id === cId && Number(a.subject_id) === sId
+  );
+  if (isAssignedSubjectTeacher) return true;
+
+  // 2. Class teacher check: only permitted if NO specialist teacher is assigned
+  if (assignments.classTeacherClassIds.includes(cId)) {
+    const specialistAssignment = db.prepare(`
+      SELECT teacher_id FROM teacher_assignments
+      WHERE class_id = ? AND subject_id = ? AND teacher_id != ?
+    `).get(cId, sId, user.id) as any;
+
+    if (specialistAssignment) {
+      return false; // Specialist subject teacher is assigned; class teacher cannot overwrite
+    }
+    return true;
+  }
+
+  return false;
+}
+
+export function canViewMarksSheet(user: AuthUser, classId: number, subjectId: number): boolean {
+  if (user.role === 'admin') return true;
+  const assignments = getUserAssignments(user.id);
+  const cId = Number(classId);
+  const sId = Number(subjectId);
+
+  // Assigned to teach subject in this class
+  if (assignments.assignments.some((a: any) => a.assignment_type === 'subject_teacher' && a.class_id === cId && Number(a.subject_id) === sId)) {
+    return true;
+  }
+  // Assigned as class teacher for this class
+  if (assignments.classTeacherClassIds.includes(cId)) {
+    return true;
+  }
+  return false;
+}
+
+export function canAccessStudent(user: AuthUser, studentId: number): boolean {
+  if (user.role === 'admin') return true;
+
+  const enrollment = db.prepare(`
+    SELECT class_id FROM enrollments
+    WHERE student_id = ? AND status = 'enrolled'
+  `).get(Number(studentId)) as any;
+
+  if (!enrollment || !enrollment.class_id) {
+    return false;
+  }
+
+  const assignments = getUserAssignments(user.id);
+  return assignments.assignedClassIds.includes(Number(enrollment.class_id));
 }
 
 /**

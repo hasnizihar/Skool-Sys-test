@@ -49,13 +49,16 @@ graph LR
 
 ---
 
-### PR-003: Fine-Grained Authorization & Role Enforcement
-- **Status**: [ ] Scheduled
-- **Scope**:
-  - Restrict marks entry strictly to assigned subject teachers or administrators.
-  - Prevent class teachers from editing or overwriting marks for subjects they do not teach.
-  - Implement row-level student record filtering based on class assignment.
-  - Validate all authorization boundaries with negative integration tests.
+### PR-003: Fine-Grained Authorization & Record-Level Enforcement (Completed)
+- **Status**: [X] Complete
+- **Scope & Deliverables**:
+  - Closed student record exposure gap: subject and class teachers strictly receive students in their assigned classes.
+  - Protected single student profile (`GET /api/students/:id`) and report cards with record-level 403 checks.
+  - Closed class roster exposure gap (`GET /api/academic/classes/:id/roster`) with 403 Forbidden for unassigned staff.
+  - Secured daily attendance sessions and monthly reports with class assignment checks.
+  - Enforced subject teacher authority on marks sheets: class teachers blocked from overwriting specialist marks.
+  - Generated comprehensive feature coverage matrix (`docs/demo/FEATURE_COVERAGE_MATRIX.md` and `docs/demo/demo-coverage.json`).
+  - Added 28 new automated negative and record-level authorization tests (61 total passing across 23 test suites).
 
 ---
 

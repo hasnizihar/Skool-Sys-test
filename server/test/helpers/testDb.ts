@@ -258,6 +258,11 @@ export function setupIsolatedTestDb(): TestFixtureData {
     VALUES (?, ?, ?, ?, 'enrolled')
   `).run(stuBId, classBId, yearId, 2);
 
+  testDb.prepare(`
+    INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published)
+    VALUES ('Term 1 Test Exam', 1, ?, '2026-03-01', '2026-03-15', 1)
+  `).run(yearId);
+
   testDb.close();
 
   return {

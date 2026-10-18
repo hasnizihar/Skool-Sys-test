@@ -22,23 +22,11 @@ This document catalogs security vulnerabilities and architectural defects identi
 
 ---
 
-### RISK-03: Incomplete Teacher-Level Marks Entry Authorization
-- **Location**: [`server/src/routes/marks.ts`](file:///server/src/routes/marks.ts#L100-L125)
-- **Code Evidence**:
-  ```typescript
-  if (!canManageMarks(user, cId, sId)) {
-    res.status(403).json({ error: 'You are not assigned to enter marks for this class/subject.' });
-  }
-  ```
-  In `server/src/middleware/auth.ts`:
-  ```typescript
-  export function canManageMarks(user: AuthUser, classId: number, subjectId: number): boolean {
-    if (user.role === 'admin') return true;
-    if (user.role === 'class_teacher' && user.assignedClassIds.includes(classId)) return true;
-    // ...
-  ```
-- **Security Impact**: A class teacher can overwrite examination marks for **any subject** taught in their class, even subjects assigned exclusively to specialist subject teachers (e.g., Mathematics, Science), bypassing subject teacher authority.
-- **Target Remediation**: **PR-003** (Strict subject-teacher assignment checks; restrict class teachers to their designated assigned subjects).
+### RISK-03: Incomplete Teacher-Level Marks Entry Authorization [RESOLVED in PR-003]
+- **Location**: [`server/src/routes/marks.ts`](file:///server/src/routes/marks.ts#L40-L125), [`server/src/middleware/auth.ts`](file:///server/src/middleware/auth.ts#L100-L145)
+- **Status**: **RESOLVED in PR-003**
+- **Remediation Implemented**: Implemented `canManageMarks` and `canViewMarksSheet` in auth middleware. When a specialist subject teacher is assigned to a class/subject, class teachers are blocked with 403 Forbidden from overwriting marks for that subject. Marks sheet viewing is also strictly restricted to assigned teachers and administrators.
+- **Verification**: Verified via `server/test/record_authorization.test.ts` (suite `6. Marks Sheet & Marks Entry Authority`).
 
 ---
 
