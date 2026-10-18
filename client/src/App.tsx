@@ -12,13 +12,35 @@ import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
 
+const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
+
+function getInitialTab(): string {
+  const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
+  return VALID_TABS.includes(hash) ? hash : 'dashboard';
+}
+
 export function App() {
   const [user, setUser] = useState<any | null>(getCurrentUser());
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [currentTab, setCurrentTab] = useState<string>(getInitialTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('skoolsys_theme') as 'light' | 'dark') || 'light';
   });
+
+  useEffect(() => {
+    window.location.hash = `/${currentTab}`;
+  }, [currentTab]);
+
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
+      if (VALID_TABS.includes(hash)) {
+        setCurrentTab(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -92,6 +114,8 @@ export function App() {
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           title={getPageTitle()}
           user={user}
+          theme={theme}
+          toggleTheme={toggleTheme}
         />
 
         <main className="page-container">
