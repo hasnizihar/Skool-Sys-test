@@ -2,7 +2,20 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { db } from '../db/database.js';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'skoolsys-super-secret-key-2026';
+/**
+ * Retrieves the cryptographic signing secret from the environment.
+ * STRICT ENFORCEMENT: Never permits hardcoded fallbacks. Requires minimum 32 characters.
+ */
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length < 32) {
+    throw new Error(
+      'FATAL SECURITY CONFIGURATION: JWT_SECRET environment variable is missing or shorter than 32 characters. ' +
+      'A cryptographically strong secret of at least 32 characters is required to operate SkoolSys safely.'
+    );
+  }
+  return secret;
+}
 
 export interface AuthUser {
   id: number;
@@ -10,6 +23,7 @@ export interface AuthUser {
   email: string;
   full_name: string;
   role: 'admin' | 'class_teacher' | 'subject_teacher';
+  token_version?: number;
 }
 
 declare global {
@@ -47,6 +61,13 @@ export function getUserAssignments(userId: number) {
   };
 }
 
+/**
+ * Authentication Middleware
+ * 1. Cryptographically verifies JWT using strictly validated secret.
+ * 2. Queries database on EVERY request to verify account is active (is_active = 1).
+ * 3. Enforces token versioning to reject revoked or invalidated sessions immediately.
+ * 4. Rehydrates live user role directly from database to eliminate stale JWT role elevation.
+ */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -56,10 +77,50 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
-    req.user = decoded;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
+
+    if (!decoded || !decoded.id) {
+      res.status(401).json({ error: 'Invalid session token payload.' });
+      return;
+    }
+
+    // Server-side active verification & role rehydration on EVERY request
+    const user = db.prepare(`
+      SELECT id, username, email, full_name, role, is_active, token_version
+      FROM users
+      WHERE id = ?
+    `).get(decoded.id) as any;
+
+    if (!user) {
+      res.status(401).json({ error: 'Authentication failed. Account no longer exists.' });
+      return;
+    }
+
+    if (!user.is_active || user.is_active === 0) {
+      res.status(401).json({ error: 'Authentication failed. Account has been deactivated.' });
+      return;
+    }
+
+    // Token version check (revocation check)
+    if (decoded.token_version !== undefined && user.token_version !== undefined) {
+      if (decoded.token_version !== user.token_version) {
+        res.status(401).json({ error: 'Session has been revoked or invalidated. Please log in again.' });
+        return;
+      }
+    }
+
+    // Always rehydrate req.user from live server records to prevent stale JWT claims
+    req.user = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      full_name: user.full_name,
+      role: user.role,
+      token_version: user.token_version
+    };
+
     next();
-  } catch (err) {
+  } catch (err: any) {
     res.status(401).json({ error: 'Invalid or expired session token.' });
   }
 }

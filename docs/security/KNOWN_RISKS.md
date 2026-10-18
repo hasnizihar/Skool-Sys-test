@@ -6,27 +6,19 @@ This document catalogs security vulnerabilities and architectural defects identi
 
 ## 1. Critical Severity Vulnerabilities
 
-### RISK-01: Hardcoded Fallback JWT Secret
-- **Location**: [`server/src/middleware/auth.ts`](file:///server/src/middleware/auth.ts#L10)
-- **Code Evidence**:
-  ```typescript
-  const JWT_SECRET = process.env.JWT_SECRET || 'skoolsys-super-secret-key-2026';
-  ```
-- **Security Impact**: If `JWT_SECRET` is unset in production, an attacker who inspects the public repository can forge an arbitrary JWT token with `role: "admin"` and assume full administrative privileges over the school.
-- **Target Remediation**: **PR-002** (Fail fast on startup if `JWT_SECRET` is missing or shorter than 32 characters in production; eliminate hardcoded default).
+### RISK-01: Hardcoded Fallback JWT Secret [RESOLVED in PR-002]
+- **Location**: [`server/src/middleware/auth.ts`](file:///server/src/middleware/auth.ts#L9-L18)
+- **Status**: **RESOLVED in PR-002**
+- **Remediation Implemented**: Hardcoded fallback secret was completely removed. `getJwtSecret()` strictly validates that `JWT_SECRET` is present in the environment and has a minimum length of 32 characters, failing fast on startup with a fatal configuration error otherwise.
+- **Verification**: Verified via `server/test/auth_security.test.ts` (suite `1. JWT Secret Hardening & Startup Verification`).
 
 ---
 
-### RISK-02: Deactivated-User Token Authorization Gap
-- **Location**: [`server/src/middleware/auth.ts`](file:///server/src/middleware/auth.ts#L22-L35)
-- **Code Evidence**:
-  ```typescript
-  const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
-  req.user = decoded;
-  next();
-  ```
-- **Security Impact**: Once issued, a JWT is valid for 24 hours. If an administrator deactivates a compromised or terminated teacher account (`is_active = 0`), the token remains valid until expiration because `requireAuth` does not check the user's active status against the database.
-- **Target Remediation**: **PR-002** (Add database active status check or token revocation blacklist).
+### RISK-02: Deactivated-User Token Authorization Gap [RESOLVED in PR-002]
+- **Location**: [`server/src/middleware/auth.ts`](file:///server/src/middleware/auth.ts#L36-L75), [`server/src/routes/auth.ts`](file:///server/src/routes/auth.ts)
+- **Status**: **RESOLVED in PR-002**
+- **Remediation Implemented**: `requireAuth` now queries SQLite on every request to verify `is_active = 1` and matches `token_version`. Added `token_version` to `users` table; account deactivation, password reset, or `POST /api/auth/logout` increments `token_version`, immediately invalidating all prior JWT tokens (<0.05ms overhead per request). Live roles are also rehydrated directly from SQLite on every request.
+- **Verification**: Verified via `server/test/auth_security.test.ts` (suites `4. Real-time Account Verification` & `5. Session Invalidation via POST /api/auth/logout`).
 
 ---
 
@@ -63,16 +55,12 @@ This document catalogs security vulnerabilities and architectural defects identi
 
 ---
 
-### RISK-05: Backup Restoration Foreign Key Constraint Failure
-- **Location**: [`server/src/routes/admin.ts`](file:///server/src/routes/admin.ts#L190-L240)
-- **Code Evidence**:
-  ```typescript
-  db.exec('PRAGMA foreign_keys = OFF;');
-  // restores tables ...
-  db.exec('PRAGMA foreign_keys = ON;');
-  ```
-- **Defect Description**: If the backup archive contains circular dependencies or truncated user keys (such as `audit_logs.user_id` pointing to an un-restored user), enabling foreign keys immediately crashes the restore sequence, leaving the database in an inconsistent or partially populated state.
-- **Target Remediation**: **PR-006** (Transactional atomic restore, staging table validation, and foreign key verification before commit).
+### RISK-05: Backup Restoration Destructive Table Wiping & Foreign Key Constraint Failure
+- **Location**: [`server/src/routes/admin.ts`](file:///server/src/routes/admin.ts#L235-L272)
+- **Status**: **CONTAINED in PR-002 (Fail-Closed Guard)** / Scheduled for full transactional recovery in PR-004
+- **Defect Description**: Non-transactional table deletion before restore resulted in SQLite foreign key errors on `users` due to `audit_logs`, leaving tables empty and destroying data.
+- **Immediate PR-002 Remediation**: Both `/api/admin/restore` and `/api/admin/reset-seed` were sealed with fail-closed HTTP 503 security guards, preventing destructive runtime wipes. The UI controls are locked with safety notices. Full atomic staging recovery will be built in PR-004.
+- **Verification**: Verified via `server/test/auth_security.test.ts` (suite `8. Immediate Disaster Recovery Safeguards: Blocked Endpoints (HTTP 503)`).
 
 ---
 

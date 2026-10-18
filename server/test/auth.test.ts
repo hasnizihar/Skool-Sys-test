@@ -50,7 +50,7 @@ describe('2. Authentication and Authorization Baseline Tests', () => {
 
     assert.equal(res.status, 401);
     const body = await res.json();
-    assert.ok(body.error.includes('Invalid credentials'));
+    assert.ok(body.error.includes('Invalid username or password') || body.error.includes('Invalid credentials'));
   });
 
   it('POST /api/auth/login rejects non-existent users with 401', async () => {

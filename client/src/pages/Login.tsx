@@ -7,8 +7,11 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  // Gated Demo Login: Strictly disabled in production builds
+  const isDemoEnabled = import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' && import.meta.env.DEV;
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -181,86 +184,88 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           </button>
         </form>
 
-        <div style={{ marginTop: '1.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '0.75rem'
-            }}
-          >
-            <span
+        {isDemoEnabled && (
+          <div style={{ marginTop: '1.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+            <div
               style={{
-                fontSize: '0.75rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                fontWeight: 700,
-                color: 'var(--text-muted)'
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '0.75rem'
               }}
             >
-              1-Click Demo Accounts
-            </span>
-            <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '0.7rem' }}>
-              <Sparkles size={11} style={{ marginRight: 3 }} />
-              Fast Switch
-            </span>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  fontWeight: 700,
+                  color: 'var(--text-muted)'
+                }}
+              >
+                1-Click Demo Accounts (Local Dev Only)
+              </span>
+              <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '0.7rem' }}>
+                <Sparkles size={11} style={{ marginRight: 3 }} />
+                Dev Mode
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem' }}>
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('admin', 'admin123')}
+                className="btn btn-secondary btn-sm"
+                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
+              >
+                <CheckCircle2 size={16} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                <div>
+                  <strong style={{ fontSize: '0.825rem' }}>Administrator / Principal (`admin`)</strong>
+                  <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Full system access, classes, & settings</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('teacher_nimali', 'teacher123')}
+                className="btn btn-secondary btn-sm"
+                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
+              >
+                <CheckCircle2 size={16} style={{ color: 'var(--present)', flexShrink: 0 }} />
+                <div>
+                  <strong style={{ fontSize: '0.825rem' }}>Mrs. Nimali Perera (`teacher_nimali`)</strong>
+                  <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Class Teacher (Grade 8-A) Attendance & Roster</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('teacher_samantha', 'teacher123')}
+                className="btn btn-secondary btn-sm"
+                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
+              >
+                <CheckCircle2 size={16} style={{ color: 'var(--secondary)', flexShrink: 0 }} />
+                <div>
+                  <strong style={{ fontSize: '0.825rem' }}>Mr. Samantha Silva (`teacher_samantha`)</strong>
+                  <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Mathematics Subject Teacher (Gr. 8-A, 8-B, 11-A)</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('teacher_priya', 'teacher123')}
+                className="btn btn-secondary btn-sm"
+                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
+              >
+                <CheckCircle2 size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                <div>
+                  <strong style={{ fontSize: '0.825rem' }}>Ms. Priya Fernando (`teacher_priya`)</strong>
+                  <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Science Subject Teacher (Gr. 8-A, 8-B)</div>
+                </div>
+              </button>
+            </div>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem' }}>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('admin', 'admin123')}
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
-            >
-              <CheckCircle2 size={16} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-              <div>
-                <strong style={{ fontSize: '0.825rem' }}>Administrator / Principal (`admin`)</strong>
-                <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Full system access, classes, & settings</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('teacher_nimali', 'teacher123')}
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
-            >
-              <CheckCircle2 size={16} style={{ color: 'var(--present)', flexShrink: 0 }} />
-              <div>
-                <strong style={{ fontSize: '0.825rem' }}>Mrs. Nimali Perera (`teacher_nimali`)</strong>
-                <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Class Teacher (Grade 8-A) Attendance & Roster</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('teacher_samantha', 'teacher123')}
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
-            >
-              <CheckCircle2 size={16} style={{ color: 'var(--secondary)', flexShrink: 0 }} />
-              <div>
-                <strong style={{ fontSize: '0.825rem' }}>Mr. Samantha Silva (`teacher_samantha`)</strong>
-                <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Mathematics Subject Teacher (Gr. 8-A, 8-B, 11-A)</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('teacher_priya', 'teacher123')}
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '0.6rem 0.85rem' }}
-            >
-              <CheckCircle2 size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              <div>
-                <strong style={{ fontSize: '0.825rem' }}>Ms. Priya Fernando (`teacher_priya`)</strong>
-                <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Science Subject Teacher (Gr. 8-A, 8-B)</div>
-              </div>
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

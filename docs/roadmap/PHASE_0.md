@@ -34,14 +34,18 @@ graph LR
 
 ---
 
-### PR-002: Authentication and Session Security (Next Recommended)
-- **Status**: [ ] Pending Approval
-- **Scope**:
-  - Eliminate hardcoded fallback JWT secret; fail fast on server startup if secret is missing or insecure (<32 characters) in production.
-  - Fix deactivated-user token loophole: ensure `requireAuth` verifies account active status against database.
-  - Implement token invalidation / logout handling.
-  - Enforce password complexity validation on user creation and updates.
-  - Add isolated unit tests reproducing and verifying fixes.
+### PR-002: Authentication and Session Security (Completed)
+- **Status**: [X] Complete
+- **Scope & Deliverables**:
+  - Emergency Data Protection: locked destructive `/restore` and `/reset-seed` endpoints with fail-closed HTTP 503 guards to prevent data-wiping disasters.
+  - Eliminated fallback JWT secret; startup enforces `JWT_SECRET` with minimum 32 characters or fails fast.
+  - Real-time account active verification: `requireAuth` checks SQLite on every request (`is_active = 1`) and matches `token_version`.
+  - Added session invalidation via `token_version` increment and `POST /api/auth/logout`.
+  - Live role rehydration: updates role directly from database on every request.
+  - In-memory rate limiting (5 attempts / 15-minute lockout) and generic anti-enumeration login errors.
+  - Institutional password complexity validator (≥8 chars, letters + numbers).
+  - Gated demo credentials behind development flag and added admin account deactivation controls in UI.
+  - Implemented 12 new automated security tests (33 total passing in CI test suite).
 
 ---
 

@@ -40,6 +40,7 @@ export function setupIsolatedTestDb(): TestFixtureData {
       full_name TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('admin', 'class_teacher', 'subject_teacher')),
       is_active INTEGER DEFAULT 1,
+      token_version INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
 

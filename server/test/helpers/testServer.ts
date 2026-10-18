@@ -14,6 +14,9 @@ export interface TestServerInstance {
  * Uses native fetch for Zero-Dependency, high-speed API integration tests.
  */
 export async function startTestServer(): Promise<TestServerInstance> {
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = 'test-jwt-secret-with-at-least-32-chars-for-safety-2026';
+  }
   if (process.env.DB_PATH) {
     switchDatabase(process.env.DB_PATH);
   }

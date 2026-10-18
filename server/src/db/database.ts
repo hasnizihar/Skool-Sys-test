@@ -62,6 +62,7 @@ export function initDatabase() {
       full_name TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('admin', 'class_teacher', 'subject_teacher')),
       is_active INTEGER DEFAULT 1,
+      token_version INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -206,4 +207,11 @@ export function initDatabase() {
   `;
 
   db.exec(schema);
+
+  // Safe migration for existing databases lacking token_version column
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1;');
+  } catch {
+    // Column already exists
+  }
 }
