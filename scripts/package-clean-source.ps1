@@ -1,11 +1,11 @@
 param (
-    [string]$OutputFile = "SkoolSys_PR004R_Clean_Source.zip"
+    [string]$OutputFile = "SkoolSys_PR004S_Clean_Source.zip"
 )
 
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 Set-Location $RepoRoot
 
-Write-Host "Packaging SkoolSys PR-004R clean source distribution..." -ForegroundColor Cyan
+Write-Host "Packaging SkoolSys PR-004S clean source distribution..." -ForegroundColor Cyan
 
 if (Test-Path $OutputFile) {
     Remove-Item $OutputFile -Force
@@ -98,4 +98,9 @@ if ($violations.Count -gt 0) {
     Write-Host "Verified clean source archive created: $OutputFile ($zipMb MB)" -ForegroundColor Green
     Write-Host "Zero .env, zero database files, zero WAL/SHM files included." -ForegroundColor Green
     Write-Host "Preserved templates: $($examplesFound -join ', ')" -ForegroundColor Cyan
+    
+    if ($OutputFile -eq "SkoolSys_PR004S_Clean_Source.zip") {
+        Copy-Item $OutputFile "SkoolSys_PR004R_Clean_Source.zip" -Force
+        Write-Host "Synchronized duplicate to SkoolSys_PR004R_Clean_Source.zip for dual compatibility." -ForegroundColor Cyan
+    }
 }
