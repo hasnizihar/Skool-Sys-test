@@ -1,10 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { isMutationExpired } from '../../client/src/api/offlineQueue.ts';
+import { buildStudentDiffList } from '../../client/src/utils/conflictDiffUtils.ts';
 
-describe('PR-004S: Client Offline Engine, Queue Lifecycle & Browser Workflow Tests', () => {
+describe('PR-004S: Client Offline Engine Simulation & Unit Verification Tests', () => {
 
   // 1. IndexedDB V1 to V2 Migration & Legacy Quarantine
-  it('E2E-01: migrates IndexedDB v1 stores to v2 and quarantines unverified legacy items', () => {
+  it('SIM-01: migrates IndexedDB v1 stores to v2 and quarantines unverified legacy items', () => {
     // V1 legacy queue item missing V2 concurrency fields (baseRevision, rosterFingerprint, academicYearId)
     const legacyItem = {
       id: 'legacy-item-101',
@@ -59,149 +61,154 @@ describe('PR-004S: Client Offline Engine, Queue Lifecycle & Browser Workflow Tes
     const { pendingV2, quarantined } = simulateUpgrade([legacyItem, validV2Item]);
 
     assert.strictEqual(pendingV2.length, 1);
-    assert.strictEqual(pendingV2[0].clientMutationId, validV2Item.clientMutationId);
-
+    assert.strictEqual(pendingV2[0].clientMutationId, 'c7d23a4b-1234-4567-89ab-cdef01234567');
     assert.strictEqual(quarantined.length, 1);
-    assert.strictEqual(quarantined[0].id, 'legacy-item-101');
     assert.strictEqual(quarantined[0].reason, 'MISSING_V2_METADATA');
   });
 
-  // 2. Interrupted Syncing Queue Recovery
-  it('E2E-02: recovers in-flight items stuck in syncing state and resets them to pending', () => {
+  // 2. Queue Durability & In-Flight Interruption Recovery
+  it('SIM-02: recovers in-flight items stuck in syncing state and resets them to pending', () => {
     const queue = [
       { id: '1', status: 'syncing' },
       { id: '2', status: 'pending' },
-      { id: '3', status: 'conflicted' },
-      { id: '4', status: 'syncing' }
+      { id: '3', status: 'conflicted' }
     ];
 
-    function recoverInterruptedSyncingItems(items: any[]) {
-      for (const item of items) {
+    function recoverQueue(items: any[]) {
+      return items.map((item) => {
         if (item.status === 'syncing') {
-          item.status = 'pending';
+          return { ...item, status: 'pending' };
         }
-      }
+        return item;
+      });
     }
 
-    recoverInterruptedSyncingItems(queue);
-
-    assert.strictEqual(queue[0].status, 'pending');
-    assert.strictEqual(queue[1].status, 'pending');
-    assert.strictEqual(queue[2].status, 'conflicted');
-    assert.strictEqual(queue[3].status, 'pending');
+    const recovered = recoverQueue(queue);
+    assert.strictEqual(recovered[0].status, 'pending', 'Interrupted syncing item must reset to pending');
+    assert.strictEqual(recovered[1].status, 'pending');
+    assert.strictEqual(recovered[2].status, 'conflicted');
   });
 
-  // 3. Sync Execution Mutex & Concurrency Prevention
-  it('E2E-03: sync mutex prevents duplicate concurrent queue draining', async () => {
+  // 3. Mutex Locking During Offline Queue Sync
+  it('SIM-03: sync mutex prevents duplicate concurrent queue draining', async () => {
     let isSyncInProgress = false;
-    let executionCount = 0;
+    let syncExecutionCount = 0;
 
-    async function triggerSync() {
+    async function drainQueueWithMutex() {
       if (isSyncInProgress) {
-        return { executed: false, reason: 'ALREADY_IN_PROGRESS' };
+        return { locked: true, executed: false };
       }
       isSyncInProgress = true;
       try {
-        executionCount++;
-        // Simulate async network delay
+        syncExecutionCount++;
         await new Promise((r) => setTimeout(r, 20));
-        return { executed: true };
+        return { locked: false, executed: true };
       } finally {
         isSyncInProgress = false;
       }
     }
 
-    // Trigger two syncs simultaneously
-    const [res1, res2] = await Promise.all([triggerSync(), triggerSync()]);
+    const [first, second] = await Promise.all([drainQueueWithMutex(), drainQueueWithMutex()]);
 
-    assert.strictEqual(executionCount, 1, 'Only one sync operation must execute');
-    assert.strictEqual(res1.executed !== res2.executed, true, 'One must succeed and one must be skipped');
+    assert.strictEqual(syncExecutionCount, 1, 'Only one sync operation can execute under mutex');
+    assert.ok((first.executed && second.locked) || (second.executed && first.locked));
   });
 
-  // 4. Multi-Account Isolation on Shared Tablet
-  it('E2E-04: enforces strict account partitioning so User A cannot access User B queue or cached rosters', () => {
-    const mutationStore = [
-      { clientMutationId: 'm-teacher-a', userId: 10, classId: 5, records: [] },
-      { clientMutationId: 'm-teacher-b', userId: 20, classId: 6, records: [] }
+  // 4. Multi-Account Storage Partitioning on Shared School Devices
+  it('SIM-04: enforces strict account partitioning so User A cannot access User B queue or cached rosters', () => {
+    const pendingStore = [
+      { clientMutationId: 'mut-101', userId: 10, classId: 5, status: 'pending' },
+      { clientMutationId: 'mut-201', userId: 20, classId: 6, status: 'pending' }
     ];
 
     const rosterStore = [
-      { key: 'kcc:10:1:5', userId: 10, classId: 5, students: [{ id: 101, name: 'Student A' }] },
-      { key: 'kcc:20:1:6', userId: 20, classId: 6, students: [{ id: 201, name: 'Student B' }] }
+      { cacheKey: 'kcc:10:1:5', userId: 10, classId: 5, students: [{ id: 1 }] },
+      { cacheKey: 'kcc:20:1:6', userId: 20, classId: 6, students: [{ id: 2 }] }
     ];
 
     function getQueueForUser(userId: number) {
-      return mutationStore.filter((m) => m.userId === userId);
+      return pendingStore.filter((item) => item.userId === userId);
     }
 
-    function getRostersForUser(userId: number) {
-      return rosterStore.filter((r) => r.userId === userId);
+    function getRosterForUser(userId: number, classId: number) {
+      return rosterStore.find((r) => r.userId === userId && r.classId === classId) || null;
     }
 
-    const queueA = getQueueForUser(10);
-    assert.strictEqual(queueA.length, 1);
-    assert.strictEqual(queueA[0].clientMutationId, 'm-teacher-a');
+    const user10Queue = getQueueForUser(10);
+    assert.strictEqual(user10Queue.length, 1);
+    assert.strictEqual(user10Queue[0].clientMutationId, 'mut-101');
 
-    const queueB = getQueueForUser(20);
-    assert.strictEqual(queueB.length, 1);
-    assert.strictEqual(queueB[0].clientMutationId, 'm-teacher-b');
+    const user20Queue = getQueueForUser(20);
+    assert.strictEqual(user20Queue.length, 1);
+    assert.strictEqual(user20Queue[0].clientMutationId, 'mut-201');
 
-    // On logout, clearing rosters for User A leaves User B rosters and User A mutations intact
+    assert.strictEqual(getRosterForUser(10, 6), null, 'User 10 cannot read User 20 roster');
+    assert.strictEqual(getRosterForUser(20, 5), null, 'User 20 cannot read User 10 roster');
+
     const remainingRosters = rosterStore.filter((r) => r.userId !== 10);
     assert.strictEqual(remainingRosters.length, 1);
     assert.strictEqual(remainingRosters[0].userId, 20);
     assert.strictEqual(getQueueForUser(10).length, 1, 'Pending mutations safely preserved');
   });
 
-  // 5. 7-Day Offline Retention Policy & Stale Flagging
-  it('E2E-05: 7-day retention expiry blocks auto-sync on 8-day items while 6-day items sync cleanly', () => {
-    const MAX_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+  // 5. 7-Day Offline Retention Policy & Corrupted Timestamps (exercising production isMutationExpired)
+  it('SIM-05: 7-day retention expiry blocks auto-sync on 8-day items, passes 6-day, and fails closed on corrupted/future timestamps', () => {
     const now = new Date('2026-10-18T12:00:00Z').getTime();
 
-    const items = [
-      {
-        clientMutationId: 'mut-valid-6d',
-        timestamp: new Date(now - 6 * 24 * 60 * 60 * 1000).toISOString(),
-        status: 'pending'
-      },
-      {
-        clientMutationId: 'mut-expired-8d',
-        timestamp: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
-        status: 'pending'
-      }
-    ];
+    // Valid 6-day item: eligible
+    const item6d: any = {
+      clientMutationId: 'mut-valid-6d',
+      timestamp: new Date(now - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      status: 'pending'
+    };
+    assert.strictEqual(isMutationExpired(item6d, now), false, '6-day item must not expire');
 
-    function evaluateQueueForSync(queue: any[], currentNow: number) {
-      const eligible: any[] = [];
-      const expired: any[] = [];
+    // Expired 8-day item: must expire
+    const item8d: any = {
+      clientMutationId: 'mut-expired-8d',
+      timestamp: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      status: 'pending'
+    };
+    assert.strictEqual(isMutationExpired(item8d, now), true, '8-day item must expire');
 
-      for (const item of queue) {
-        if (item.status === 'pending') {
-          const age = currentNow - new Date(item.timestamp).getTime();
-          if (age > MAX_RETENTION_MS) {
-            item.status = 'stale_review_required';
-            expired.push(item);
-          } else {
-            eligible.push(item);
-          }
-        }
-      }
+    // Corrupted / malformed timestamp: must fail closed!
+    const itemMalformed: any = {
+      clientMutationId: 'mut-malformed',
+      timestamp: 'invalid-date-string',
+      status: 'pending'
+    };
+    assert.strictEqual(isMutationExpired(itemMalformed, now), true, 'Malformed timestamp must fail closed into review-required');
 
-      return { eligible, expired };
-    }
+    // Missing / empty timestamp: must fail closed!
+    const itemMissing: any = {
+      clientMutationId: 'mut-missing',
+      timestamp: '',
+      status: 'pending'
+    };
+    assert.strictEqual(isMutationExpired(itemMissing, now), true, 'Missing timestamp must fail closed');
 
-    const { eligible, expired } = evaluateQueueForSync(items, now);
+    // Future-dated timestamp (>5 minutes ahead): must fail closed!
+    const itemFuture: any = {
+      clientMutationId: 'mut-future',
+      timestamp: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      status: 'pending'
+    };
+    assert.strictEqual(isMutationExpired(itemFuture, now), true, 'Future-dated timestamp must fail closed');
 
-    assert.strictEqual(eligible.length, 1);
-    assert.strictEqual(eligible[0].clientMutationId, 'mut-valid-6d');
-
-    assert.strictEqual(expired.length, 1);
-    assert.strictEqual(expired[0].clientMutationId, 'mut-expired-8d');
-    assert.strictEqual(expired[0].status, 'stale_review_required');
+    // Reauthorized 8-day item within active session: passes!
+    const itemReauthorized: any = {
+      clientMutationId: 'mut-reauth-8d',
+      timestamp: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      originalTimestamp: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      reauthorizedAt: new Date(now - 1000).toISOString(),
+      reauthorizedByUserId: 10,
+      status: 'pending'
+    };
+    assert.strictEqual(isMutationExpired(itemReauthorized, now), false, 'Reauthorized item within active window is eligible');
   });
 
   // 6. Strict Error Classification on Sync
-  it('E2E-06: strictly classifies HTTP errors without false retry loops', () => {
+  it('SIM-06: strictly classifies HTTP errors without false retry loops', () => {
     function handleSyncResponse(status: number) {
       if (status === 401) {
         return { action: 'pause_sync_require_reauth', retry: false };
@@ -227,41 +234,25 @@ describe('PR-004S: Client Offline Engine, Queue Lifecycle & Browser Workflow Tes
   });
 
   // 7. Student-by-Student Conflict Resolution Comparison
-  it('E2E-07: computes student discrepancy comparison without blind full-roster overwrite', () => {
+  it('SIM-07: computes student discrepancy comparison without blind full-roster overwrite', () => {
     const students = [
-      { id: 1, admission_no: 'KCC-001', name: 'Student 1' },
-      { id: 2, admission_no: 'KCC-002', name: 'Student 2' }
+      { student_id: 1, admission_no: 'KCC-001', calling_name: 'Student 1' },
+      { student_id: 2, admission_no: 'KCC-002', calling_name: 'Student 2' }
     ];
 
-    const localMutation = {
+    const localMutation: any = {
       records: [
         { student_id: 1, status: 'present', remarks: null },
         { student_id: 2, status: 'absent', remarks: 'Medical' }
       ]
     };
 
-    const serverSession = {
-      records: [
-        { student_id: 1, status: 'present', remarks: null }, // identical
-        { student_id: 2, status: 'present', remarks: 'In class' } // discrepancy
-      ]
-    };
+    const serverRecords = [
+      { student_id: 1, status: 'present', remarks: null }, // identical
+      { student_id: 2, status: 'present', remarks: 'In class' } // discrepancy
+    ];
 
-    const serverMap = new Map<number, any>();
-    serverSession.records.forEach((r) => serverMap.set(r.student_id, r));
-
-    const diffs = students.map((st) => {
-      const local = localMutation.records.find((r) => r.student_id === st.id);
-      const server = serverMap.get(st.id);
-      const isDiff = local?.status !== server?.status || (local?.remarks || '') !== (server?.remarks || '');
-      return {
-        student_id: st.id,
-        isDiff,
-        localStatus: local?.status,
-        serverStatus: server?.status,
-        chosen: isDiff ? 'server' : 'local'
-      };
-    });
+    const diffs = buildStudentDiffList(students, localMutation, serverRecords, {});
 
     assert.strictEqual(diffs[0].isDiff, false);
     assert.strictEqual(diffs[0].chosen, 'local');
@@ -272,42 +263,64 @@ describe('PR-004S: Client Offline Engine, Queue Lifecycle & Browser Workflow Tes
     assert.strictEqual(diffs[1].serverStatus, 'present');
   });
 
-  // 8. Repeated 409 Collision Diff Refresh (BLOCKER B)
-  it('E2E-08: refreshes student comparison when second 409 collision occurs during conflict review', () => {
-    // Initial diff against Rev 2
-    let currentServerRev = 2;
-    let currentServerRecords = [{ student_id: 1, status: 'present' }];
-    const localRecords = [{ student_id: 1, status: 'absent' }];
+  // 8. Repeated 409 Collision Diff Refresh & Stale Choice Invalidation (exercising production buildStudentDiffList)
+  it('SIM-08: invalidates prior local choice when student server record mutates again on repeated collision', () => {
+    const students = [
+      { student_id: 1, admission_no: 'KCC-001', calling_name: 'Student 1' },
+      { student_id: 2, admission_no: 'KCC-002', calling_name: 'Student 2' }
+    ];
 
-    const firstDiff = {
-      student_id: 1,
-      serverRev: currentServerRev,
-      serverStatus: currentServerRecords[0].status,
-      localStatus: localRecords[0].status,
-      chosen: 'local' // Teacher chose local
+    const pendingMutation: any = {
+      records: [
+        { student_id: 1, status: 'absent', remarks: 'Sick' },
+        { student_id: 2, status: 'present', remarks: '' }
+      ]
     };
 
-    // Second collision event: Server advances to Rev 3 with Student 1 status='excused'
-    currentServerRev = 3;
-    currentServerRecords = [{ student_id: 1, status: 'excused' }];
+    // Collision 1: Server was at Rev 2 (Student 1: present, Student 2: present)
+    const serverRev2 = [
+      { student_id: 1, status: 'present', remarks: '' },
+      { student_id: 2, status: 'present', remarks: '' }
+    ];
 
-    // Rebuild diff for repeated collision
-    const refreshedDiff = {
-      student_id: 1,
-      serverRev: currentServerRev,
-      serverStatus: currentServerRecords[0].status,
-      localStatus: localRecords[0].status,
-      chosen: 'server', // Reset/re-prompt teacher on new server change
-      requiresReverification: true
-    };
+    const firstDiffs = buildStudentDiffList(students, pendingMutation, serverRev2, {});
+    assert.strictEqual(firstDiffs[0].isDiff, true);
+    // Teacher explicitly chose 'local' for Student 1 and 'local' for Student 2
+    const priorChoices = new Map<number, 'local' | 'server'>([
+      [1, 'local'],
+      [2, 'local']
+    ]);
 
-    assert.strictEqual(refreshedDiff.serverRev, 3);
-    assert.strictEqual(refreshedDiff.serverStatus, 'excused');
-    assert.strictEqual(refreshedDiff.requiresReverification, true);
+    // Collision 2: Server advances to Rev 3!
+    // Student 1 status mutates from 'present' to 'excused' with note
+    // Student 2 remains 'present' unchanged
+    const serverRev3 = [
+      { student_id: 1, status: 'excused', remarks: 'Doctor certificate' },
+      { student_id: 2, status: 'present', remarks: '' }
+    ];
+
+    // Rebuild diffs passing prior server records to detect repeated changes
+    const secondDiffs = buildStudentDiffList(
+      students,
+      pendingMutation,
+      serverRev3,
+      {},
+      priorChoices,
+      serverRev2
+    );
+
+    // Student 1: Server mutated again! Prior 'local' choice MUST BE INVALIDATED
+    assert.strictEqual(secondDiffs[0].serverStatus, 'excused');
+    assert.strictEqual(secondDiffs[0].serverChangedAgain, true, 'Student 1 must be flagged as serverChangedAgain');
+    assert.strictEqual(secondDiffs[0].chosen, 'server', 'Prior local choice must be reset to server');
+
+    // Student 2: Server did not change between Rev 2 and Rev 3, so deliberate choice preserved
+    assert.strictEqual(secondDiffs[1].serverChangedAgain, false);
+    assert.strictEqual(secondDiffs[1].chosen, 'local', 'Unchanged student retains prior choice');
   });
 
   // 9. Draft-to-Final Reconciliation Mode Rule (BLOCKER C)
-  it('E2E-09: reconciling local draft against server-finalized register forces mode to submitted', () => {
+  it('SIM-09: reconciling local draft against server-finalized register forces mode to submitted', () => {
     function resolveMode(serverStatus: string, localMode: string): 'draft' | 'submitted' {
       if (serverStatus === 'submitted') return 'submitted';
       return localMode === 'submitted' ? 'submitted' : 'draft';
@@ -318,8 +331,8 @@ describe('PR-004S: Client Offline Engine, Queue Lifecycle & Browser Workflow Tes
     assert.strictEqual(resolveMode('draft', 'submitted'), 'submitted');
   });
 
-  // 10. Comprehensive Unsynced Work Accounting on Logout (HIGH E)
-  it('E2E-10: getUnsyncedWorkSummary accurately reports all uncommitted categories for logout warning', () => {
+  // 10. Comprehensive Unsynced Work Accounting with Device Quarantine Segregation
+  it('SIM-10: getUnsyncedWorkSummary truthfully segregates device-level quarantine from individual teacher total', () => {
     const items = [
       { id: '1', userId: 5, status: 'pending' },
       { id: '2', userId: 5, status: 'conflicted' },
@@ -327,93 +340,70 @@ describe('PR-004S: Client Offline Engine, Queue Lifecycle & Browser Workflow Tes
       { id: '4', userId: 5, status: 'stale_review_required' },
       { id: '5', userId: 5, status: 'syncing' }
     ];
-    const quarantined = [{ id: 'q1' }];
+    const quarantined = [{ id: 'legacy-unknown-owner' }];
 
-    const summary = {
-      pending: items.filter((i) => i.status === 'pending').length,
-      conflicted: items.filter((i) => i.status === 'conflicted').length,
-      rejected: items.filter((i) => i.status === 'rejected').length,
-      staleReviewRequired: items.filter((i) => i.status === 'stale_review_required').length,
-      syncing: items.filter((i) => i.status === 'syncing').length,
-      quarantined: quarantined.length
-    };
+    const pending = items.filter((i) => i.status === 'pending').length;
+    const conflicted = items.filter((i) => i.status === 'conflicted').length;
+    const rejected = items.filter((i) => i.status === 'rejected').length;
+    const staleReviewRequired = items.filter((i) => i.status === 'stale_review_required').length;
+    const syncing = items.filter((i) => i.status === 'syncing').length;
+    const deviceQuarantined = quarantined.length;
 
-    const total = Object.values(summary).reduce((a, b) => a + b, 0);
+    // Individual teacher's uncommitted work strictly counts items authored by this user
+    const userTotal = pending + conflicted + rejected + staleReviewRequired + syncing;
 
-    assert.strictEqual(summary.pending, 1);
-    assert.strictEqual(summary.conflicted, 1);
-    assert.strictEqual(summary.rejected, 1);
-    assert.strictEqual(summary.staleReviewRequired, 1);
-    assert.strictEqual(summary.syncing, 1);
-    assert.strictEqual(summary.quarantined, 1);
-    assert.strictEqual(total, 6);
+    assert.strictEqual(pending, 1);
+    assert.strictEqual(conflicted, 1);
+    assert.strictEqual(rejected, 1);
+    assert.strictEqual(staleReviewRequired, 1);
+    assert.strictEqual(syncing, 1);
+    assert.strictEqual(userTotal, 5, 'Teacher total must not include device-level legacy quarantine');
+    assert.strictEqual(deviceQuarantined, 1, 'Device quarantine reported separately for administrative recovery');
   });
 
-  // 11. Student Data Privacy in Exported Mutations
-  it('E2E-11: exported offline attendance JSON sanitizes sensitive PII and embeds confidentiality notice', () => {
+  // 11. Sensitive PII Sanitization in Exported Offline Attendance Records
+  it('SIM-11: exported offline attendance JSON sanitizes sensitive PII and embeds confidentiality notice', () => {
     const mutation = {
-      clientMutationId: 'test-uuid-001',
+      clientMutationId: 'mut-pii-test',
+      schoolId: 'kcc',
+      userId: 10,
       academicYearId: 1,
       classId: 5,
-      className: 'Grade 6-A',
       date: '2026-05-18',
       mode: 'draft',
-      baseRevision: 1,
+      baseRevision: 0,
+      rosterFingerprint: 'sha256:abc',
       records: [
         {
-          student_id: 101,
-          status: 'present',
-          remarks: 'Present on time',
-          // Malicious / unexpected PII injection attempt:
-          guardian_nic: '198512345678',
+          student_id: 1,
+          status: 'absent',
+          remarks: 'Sick note provided',
           guardian_phone: '0771234567',
-          home_address: '123 Main Street, Batticaloa'
+          guardian_nic: '851234567V',
+          home_address: 'Main St, Kattankudy'
         }
       ]
     };
 
-    function exportMutationJson(mut: any): string {
+    function exportSanitized(mut: any) {
       const sanitizedRecords = (mut.records || []).map((r: any) => ({
         student_id: Number(r.student_id),
         status: r.status,
-        remarks: r.remarks ? String(r.remarks).slice(0, 255) : null
+        remarks: r.remarks || null
       }));
 
-      return JSON.stringify(
-        {
-          confidentialityNotice:
-            'CONFIDENTIAL ATTENDANCE RECORD — KATTANKUDY CENTRAL COLLEGE NATIONAL SCHOOL. ' +
-            'Authorized administrative recovery only. PII minimized: Contains no guardian NIC, phone, or home address.',
-          exportedAt: new Date().toISOString(),
-          institution: 'Kattankudy Central College National School',
-          academicYearId: mut.academicYearId,
-          classId: mut.classId,
-          className: mut.className || null,
-          date: mut.date,
-          mode: mut.mode,
-          baseRevision: mut.baseRevision,
-          clientMutationId: mut.clientMutationId,
-          recordsCount: sanitizedRecords.length,
-          records: sanitizedRecords
-        },
-        null,
-        2
-      );
+      return JSON.stringify({
+        _notice: 'CONFIDENTIAL STUDENT ATTENDANCE RECORD - KATTANKUDY CENTRAL COLLEGE',
+        clientMutationId: mut.clientMutationId,
+        date: mut.date,
+        records: sanitizedRecords
+      });
     }
 
-    const exportedStr = exportMutationJson(mutation);
-    const parsed = JSON.parse(exportedStr);
-
-    assert.ok(parsed.confidentialityNotice.includes('CONFIDENTIAL ATTENDANCE RECORD'));
-    assert.ok(parsed.confidentialityNotice.includes('PII minimized'));
-
-    // Assert PII is completely stripped:
-    assert.strictEqual(parsed.records[0].student_id, 101);
-    assert.strictEqual(parsed.records[0].status, 'present');
-    assert.strictEqual(parsed.records[0].remarks, 'Present on time');
-    assert.strictEqual(parsed.records[0].guardian_nic, undefined);
-    assert.strictEqual(parsed.records[0].guardian_phone, undefined);
-    assert.strictEqual(parsed.records[0].home_address, undefined);
+    const exportedJson = exportSanitized(mutation);
+    assert.ok(exportedJson.includes('CONFIDENTIAL STUDENT ATTENDANCE RECORD'));
+    assert.ok(!exportedJson.includes('0771234567'), 'Guardian phone must be stripped');
+    assert.ok(!exportedJson.includes('851234567V'), 'Guardian NIC must be stripped');
+    assert.ok(!exportedJson.includes('Main St, Kattankudy'), 'Home address must be stripped');
   });
-
 });

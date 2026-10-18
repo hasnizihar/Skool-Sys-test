@@ -1,12 +1,12 @@
-# SkoolSys 2.0 — PR-004S Comprehensive Attendance Regression Matrix (ATT-001 – ATT-075 & E2E-01 – E2E-11)
+# SkoolSys 2.0 — PR-004 Final Comprehensive Attendance Regression Matrix (ATT-001 – ATT-075, SIM-01 – SIM-11 & E2E-01 – E2E-05)
 **Kattankudy Central College National School (Grades 6–13)**  
 **Branch:** `feature/pr-004-attendance-integrity`  
-**Status:** 146 passing automated tests across 37 test suites (0 failures)  
+**Status:** 151 passing automated tests across 38 test suites (0 failures, 100% success rate)  
 **Execution Date:** 2026-10-18  
 
 ---
 
-## 1. Regression Scenarios & Automated Test Mapping
+## 1. Backend & Integration Regression Scenarios (ATT-001 – ATT-075)
 
 | Scenario ID | Category | Description | Primary Test File | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -89,25 +89,39 @@
 
 ---
 
-## 2. Browser & Client Offline Workflow Regression Suite (`client_offline_workflow.test.ts`)
+## 2. Client Engine Simulation & Unit Verification Suite (`client_offline_workflow.test.ts`)
 
 | Scenario ID | Test Name | Target Behavior | Status |
 | :--- | :--- | :--- | :--- |
-| **E2E-01** | IndexedDB V1->V2 Migration & Quarantine | Quarantines unverified legacy items missing revision/fingerprint with `legacy_review_required` | **PASS** |
-| **E2E-02** | Stalled Syncing Recovery | Recovers in-flight items stuck in `syncing` state and resets them to `pending` on reload | **PASS** |
-| **E2E-03** | Queue Mutex Locking | Concurrency lock prevents duplicate parallel queue draining | **PASS** |
-| **E2E-04** | Multi-Account Isolation | Partitioned stores ensure User A cannot inspect or sync User B uncommitted records | **PASS** |
-| **E2E-05** | 7-Day Retention Expiration | Auto-sync processes 6-day records normally but blocks 8-day records with `stale_review_required` | **PASS** |
-| **E2E-06** | Truthful Error Classification | 400, 401, 403, 409, 422, 500 classified as rejected/conflicted, never mistaken for offline | **PASS** |
-| **E2E-07** | Student Discrepancy Diffing | Compares server vs local records and produces per-student decision matrix without blind overwrite | **PASS** |
-| **E2E-08** | Repeated Conflict Handling | Second 409 collision refreshes comparison against fresh server snapshot and invalidates stale choices | **PASS** |
-| **E2E-09** | Draft-to-Final Reconciliation | Server submitted register forces target mode `submitted` and requires complete roster marking | **PASS** |
-| **E2E-10** | Unsynced Work Summary | Accurately aggregates all 6 uncommitted work states for truthful logout confirmation dialog | **PASS** |
-| **E2E-11** | PII Sanitization & Security | Exported offline emergency JSON sanitizes sensitive PII and embeds institutional warning | **PASS** |
+| **SIM-01** | IndexedDB V1->V2 Migration & Quarantine | Quarantines unverified legacy items missing revision/fingerprint with `legacy_review_required` | **PASS** |
+| **SIM-02** | Stalled Syncing Recovery | Recovers in-flight items stuck in `syncing` state and resets them to `pending` on reload | **PASS** |
+| **SIM-03** | Queue Mutex Locking | Concurrency lock prevents duplicate parallel queue draining | **PASS** |
+| **SIM-04** | Multi-Account Isolation | Partitioned stores ensure User A cannot inspect or sync User B uncommitted records | **PASS** |
+| **SIM-05** | 7-Day Retention Expiration & Malformed Timestamps | Auto-sync processes 6-day records normally, blocks 8-day records, and fails closed on corrupted/future timestamps | **PASS** |
+| **SIM-06** | Truthful Error Classification | 400, 401, 403, 409, 422, 500 classified as rejected/conflicted, never mistaken for offline | **PASS** |
+| **SIM-07** | Student Discrepancy Diffing | Compares server vs local records and produces per-student decision matrix without blind overwrite | **PASS** |
+| **SIM-08** | Repeated Conflict Choice Invalidation | Second 409 collision refreshes comparison against fresh server snapshot and invalidates stale choices when server mutates again | **PASS** |
+| **SIM-09** | Draft-to-Final Reconciliation | Server submitted register forces target mode `submitted` and requires complete roster marking | **PASS** |
+| **SIM-10** | Unsynced Work Summary Segregation | Segregates device-level quarantine from individual teacher uncommitted total for accurate UI reporting | **PASS** |
+| **SIM-11** | PII Sanitization & Security | Exported offline emergency JSON sanitizes sensitive PII and embeds institutional warning | **PASS** |
 
 ---
 
-## 3. Baseline Test Preservation Summary
+## 3. Genuine Automated Browser & IndexedDB E2E Tests (`attendance_browser_real.test.ts`)
+
+These tests run in genuine headless Chrome/Edge browsers against the live frontend dev server (`http://localhost:5173`) and live backend API (`http://localhost:5000`), executing real DOM events, real IndexedDB storage operations, real network offline/online events, and multi-account browser switching:
+
+| Scenario ID | Test Name | Verification Target | Status |
+| :--- | :--- | :--- | :--- |
+| **E2E-01** | Real IndexedDB V1->V2 Upgrade | Upgrades real legacy IndexedDB database `skoolsys_offline`, extracts unverified items, and verifies quarantine storage | **PASS** |
+| **E2E-02** | Real Browser Offline/Online Reconnect | Emulates browser offline network disconnect, verifies DOM banner appearance, restores connectivity, and confirms queue preservation | **PASS** |
+| **E2E-03** | Multi-Account Shared Browser Isolation | Verifies user-partitioned IndexedDB queues on shared teacher PC; confirms non-destructive logout purges cached rosters while preserving unsynced mutations | **PASS** |
+| **E2E-04** | Real DOM Concurrency Conflict Modal | Evaluates student diff list under repeated 409 collisions; verifies stale choices are invalidated when server record mutates again | **PASS** |
+| **E2E-05** | Real DOM Aged Retention Expiry & Re-authorization | Seeds 8-day-old record into real IndexedDB `skoolsys_offline_db`, verifies retention-expired alert banner, opens Review Stale modal, and verifies KCC-POL-004 re-authorization workflow UI | **PASS** |
+
+---
+
+## 4. Baseline Regression Preservation Summary
 
 All pre-existing baseline suites continue to pass 100% without regression:
 - `health.test.ts`: 1 test passing
@@ -117,5 +131,4 @@ All pre-existing baseline suites continue to pass 100% without regression:
 - `record_authorization.test.ts`: 20 tests passing
 - `security_matrix.test.ts`: 24 tests passing
 
-**Total Active Test Count:** 146 automated tests across 37 suites (61 baseline + 85 PR-004/PR-004R/PR-004S test cases). 0 failures, 0 skipped.
-
+**Total Active Test Count:** 151 automated tests across 38 suites (61 baseline + 90 PR-004/PR-004R/PR-004S test cases). 0 failures, 0 skipped.

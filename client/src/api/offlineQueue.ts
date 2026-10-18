@@ -61,6 +61,9 @@ export interface OfflineAttendanceMutation {
   }>;
   notes?: string | null;
   timestamp: string;
+  originalTimestamp?: string;
+  reauthorizedAt?: string;
+  reauthorizedByUserId?: number;
   status: 'pending' | 'syncing' | 'conflicted' | 'legacy_review_required' | 'stale_review_required' | 'rejected';
   conflictDetails?: {
     code: string;
@@ -255,6 +258,11 @@ export async function queueOfflineAttendance(
 ): Promise<OfflineAttendanceMutation> {
   const db = await openOfflineDB();
 
+  // Guarantee immutable record of original creation time
+  if (!mutation.originalTimestamp) {
+    mutation.originalTimestamp = mutation.timestamp;
+  }
+
   return new Promise((resolve, reject) => {
     const tx = db.transaction('pending_attendance', 'readwrite');
     const store = tx.objectStore('pending_attendance');
@@ -349,19 +357,47 @@ export async function getUnsyncedWorkSummary(userId?: number): Promise<UnsyncedW
   const staleReviewRequired = pendingItems.filter(
     (i) => i.status === 'stale_review_required' || i.status === 'legacy_review_required'
   ).length;
-  const quarantined = quarantinedItems.length;
-  const total = pending + conflicted + rejected + syncing + staleReviewRequired + quarantined;
+
+  // Individual user unsynced total strictly measures mutations authored by this teacher.
+  // Device-level legacy quarantined items with untrusted ownership are not counted towards user total.
+  const userTotal = pending + conflicted + rejected + syncing + staleReviewRequired;
+  const deviceQuarantined = quarantinedItems.length;
 
   return {
-    total,
+    total: userTotal,
     pending,
     conflicted,
     rejected,
     syncing,
     staleReviewRequired,
-    quarantined,
-    hasUnsyncedWork: total > 0
+    quarantined: deviceQuarantined, // Device-level quarantine metric
+    hasUnsyncedWork: userTotal > 0
   };
+}
+
+/**
+ * Retrieves device-level quarantined attendance items resulting from legacy V1 migration.
+ * These records lack verifiable user ownership and must be inspected via administrative recovery.
+ */
+export async function getDeviceQuarantineSummary(): Promise<{
+  quarantinedCount: number;
+  items: QuarantinedAttendanceItem[];
+}> {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains('quarantined_attendance')) {
+      resolve({ quarantinedCount: 0, items: [] });
+      return;
+    }
+    const tx = db.transaction('quarantined_attendance', 'readonly');
+    const store = tx.objectStore('quarantined_attendance');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const items = (req.result || []) as QuarantinedAttendanceItem[];
+      resolve({ quarantinedCount: items.length, items });
+    };
+    req.onerror = () => reject(req.error);
+  });
 }
 
 /**
@@ -733,15 +769,50 @@ export async function resolveConflictReapply(
 export const MAX_OFFLINE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export function isMutationExpired(mutation: OfflineAttendanceMutation, nowMs: number = Date.now()): boolean {
+  // Fail closed on missing, non-string, or empty timestamp
+  if (!mutation?.timestamp || typeof mutation.timestamp !== 'string') {
+    return true;
+  }
+
   const mutationTime = new Date(mutation.timestamp).getTime();
-  if (isNaN(mutationTime)) return false;
+  // Fail closed on corrupted / non-parseable timestamp
+  if (isNaN(mutationTime)) {
+    return true;
+  }
+
+  // Fail closed on implausible future dates (skew tolerance: 5 minutes)
+  if (mutationTime > nowMs + 5 * 60 * 1000) {
+    return true;
+  }
+
+  // If the item was formally reauthorized by the authenticated teacher,
+  // evaluate whether the reauthorization itself is within the 7-day retention window
+  if (mutation.reauthorizedAt) {
+    if (typeof mutation.reauthorizedAt !== 'string') return true;
+    const reauthTime = new Date(mutation.reauthorizedAt).getTime();
+    if (isNaN(reauthTime) || reauthTime > nowMs + 5 * 60 * 1000) return true;
+    return (nowMs - reauthTime) > MAX_OFFLINE_RETENTION_MS;
+  }
+
   return (nowMs - mutationTime) > MAX_OFFLINE_RETENTION_MS;
 }
 
 /**
- * Re-authorizes an expired offline item after explicit teacher review, refreshing timestamp.
+ * Re-authorizes an expired or review-required offline item after authenticated teacher review.
+ * 
+ * Safety & Security Rules:
+ * - Strictly verifies that currentUserId matches item.userId (blocks unauthorized re-authorization).
+ * - Preserves the original creation timestamp in an immutable `originalTimestamp` field.
+ * - Records `reauthorizedAt` (ISO timestamp) and `reauthorizedByUserId` for auditability.
+ * - Reconciles fresh serverBaseRevision and freshRosterFingerprint from the server session.
+ * - Resets item status to 'pending' to permit controlled synchronization.
  */
-export async function reauthorizeStaleItem(clientMutationId: string): Promise<void> {
+export async function reauthorizeStaleItem(
+  clientMutationId: string,
+  currentUserId: number,
+  freshServerRevision?: number,
+  freshRosterFingerprint?: string
+): Promise<void> {
   const db = await openOfflineDB();
 
   return new Promise((resolve, reject) => {
@@ -752,12 +823,35 @@ export async function reauthorizeStaleItem(clientMutationId: string): Promise<vo
     getReq.onsuccess = () => {
       const item = getReq.result as OfflineAttendanceMutation | undefined;
       if (!item) {
-        resolve();
+        reject(new Error(`Queue item not found for mutation ID: ${clientMutationId}`));
         return;
       }
+
+      // Security check: Teacher identity must match the author of the offline mutation
+      if (item.userId !== currentUserId) {
+        reject(
+          new Error(
+            `UNAUTHORIZED_QUEUE_OWNERSHIP: Teacher with user ID ${currentUserId} is not authorized to re-authorize offline records recorded by user ID ${item.userId}.`
+          )
+        );
+        return;
+      }
+
+      // Preserve original creation time immutably
+      item.originalTimestamp = item.originalTimestamp || item.timestamp;
+      item.reauthorizedAt = new Date().toISOString();
+      item.reauthorizedByUserId = currentUserId;
+
+      if (freshServerRevision !== undefined) {
+        item.baseRevision = freshServerRevision;
+      }
+      if (freshRosterFingerprint !== undefined) {
+        item.rosterFingerprint = freshRosterFingerprint;
+      }
+
       item.status = 'pending';
       item.conflictDetails = null;
-      item.timestamp = new Date().toISOString();
+
       store.put(item);
     };
 

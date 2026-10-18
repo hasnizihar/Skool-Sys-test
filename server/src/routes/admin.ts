@@ -245,7 +245,7 @@ router.post('/restore', (req, res) => {
   );
 
   res.status(503).json({
-    error: 'Database restore is disabled during live operations. Live atomic transactional recovery is scheduled for PR-006. Restore must be performed strictly during offline maintenance with server process and all database connections shut down.',
+    error: 'Database restore is disabled for safety during live operations. Live atomic transactional recovery is scheduled for PR-006. Restore must be performed strictly during offline maintenance with server process and all database connections shut down.',
     status: 'disabled',
     safety_notice: 'Destructive live restore is blocked to prevent database corruption. Use verified offline backup utilities under controlled maintenance.'
   });

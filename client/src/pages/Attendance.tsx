@@ -520,7 +520,8 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           conflictModal.pendingMutation!,
           fresh.records || [],
           attendanceMap,
-          priorChoices
+          priorChoices,
+          conflictModal.latestServerSession?.records || []
         );
 
         setConflictModal((prev) => ({
@@ -1244,6 +1245,23 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                           <td>
                             <strong>{d.admission_no}</strong>
                             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{d.calling_name}</div>
+                            {d.serverChangedAgain && (
+                              <div style={{ marginTop: '0.25rem' }}>
+                                <span
+                                  className="badge"
+                                  style={{
+                                    background: '#fee2e2',
+                                    color: '#991b1b',
+                                    border: '1px solid #ef4444',
+                                    fontSize: '0.675rem',
+                                    fontWeight: 700
+                                  }}
+                                  title="Server status or remarks changed in the latest concurrent submission. Prior local choice was invalidated."
+                                >
+                                  ⚠️ Server Changed Again
+                                </span>
+                              </div>
+                            )}
                           </td>
 
                           {/* Server State */}
