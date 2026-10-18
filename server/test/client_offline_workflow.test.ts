@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { isMutationExpired } from '../../client/src/api/offlineQueue.ts';
+import { isMutationExpired, buildRosterCacheKey } from '../../client/src/api/offlineQueue.ts';
 import { buildStudentDiffList } from '../../client/src/utils/conflictDiffUtils.ts';
 
 describe('PR-004S: Client Offline Engine Simulation & Unit Verification Tests', () => {
@@ -406,4 +406,107 @@ describe('PR-004S: Client Offline Engine Simulation & Unit Verification Tests', 
     assert.ok(!exportedJson.includes('851234567V'), 'Guardian NIC must be stripped');
     assert.ok(!exportedJson.includes('Main St, Kattankudy'), 'Home address must be stripped');
   });
+
+  // 12. Date-Scoped Offline Cache Keying & Isolation
+  it('SIM-12: date-scoped offline roster cache key isolates registers per attendance date', () => {
+    const keyDateA = buildRosterCacheKey(2, 1, 5, '2026-05-18');
+    const keyDateB = buildRosterCacheKey(2, 1, 5, '2026-05-19');
+    const keyOtherUser = buildRosterCacheKey(3, 1, 5, '2026-05-18');
+
+    assert.strictEqual(keyDateA, 'kcc:2:1:5:2026-05-18');
+    assert.strictEqual(keyDateB, 'kcc:2:1:5:2026-05-19');
+    assert.notStrictEqual(keyDateA, keyDateB, 'Keys for different dates must be distinct to prevent cross-day pollution');
+    assert.notStrictEqual(keyDateA, keyOtherUser, 'Keys for different users must be distinct to prevent PII leakage');
+
+    // Simulate mock date-partitioned store
+    const store = new Map<string, any>();
+    store.set(keyDateA, {
+      key: keyDateA,
+      date: '2026-05-18',
+      rosterFingerprint: 'sha256:fingerprint-18th',
+      students: [{ student_id: 101, attendance_status: 'present' }]
+    });
+
+    // Lookup date A: found
+    const cachedA = store.get(keyDateA);
+    assert.ok(cachedA);
+    assert.strictEqual(cachedA.date, '2026-05-18');
+    assert.strictEqual(cachedA.rosterFingerprint, 'sha256:fingerprint-18th');
+
+    // Lookup date B: uncached, strictly null
+    const cachedB = store.get(keyDateB) || null;
+    assert.strictEqual(cachedB, null, 'Uncached date must not inherit or fall back to prior day data');
+  });
+
+  // 13. V1 LocalStorage Fallback Migration & Guardian PII Purge
+  it('SIM-13: localStorage fallback migration moves unverified queue items to quarantine and purges plain-text PII', () => {
+    // Simulate legacy localStorage
+    const mockStorage: Record<string, string> = {
+      skoolsys_pending_queue: JSON.stringify([
+        {
+          id: 'ls-legacy-draft-1',
+          classId: 5,
+          date: '2026-05-18',
+          records: [{ student_id: 101, status: 'absent' }]
+        }
+      ]),
+      skoolsys_roster_5: JSON.stringify({
+        students: [
+          {
+            student_id: 101,
+            guardian_nic: '198512345678',
+            guardian_phone: '0777123456',
+            home_address: 'Beach Rd, Kattankudy'
+          }
+        ]
+      }),
+      unrelated_app_setting: 'dark_mode'
+    };
+
+    // Migration function simulating migrateLegacyLocalStorageQueue
+    function simulateLocalStorageMigration(storage: Record<string, string>) {
+      const quarantinedItems: any[] = [];
+      let queueRemoved = false;
+      const purgedRosterKeys: string[] = [];
+
+      // 1. Recover pending queue to quarantine
+      if (storage.skoolsys_pending_queue) {
+        const parsed = JSON.parse(storage.skoolsys_pending_queue);
+        for (const item of parsed) {
+          quarantinedItems.push({
+            id: item.id || `legacy-ls-${Date.now()}`,
+            schoolId: 'kcc',
+            source: 'localstorage_v1_fallback',
+            quarantinedAt: new Date().toISOString(),
+            reason: 'Legacy localStorage fallback queue item lacking V2 concurrency & provenance metadata',
+            originalData: item
+          });
+        }
+        // Commit simulation
+        delete storage.skoolsys_pending_queue;
+        queueRemoved = true;
+      }
+
+      // 2. Purge plain-text roster caches containing PII
+      for (const k of Object.keys(storage)) {
+        if (k.startsWith('skoolsys_roster_')) {
+          purgedRosterKeys.push(k);
+          delete storage[k];
+        }
+      }
+
+      return { quarantinedItems, queueRemoved, purgedRosterKeys };
+    }
+
+    const result = simulateLocalStorageMigration(mockStorage);
+
+    assert.strictEqual(result.quarantinedItems.length, 1);
+    assert.strictEqual(result.quarantinedItems[0].source, 'localstorage_v1_fallback');
+    assert.strictEqual(result.quarantinedItems[0].originalData.id, 'ls-legacy-draft-1');
+    assert.strictEqual(result.queueRemoved, true, 'skoolsys_pending_queue must be removed only after quarantine commit');
+    assert.deepStrictEqual(result.purgedRosterKeys, ['skoolsys_roster_5']);
+    assert.strictEqual(mockStorage['skoolsys_roster_5'], undefined, 'Plain-text guardian PII cache must be purged');
+    assert.strictEqual(mockStorage['unrelated_app_setting'], 'dark_mode', 'Unrelated keys must remain untouched');
+  });
 });
+

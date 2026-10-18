@@ -76,9 +76,11 @@ export interface OfflineAttendanceMutation {
 export interface QuarantinedAttendanceItem {
   id: string;
   schoolId: string;
+  source?: 'indexeddb_v1' | 'localstorage_v1_fallback';
   originalData: any;
   quarantinedAt: string;
   reason: string;
+  recovered?: boolean;
 }
 
 /**
@@ -102,7 +104,8 @@ export function minimizeStudentForOffline(st: any): MinimalStudent {
 
 /**
  * Opens or upgrades the IndexedDB to Version 2.
- * Migrates legacy v1 stores and quarantines unverified legacy queue entries.
+ * Migrates legacy v1 stores, quarantines unverified legacy queue entries,
+ * and recovers any legacy localStorage fallback items.
  */
 export function openOfflineDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -147,11 +150,12 @@ export function openOfflineDB(): Promise<IDBDatabase> {
           for (const item of items) {
             // Quarantine legacy item lacking required revision / fingerprint
             qStore.put({
-              id: item.id || item.clientMutationId || `legacy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              id: item.id || item.clientMutationId || `legacy-idb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               schoolId: SCHOOL_ID,
+              source: 'indexeddb_v1',
               originalData: item,
               quarantinedAt: new Date().toISOString(),
-              reason: 'Legacy V1 entry lacking required revision, mode, or roster fingerprint.'
+              reason: 'Legacy V1 IndexedDB entry lacking required revision, mode, or roster fingerprint.'
             });
           }
           if (oldStore.keyPath !== 'clientMutationId') {
@@ -172,16 +176,110 @@ export function openOfflineDB(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = (event: any) => resolve(event.target.result);
+    request.onsuccess = async (event: any) => {
+      const db = event.target.result as IDBDatabase;
+      try {
+        await migrateLegacyLocalStorageQueue(db);
+      } catch (err) {
+        console.warn('Failed to migrate legacy localStorage queue:', err);
+      }
+      resolve(db);
+    };
     request.onerror = (event: any) => reject(event.target.error);
   });
 }
 
 /**
- * Builds a canonical partitioned cache key.
+ * Safely migrates legacy V1 localStorage fallback items to IndexedDB quarantine
+ * and purges legacy unencrypted roster caches that contained guardian PII.
+ * Never deletes uncommitted pending data from localStorage until durable commit is verified.
  */
-export function buildRosterCacheKey(userId: number, academicYearId: number, classId: number): string {
-  return `${SCHOOL_ID}:${userId}:${academicYearId}:${classId}`;
+export async function migrateLegacyLocalStorageQueue(db?: IDBDatabase): Promise<{
+  quarantinedCount: number;
+  purgedRostersCount: number;
+}> {
+  if (typeof localStorage === 'undefined') {
+    return { quarantinedCount: 0, purgedRostersCount: 0 };
+  }
+
+  const database = db || (await openOfflineDB());
+  let quarantinedCount = 0;
+  let purgedRostersCount = 0;
+
+  // 1. Process legacy localStorage pending queue
+  const rawQueue = localStorage.getItem('skoolsys_pending_queue');
+  if (rawQueue) {
+    try {
+      const items = JSON.parse(rawQueue);
+      const queueArray = Array.isArray(items) ? items : [items];
+
+      if (queueArray.length > 0 && database.objectStoreNames.contains('quarantined_attendance')) {
+        await new Promise<void>((resolve, reject) => {
+          const tx = database.transaction('quarantined_attendance', 'readwrite');
+          const store = tx.objectStore('quarantined_attendance');
+
+          for (const item of queueArray) {
+            const legacyId =
+              item.clientMutationId ||
+              item.id ||
+              `legacy-ls-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+            const qItem: QuarantinedAttendanceItem = {
+              id: legacyId,
+              schoolId: SCHOOL_ID,
+              source: 'localstorage_v1_fallback',
+              quarantinedAt: new Date().toISOString(),
+              reason: 'Legacy localStorage fallback queue item lacking V2 concurrency & provenance metadata',
+              originalData: item
+            };
+            store.put(qItem);
+            quarantinedCount++;
+          }
+
+          tx.oncomplete = () => {
+            // ONLY after transaction successfully commits to IndexedDB, remove from localStorage
+            localStorage.removeItem('skoolsys_pending_queue');
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(new Error('LocalStorage quarantine transaction aborted'));
+        });
+      } else {
+        localStorage.removeItem('skoolsys_pending_queue');
+      }
+    } catch (parseErr) {
+      console.warn('Failed to parse legacy localStorage pending queue:', parseErr);
+    }
+  }
+
+  // 2. Safely purge legacy unencrypted roster caches that contain guardian PII
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('skoolsys_roster_')) {
+      keysToRemove.push(key);
+    }
+  }
+
+  for (const k of keysToRemove) {
+    localStorage.removeItem(k);
+    purgedRostersCount++;
+  }
+
+  return { quarantinedCount, purgedRostersCount };
+}
+
+/**
+ * Builds a canonical partitioned cache key incorporating the specific attendance date.
+ * KCC-POL-004 & PR-004: Prevents cross-date cache pollution or stale fingerprint inheritance.
+ */
+export function buildRosterCacheKey(
+  userId: number,
+  academicYearId: number,
+  classId: number,
+  date: string
+): string {
+  return `${SCHOOL_ID}:${userId}:${academicYearId}:${classId}:${date}`;
 }
 
 /**
@@ -200,7 +298,7 @@ export async function cacheClassRoster(
 ): Promise<void> {
   const db = await openOfflineDB();
   const minimized = rawStudents.map(minimizeStudentForOffline);
-  const key = buildRosterCacheKey(userId, academicYearId, classId);
+  const key = buildRosterCacheKey(userId, academicYearId, classId, date);
 
   const entry: CachedRoster = {
     key,
@@ -228,24 +326,32 @@ export async function cacheClassRoster(
 }
 
 /**
- * Retrieves the cached class roster for a given user, academic year, and class.
- * Never leaks rosters across user accounts.
+ * Retrieves the cached class roster for a given user, academic year, class, and specific date.
+ * Never leaks rosters across user accounts or across different dates.
  */
 export async function getCachedClassRoster(
   userId: number,
   academicYearId: number,
-  classId: number
+  classId: number,
+  date: string
 ): Promise<CachedRoster | null> {
   try {
     const db = await openOfflineDB();
-    const key = buildRosterCacheKey(userId, academicYearId, classId);
+    const key = buildRosterCacheKey(userId, academicYearId, classId, date);
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction('cached_rosters', 'readonly');
       const store = tx.objectStore('cached_rosters');
       const req = store.get(key);
 
-      req.onsuccess = () => resolve(req.result || null);
+      req.onsuccess = () => {
+        const item = req.result as CachedRoster | undefined;
+        if (item && item.date === date) {
+          resolve(item);
+        } else {
+          resolve(null);
+        }
+      };
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
@@ -402,6 +508,25 @@ export async function getDeviceQuarantineSummary(): Promise<{
       resolve({ quarantinedCount: items.length, items });
     };
     req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Removes an item from the quarantined store after administrative verification or discard.
+ */
+export async function removeQuarantinedItem(id: string): Promise<void> {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains('quarantined_attendance')) {
+      resolve();
+      return;
+    }
+    const tx = db.transaction('quarantined_attendance', 'readwrite');
+    const store = tx.objectStore('quarantined_attendance');
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(new Error('Transaction aborted'));
   });
 }
 
@@ -901,3 +1026,19 @@ export function exportMutationJson(mutation: OfflineAttendanceMutation): string 
     2
   );
 }
+
+// Expose production offline engine on window for production runtime invocation
+if (typeof window !== 'undefined') {
+  (window as any).__skoolsys_offline = {
+    openOfflineDB,
+    migrateLegacyLocalStorageQueue,
+    buildRosterCacheKey,
+    cacheClassRoster,
+    getCachedClassRoster,
+    getPendingAttendanceQueue,
+    getDeviceQuarantineSummary,
+    queueOfflineAttendance,
+    clearCachedRostersForUser
+  };
+}
+

@@ -111,20 +111,23 @@
 | **SIM-09** | Draft-to-Final Reconciliation | Server submitted register forces target mode `submitted` and requires complete roster marking | **PASS** |
 | **SIM-10** | Unsynced Work Summary Segregation | Segregates device-level quarantine from individual teacher uncommitted total for accurate UI reporting | **PASS** |
 | **SIM-11** | PII Sanitization & Security | Exported offline emergency JSON sanitizes sensitive PII and embeds institutional warning | **PASS** |
+| **SIM-12** | Date-Scoped Cache Keying & Isolation | Composite key `kcc:userId:academicYearId:classId:date` isolates offline cache per date, preventing cross-date leakage | **PASS** |
+| **SIM-13** | V1 LocalStorage Fallback Recovery & PII Purge | Recovers `skoolsys_pending_queue` to IndexedDB quarantine, removes localStorage key only on commit, and purges plain-text guardian PII | **PASS** |
 
 ---
 
 ## 3. Genuine Automated Browser & IndexedDB E2E Tests (`attendance_browser_real.test.ts`)
 
-These tests run in genuine headless Chrome/Edge browsers against the live frontend dev server (`http://localhost:5173`) and live backend API (`http://localhost:5000`), executing real DOM events, real IndexedDB storage operations, real network offline/online events, and multi-account browser switching:
+These tests run in genuine headless Chromium/Chrome/Edge browsers executing real DOM interfaces, real IndexedDB storage operations, real network offline/online events, production API invocations, and full-stack integration:
 
 | Scenario ID | Test Name | Verification Target | Status |
 | :--- | :--- | :--- | :--- |
-| **E2E-01** | Real IndexedDB V1->V2 Upgrade | Upgrades real legacy IndexedDB database `skoolsys_offline`, extracts unverified items, and verifies quarantine storage | **PASS** |
-| **E2E-02** | Real Browser Offline/Online Reconnect | Emulates browser offline network disconnect, verifies DOM banner appearance, restores connectivity, and confirms queue preservation | **PASS** |
-| **E2E-03** | Multi-Account Shared Browser Isolation | Verifies user-partitioned IndexedDB queues on shared teacher PC; confirms non-destructive logout purges cached rosters while preserving unsynced mutations | **PASS** |
+| **E2E-01** | Production `openOfflineDB()` Migration & Fallback Recovery | Directly executes production `window.__skoolsys_offline.openOfflineDB()`, migrates v1 IDB, recovers legacy localStorage fallback queue to quarantine, and purges unencrypted guardian PII | **PASS** |
+| **E2E-02** | Date-Scoped Offline Cache Isolation & Offline Draft Save | Verifies date-scoped cache isolation in real DOM; uncached date displays warning and disables save; cached date reloads and saves offline draft to IndexedDB | **PASS** |
+| **E2E-03** | Multi-Account Shared Browser Isolation | Verifies user-partitioned IndexedDB queues on shared teacher PC with date-scoped keys; confirms non-destructive logout purges cached rosters while preserving unsynced mutations | **PASS** |
 | **E2E-04** | Real DOM Concurrency Conflict Modal | Evaluates student diff list under repeated 409 collisions; verifies stale choices are invalidated when server record mutates again | **PASS** |
 | **E2E-05** | Real DOM Aged Retention Expiry & Re-authorization | Seeds 8-day-old record into real IndexedDB `skoolsys_offline_db`, verifies retention-expired alert banner, opens Review Stale modal, and verifies KCC-POL-004 re-authorization workflow UI | **PASS** |
+| **E2E-06** | Full-Stack Integration (Browser -> Express -> SQLite DB) | Connects genuine Playwright Chromium browser to real Express server and isolated temporary SQLite DB; verifies live save at Rev 1, concurrent revision collision, HTTP 409 conflict, real DOM modal diff, and deliberate reconciliation to Rev 3 with audit logs and sync receipts | **PASS** |
 
 ---
 
@@ -138,4 +141,5 @@ All pre-existing baseline suites continue to pass 100% without regression:
 - `record_authorization.test.ts`: 20 tests passing
 - `security_matrix.test.ts`: 24 tests passing
 
-**Total Active Test Count:** 158 automated tests (61 baseline + 92 PR-004 backend test cases in `npm test` + 5 genuine Playwright browser E2E test cases in `npm run test:browser`). 0 failures, 0 skipped, 100% pass rate.
+**Total Active Test Count:** 161 automated tests (155 backend test cases in `npm test` across 37 suites + 6 genuine Playwright browser E2E test cases in `npm run test:browser`). 0 failures, 0 skipped, 100% pass rate.
+

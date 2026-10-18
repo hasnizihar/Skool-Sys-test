@@ -4,7 +4,10 @@ import {
   getPendingAttendanceQueue,
   syncPendingQueue,
   removePendingItem,
-  OfflineAttendanceMutation
+  OfflineAttendanceMutation,
+  getDeviceQuarantineSummary,
+  removeQuarantinedItem,
+  QuarantinedAttendanceItem
 } from '../api/offlineQueue';
 import { getAuthToken, getCurrentUser, api, HttpError } from '../api/client';
 import { buildStudentDiffList, ConflictStudentDiff } from '../utils/conflictDiffUtils';
@@ -12,6 +15,7 @@ import { buildStudentDiffList, ConflictStudentDiff } from '../utils/conflictDiff
 export const OfflineBanner: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceMutation[]>([]);
+  const [quarantinedItems, setQuarantinedItems] = useState<QuarantinedAttendanceItem[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncMsg, setLastSyncMsg] = useState<string | null>(null);
   const [showStaleModal, setShowStaleModal] = useState(false);
@@ -33,10 +37,17 @@ export const OfflineBanner: React.FC = () => {
   const checkQueue = async () => {
     if (!currentUser?.id) {
       setPendingQueue([]);
+      setQuarantinedItems([]);
       return;
     }
     const queue = await getPendingAttendanceQueue(currentUser.id);
     setPendingQueue(queue);
+    try {
+      const qSummary = await getDeviceQuarantineSummary();
+      setQuarantinedItems(qSummary.items || []);
+    } catch {
+      // Ignore IDB errors during early boot
+    }
   };
 
   useEffect(() => {
@@ -277,6 +288,23 @@ export const OfflineBanner: React.FC = () => {
     }
   };
 
+  const handleExportQuarantined = (item: QuarantinedAttendanceItem) => {
+    const blob = new Blob([JSON.stringify(item, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `quarantined-attendance-${item.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDiscardQuarantined = async (id: string) => {
+    if (confirm('Are you sure you want to discard this quarantined legacy record? This cannot be undone.')) {
+      await removeQuarantinedItem(id);
+      await checkQueue();
+    }
+  };
+
   if (!currentUser) return null;
 
   const pendingCount = pendingQueue.filter((i) => i.status === 'pending').length;
@@ -285,9 +313,9 @@ export const OfflineBanner: React.FC = () => {
   const staleItems = pendingQueue.filter(
     (i) => i.status === 'stale_review_required' || i.status === 'legacy_review_required'
   );
-  const staleCount = staleItems.length;
+  const staleCount = staleItems.length + quarantinedItems.length;
 
-  if (isOnline && pendingQueue.length === 0 && !lastSyncMsg) {
+  if (isOnline && pendingQueue.length === 0 && quarantinedItems.length === 0 && !lastSyncMsg) {
     return null;
   }
 
@@ -624,6 +652,58 @@ export const OfflineBanner: React.FC = () => {
                         </div>
                       </div>
                     ))
+                  )}
+
+                  {quarantinedItems.length > 0 && (
+                    <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                      <h5 style={{ margin: '0 0 0.35rem 0', color: '#b45309', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', fontWeight: 700 }}>
+                        <AlertTriangle size={15} />
+                        Quarantined Legacy Work ({quarantinedItems.length})
+                      </h5>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.6rem', lineHeight: 1.35 }}>
+                        Preserved from legacy storage ({quarantinedItems.filter((q) => q.source === 'localstorage_v1_fallback').length} from localStorage fallback). Lacking verified user ownership, these records are never auto-synced. Teachers or administrators can export JSON or discard.
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {quarantinedItems.map((q) => (
+                          <div
+                            key={q.id}
+                            style={{
+                              background: '#fffbeb',
+                              border: '1px solid #fef3c7',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.6rem 0.75rem',
+                              fontSize: '0.775rem'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div>
+                                <strong>ID: {q.id}</strong> — Source:{' '}
+                                <em>{q.source === 'localstorage_v1_fallback' ? 'Legacy LocalStorage Fallback' : 'Legacy IndexedDB v1'}</em>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.725rem', marginTop: '0.15rem' }}>{q.reason}</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleExportQuarantined(q)}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}
+                                >
+                                  Export JSON
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDiscardQuarantined(q.id)}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem', color: '#dc2626' }}
+                                >
+                                  Discard
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
 

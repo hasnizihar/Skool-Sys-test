@@ -146,9 +146,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         });
         setAttendanceMap(newMap);
       } else {
-        // Offline: Load from IndexedDB v2 cache
+        // Offline: Load from IndexedDB v2 cache for this specific date
         setIsOfflineMode(true);
-        const cached = await getCachedClassRoster(user.id, academicYearId, classId);
+        const cached = await getCachedClassRoster(user.id, academicYearId, classId, date);
         if (cached) {
           setStudents(cached.students || []);
           setServerRevision(cached.serverRevision || 0);
@@ -163,18 +163,35 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           setAttendanceMap(newMap);
         } else {
           setStudents([]);
-          setErrorMessage('No offline roster cached for this class. Connect to school network to download roster.');
+          setServerRevision(0);
+          setRosterFingerprint('');
+          setAttendanceMap({});
+          setErrorMessage(`No offline register cached for Class ${classId} on Date ${date}. Connect to school network to download this register.`);
         }
       }
     } catch (err: any) {
       console.warn('Network error loading session, falling back to offline cache:', err);
       setIsOfflineMode(true);
       const targetClass = classes.find((c) => c.id === classId);
-      const cached = await getCachedClassRoster(user.id, targetClass?.academic_year_id || 1, classId);
+      const cached = await getCachedClassRoster(user.id, targetClass?.academic_year_id || 1, classId, date);
       if (cached) {
         setStudents(cached.students || []);
         setServerRevision(cached.serverRevision || 0);
         setRosterFingerprint(cached.rosterFingerprint || '');
+        const newMap: Record<number, { status: string; remarks: string }> = {};
+        (cached.students || []).forEach((st: any) => {
+          newMap[st.student_id] = {
+            status: st.attendance_status || 'unmarked',
+            remarks: st.attendance_remarks || ''
+          };
+        });
+        setAttendanceMap(newMap);
+      } else {
+        setStudents([]);
+        setServerRevision(0);
+        setRosterFingerprint('');
+        setAttendanceMap({});
+        setErrorMessage(`Network error: No offline register cached for Date ${date}. Connect to school network to download this register.`);
       }
     } finally {
       setLoading(false);
@@ -258,7 +275,15 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
   // Execute Submission (Draft or Final)
   const handleSaveAttendance = async (mode: 'draft' | 'submitted') => {
-    if (!selectedClassId || students.length === 0) return;
+    if (!selectedClassId || students.length === 0) {
+      setErrorMessage('Cannot save attendance: No student roster loaded for the selected class and date.');
+      return;
+    }
+
+    if (!rosterFingerprint && !navigator.onLine) {
+      setErrorMessage(`Cannot save offline attendance: No verified roster fingerprint cached for Date ${selectedDate}. Connect online to initialize.`);
+      return;
+    }
 
     setErrorMessage(null);
     setSaveSuccessMsg(null);
