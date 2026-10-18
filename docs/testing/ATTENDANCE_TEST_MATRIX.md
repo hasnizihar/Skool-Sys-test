@@ -1,7 +1,7 @@
-# SkoolSys 2.0 — PR-004 Comprehensive Attendance Regression Matrix (ATT-001 – ATT-064)
+# SkoolSys 2.0 — PR-004R Comprehensive Attendance Regression Matrix (ATT-001 – ATT-070)
 **Kattankudy Central College National School (Grades 6–13)**  
 **Branch:** `feature/pr-004-attendance-integrity`  
-**Baseline Status:** 123 passing automated tests across 35 test suites  
+**Status:** 129 passing automated tests across 36 test suites (0 failures)  
 **Execution Date:** 2026-10-18  
 
 ---
