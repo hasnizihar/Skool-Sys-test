@@ -161,8 +161,8 @@ export const AttendanceReports: React.FC = () => {
 
           {/* Daily Summary Stats */}
           <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
+            <div className="stat-card" style={{ borderLeft: '4px solid var(--present)' }}>
+              <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
                 <CheckCircle size={24} />
               </div>
               <div>
@@ -171,8 +171,8 @@ export const AttendanceReports: React.FC = () => {
               </div>
             </div>
 
-            <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+            <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
+              <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
                 <UserCheck size={24} />
               </div>
               <div>
@@ -181,8 +181,8 @@ export const AttendanceReports: React.FC = () => {
               </div>
             </div>
 
-            <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
+            <div className="stat-card" style={{ borderLeft: '4px solid var(--absent)' }}>
+              <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
                 <AlertCircle size={24} />
               </div>
               <div>
@@ -191,8 +191,8 @@ export const AttendanceReports: React.FC = () => {
               </div>
             </div>
 
-            <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#fef3c7', color: '#b45309' }}>
+            <div className="stat-card" style={{ borderLeft: '4px solid var(--late)' }}>
+              <div className="stat-icon" style={{ background: 'var(--late-bg)', color: 'var(--late)' }}>
                 <Clock size={24} />
               </div>
               <div>

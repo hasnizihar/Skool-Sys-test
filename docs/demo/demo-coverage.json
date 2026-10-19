@@ -1,0 +1,143 @@
+{
+  "project": "SkoolSys 2.0",
+  "version": "2.0.0-phase0",
+  "milestone": "PR-003",
+  "generatedAt": "2026-10-18T12:50:00Z",
+  "tables": [
+    "users",
+    "academic_years",
+    "classes",
+    "subjects",
+    "class_subjects",
+    "teacher_assignments",
+    "students",
+    "enrollments",
+    "attendance_sessions",
+    "attendance_records",
+    "examinations",
+    "marks",
+    "audit_logs"
+  ],
+  "features": [
+    {
+      "id": "FEAT-AUTH-01",
+      "module": "Authentication",
+      "route": "POST /api/auth/login",
+      "roles": ["anonymous"],
+      "rule": "Rate limited (5 attempts / 15m), generic error response",
+      "testSuite": "server/test/auth_security.test.ts"
+    },
+    {
+      "id": "FEAT-AUTH-02",
+      "module": "Authentication",
+      "route": "GET /api/auth/me",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "Live is_active and token_version verified in SQLite",
+      "testSuite": "server/test/auth_security.test.ts"
+    },
+    {
+      "id": "FEAT-AUTH-03",
+      "module": "Authentication",
+      "route": "POST /api/auth/logout",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "Increments token_version to invalidate session immediately",
+      "testSuite": "server/test/auth_security.test.ts"
+    },
+    {
+      "id": "FEAT-STUD-01",
+      "module": "Students",
+      "route": "GET /api/students",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "Admin gets all students; teachers get strictly students in assigned classes",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-STUD-02",
+      "module": "Students",
+      "route": "GET /api/students/:id",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "403 Forbidden if student not enrolled in teacher's assigned classes",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-ACAD-01",
+      "module": "Academic",
+      "route": "GET /api/academic/classes/:id/roster",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "403 Forbidden if class not assigned to teacher",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-ATTN-01",
+      "module": "Attendance",
+      "route": "GET /api/attendance/session",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "403 Forbidden if class not assigned to teacher",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-ATTN-02",
+      "module": "Attendance",
+      "route": "POST /api/attendance/session",
+      "roles": ["admin", "class_teacher"],
+      "rule": "403 Forbidden for subject teachers or unassigned class teachers",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-ATTN-04",
+      "module": "Attendance",
+      "route": "GET /api/attendance/reports/daily",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "Teacher reports strictly filtered to their assigned classes",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-ATTN-05",
+      "module": "Attendance",
+      "route": "GET /api/attendance/reports/monthly",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "403 Forbidden if class not assigned to teacher",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-MARK-01",
+      "module": "Marks",
+      "route": "GET /api/marks/sheet",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "403 Forbidden if teacher not assigned to class or subject",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-MARK-02",
+      "module": "Marks",
+      "route": "POST /api/marks/sheet",
+      "roles": ["admin", "subject_teacher"],
+      "rule": "Restricted to assigned subject teacher; class teacher blocked if specialist assigned",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-MARK-03",
+      "module": "Marks",
+      "route": "GET /api/marks/student-report/:studentId/:examId",
+      "roles": ["admin", "class_teacher", "subject_teacher"],
+      "rule": "403 Forbidden if student not enrolled in teacher's assigned classes",
+      "testSuite": "server/test/record_authorization.test.ts"
+    },
+    {
+      "id": "FEAT-ADMN-06",
+      "module": "Administration",
+      "route": "POST /api/admin/restore",
+      "roles": ["admin"],
+      "rule": "Sealed with fail-closed HTTP 503 guard",
+      "testSuite": "server/test/auth_security.test.ts"
+    },
+    {
+      "id": "FEAT-ADMN-07",
+      "module": "Administration",
+      "route": "POST /api/admin/reset-seed",
+      "roles": ["admin"],
+      "rule": "Sealed with fail-closed HTTP 503 guard",
+      "testSuite": "server/test/auth_security.test.ts"
+    }
+  ]
+}

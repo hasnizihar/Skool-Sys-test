@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/database.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, canAccessClass } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 
 const router = Router();
@@ -53,6 +53,12 @@ router.get('/classes/:id/roster', requireAuth, (req, res) => {
 
   if (!classInfo) {
     res.status(404).json({ error: 'Class not found.' });
+    return;
+  }
+
+  // Record-level permission check: teachers can only view rosters for their assigned classes
+  if (!canAccessClass(req.user!, classId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to this class.' });
     return;
   }
 

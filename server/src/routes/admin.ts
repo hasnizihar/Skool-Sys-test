@@ -20,12 +20,36 @@ router.get('/users', (req, res) => {
   res.json({ users });
 });
 
+/**
+ * Institutional Password Policy Validator
+ * Enforces minimum 8 characters with both letters and numbers.
+ */
+export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, error: 'Password is required.' };
+  }
+  if (password.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters long.' };
+  }
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+    return { valid: false, error: 'Password must contain both letters and numbers for institutional security.' };
+  }
+  return { valid: true };
+}
+
 // Create User
 router.post('/users', (req, res) => {
   const { username, email, password, full_name, role } = req.body;
 
   if (!username || !email || !password || !full_name || !role) {
     res.status(400).json({ error: 'All user fields are required.' });
+    return;
+  }
+
+  // Enforce institutional password policy
+  const passCheck = validatePasswordStrength(password);
+  if (!passCheck.valid) {
+    res.status(400).json({ error: passCheck.error });
     return;
   }
 
@@ -39,8 +63,8 @@ router.post('/users', (req, res) => {
   const hash = bcrypt.hashSync(password, salt);
 
   const stmt = db.prepare(`
-    INSERT INTO users (username, email, password_hash, full_name, role)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO users (username, email, password_hash, full_name, role, token_version)
+    VALUES (?, ?, ?, ?, ?, 1)
   `);
 
   const result = stmt.run(username, email, hash, full_name, role);
@@ -63,14 +87,21 @@ router.put('/users/:id', (req, res) => {
   }
 
   let passHash = current.password_hash;
-  if (newPassword && newPassword.trim().length >= 6) {
+  if (newPassword) {
+    const passCheck = validatePasswordStrength(newPassword);
+    if (!passCheck.valid) {
+      res.status(400).json({ error: passCheck.error });
+      return;
+    }
     const salt = bcrypt.genSaltSync(10);
     passHash = bcrypt.hashSync(newPassword, salt);
   }
 
+  // Increment token_version whenever account is modified or deactivated to invalidate existing tokens
   const update = db.prepare(`
     UPDATE users SET
-      full_name = ?, email = ?, role = ?, is_active = ?, password_hash = ?
+      full_name = ?, email = ?, role = ?, is_active = ?, password_hash = ?,
+      token_version = COALESCE(token_version, 1) + 1
     WHERE id = ?
   `);
 
@@ -85,7 +116,7 @@ router.put('/users/:id', (req, res) => {
 
   logAudit(req.user!.id, req.user!.username, 'USER_UPDATE', 'users', targetId, { role, is_active, passwordReset: !!newPassword }, req.ip);
 
-  res.json({ success: true, message: 'User updated successfully.' });
+  res.json({ success: true, message: 'User updated successfully. Existing sessions invalidated.' });
 });
 
 // Teacher Assignments List
@@ -201,74 +232,42 @@ router.get('/backup', (req, res) => {
   res.json(exportPayload);
 });
 
-// Restore System Backup
+// Restore System Backup (CONTAINMENT GUARD: Disabled for data safety until transactional restore in PR-004)
 router.post('/restore', (req, res) => {
-  const { backupData } = req.body;
+  logAudit(
+    req.user!.id,
+    req.user!.username,
+    'SECURITY_CONTAINMENT_BLOCK',
+    'System',
+    null,
+    { reason: 'Attempted invocation of disabled non-transactional restore endpoint' },
+    req.ip
+  );
 
-  if (!backupData || !backupData.data) {
-    res.status(400).json({ error: 'Invalid backup file structure.' });
-    return;
-  }
-
-  const { data } = backupData;
-
-  try {
-    // Clear in reverse order
-    db.exec('DELETE FROM attendance_records;');
-    db.exec('DELETE FROM attendance_sessions;');
-    db.exec('DELETE FROM marks;');
-    db.exec('DELETE FROM examinations;');
-    db.exec('DELETE FROM enrollments;');
-    db.exec('DELETE FROM teacher_assignments;');
-    db.exec('DELETE FROM class_subjects;');
-    db.exec('DELETE FROM classes;');
-    db.exec('DELETE FROM subjects;');
-    db.exec('DELETE FROM students;');
-    db.exec('DELETE FROM users;');
-    db.exec('DELETE FROM academic_years;');
-
-    // Helper to insert rows dynamically
-    function restoreTable(tableName: string, rows: any[]) {
-      if (!Array.isArray(rows) || rows.length === 0) return;
-      const columns = Object.keys(rows[0]);
-      const placeholders = columns.map(() => '?').join(', ');
-      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-      const stmt = db.prepare(sql);
-      for (const row of rows) {
-        stmt.run(...columns.map(c => row[c]));
-      }
-    }
-
-    if (data.academic_years) restoreTable('academic_years', data.academic_years);
-    if (data.users) restoreTable('users', data.users);
-    if (data.classes) restoreTable('classes', data.classes);
-    if (data.subjects) restoreTable('subjects', data.subjects);
-    if (data.class_subjects) restoreTable('class_subjects', data.class_subjects);
-    if (data.teacher_assignments) restoreTable('teacher_assignments', data.teacher_assignments);
-    if (data.students) restoreTable('students', data.students);
-    if (data.enrollments) restoreTable('enrollments', data.enrollments);
-    if (data.examinations) restoreTable('examinations', data.examinations);
-    if (data.marks) restoreTable('marks', data.marks);
-    if (data.attendance_sessions) restoreTable('attendance_sessions', data.attendance_sessions);
-    if (data.attendance_records) restoreTable('attendance_records', data.attendance_records);
-
-    logAudit(req.user!.id, req.user!.username, 'BACKUP_RESTORE', 'System', null, { restoredAt: new Date().toISOString() }, req.ip);
-
-    res.json({ success: true, message: 'Database successfully restored from backup.' });
-  } catch (err: any) {
-    res.status(500).json({ error: `Restore failed: ${err.message}` });
-  }
+  res.status(503).json({
+    error: 'Database restore is temporarily disabled for data safety until transactional atomic recovery is implemented in PR-004.',
+    status: 'disabled',
+    safety_notice: 'Destructive non-transactional restore has been blocked to prevent data loss on foreign key constraint failures.'
+  });
 });
 
-// Re-seed Database Demo Data
+// Re-seed Database Demo Data (CONTAINMENT GUARD: Disabled in standard API routes to protect school data)
 router.post('/reset-seed', (req, res) => {
-  try {
-    runSeed();
-    logAudit(req.user!.id, req.user!.username, 'DATABASE_SEED_RESET', 'System', null, {}, req.ip);
-    res.json({ success: true, message: 'Database reset to default pilot state.' });
-  } catch (err: any) {
-    res.status(500).json({ error: `Seed reset failed: ${err.message}` });
-  }
+  logAudit(
+    req.user!.id,
+    req.user!.username,
+    'SECURITY_CONTAINMENT_BLOCK',
+    'System',
+    null,
+    { reason: 'Attempted invocation of disabled reset-seed endpoint' },
+    req.ip
+  );
+
+  res.status(503).json({
+    error: 'Database reset-seed endpoint is disabled for safety. Run migrations or seeds strictly via controlled offline CLI scripts.',
+    status: 'disabled',
+    safety_notice: 'Destructive database wipe is blocked to protect school data.'
+  });
 });
 
 export default router;

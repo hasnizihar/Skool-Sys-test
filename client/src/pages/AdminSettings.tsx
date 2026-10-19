@@ -138,6 +138,22 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  const handleToggleUserStatus = async (user: any) => {
+    const nextStatus = !user.is_active;
+    const actionLabel = nextStatus ? 'activate' : 'deactivate';
+    if (!confirm(`Are you sure you want to ${actionLabel} user "${user.username}"? ${!nextStatus ? 'Their active sessions and tokens will be invalidated immediately.' : ''}`)) {
+      return;
+    }
+    try {
+      await api.updateUser(user.id, { is_active: nextStatus });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, is_active: nextStatus ? 1 : 0 } : u))
+      );
+    } catch (err: any) {
+      alert(`Failed to update user status: ${err.message}`);
+    }
+  };
+
   const handleRestoreBackup = async () => {
     if (!restoreJson.trim()) return;
     if (!confirm('WARNING: Restoring will overwrite existing data. Proceed?')) return;
@@ -242,6 +258,7 @@ export const AdminSettings: React.FC = () => {
                   <th>Role</th>
                   <th>Status</th>
                   <th>Created</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -263,9 +280,26 @@ export const AdminSettings: React.FC = () => {
                       </span>
                     </td>
                     <td>
-                      <span className="badge badge-present">Active</span>
+                      <span className={`badge ${u.is_active ? 'badge-present' : 'badge-absent'}`}>
+                        {u.is_active ? 'Active' : 'Deactivated'}
+                      </span>
                     </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.created_at?.slice(0, 10)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        onClick={() => handleToggleUserStatus(u)}
+                        className={`btn btn-sm ${u.is_active ? 'btn-secondary' : 'btn-primary'}`}
+                        style={{
+                          padding: '0.25rem 0.65rem',
+                          fontSize: '0.75rem',
+                          color: u.is_active ? 'var(--danger)' : undefined,
+                          borderColor: u.is_active ? 'var(--danger-light, rgba(239,68,68,0.2))' : undefined
+                        }}
+                        title={u.is_active ? 'Deactivate account and revoke all active tokens immediately' : 'Reactivate account'}
+                      >
+                        {u.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -339,70 +373,95 @@ export const AdminSettings: React.FC = () => {
 
       {/* Tab 3: Backup & Recovery */}
       {activeTab === 'backup' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-          <div className="card">
-            <div className="card-header">
-              <div>
-                <div className="card-title">System Database Backup</div>
-                <div className="card-subtitle">Download an immutable JSON snapshot of all tables</div>
-              </div>
-            </div>
-
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-              Includes all students, attendance histories, marks, users, academic years, and audit logs. This file can be stored on external media or used to migrate the system.
-            </p>
-
-            <button onClick={handleDownloadBackup} className="btn btn-primary">
-              <Download size={16} /> Export & Download Backup
-            </button>
-
-            {backupStatus && (
-              <p style={{ marginTop: '0.75rem', fontSize: '0.825rem', color: 'var(--present)' }}>
-                {backupStatus}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Security & Data Safety Notice Banner */}
+          <div
+            style={{
+              padding: '1rem 1.25rem',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--late-bg)',
+              border: '1px solid var(--late-border)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.75rem'
+            }}
+          >
+            <AlertTriangle size={20} style={{ color: 'var(--late)', flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <strong style={{ fontSize: '0.875rem', color: 'var(--late)' }}>
+                Emergency Data Protection Notice (PR-002 Safety Baseline)
+              </strong>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-main)', marginTop: '0.25rem' }}>
+                Destructive Database Restore and Demo Re-seed endpoints are <strong>disabled</strong> to prevent data corruption and accidental table wiping. Read-only backup JSON export is fully operational. Transactional, atomic database restoration is scheduled for PR-004.
               </p>
-            )}
-
-            <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '2rem', paddingTop: '1.5rem' }}>
-              <div className="card-title" style={{ color: '#ef4444', fontSize: '1rem' }}>
-                Pilot Demonstration Reset
-              </div>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.5rem 0 1rem' }}>
-                Reset the system to the initial clean seed state with Grades 6–13 classes, 20 Grade 8-A students, sample attendance, and Term 1 exam marks.
-              </p>
-              <button onClick={handleResetSeed} className="btn btn-secondary btn-sm" style={{ color: '#ef4444' }}>
-                <RotateCcw size={14} /> Re-seed Demo Database
-              </button>
             </div>
           </div>
 
-          <div className="card">
-            <div className="card-header">
-              <div>
-                <div className="card-title">Restore Database Snapshot</div>
-                <div className="card-subtitle">Restore system data from a previous JSON backup</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem' }}>
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">System Database Backup</div>
+                  <div className="card-subtitle">Download an immutable JSON snapshot of all tables</div>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+                Includes all students, attendance histories, marks, users, academic years, and audit logs. This file can be stored on external media or used to migrate the system.
+              </p>
+
+              <button onClick={handleDownloadBackup} className="btn btn-primary">
+                <Download size={16} /> Export & Download Backup
+              </button>
+
+              {backupStatus && (
+                <p style={{ marginTop: '0.75rem', fontSize: '0.825rem', color: 'var(--present)' }}>
+                  {backupStatus}
+                </p>
+              )}
+
+              <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '2rem', paddingTop: '1.5rem' }}>
+                <div className="card-title" style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+                  Pilot Demonstration Reset (Disabled)
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.5rem 0 1rem' }}>
+                  Reset endpoint is locked. Database reset operations must be run strictly via authenticated offline CLI scripts in staging environments.
+                </p>
+                <button disabled className="btn btn-secondary btn-sm" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                  <RotateCcw size={14} /> Re-seed Demo Database (Disabled)
+                </button>
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Paste Backup JSON Content</label>
-              <textarea
-                className="form-textarea"
-                rows={8}
-                value={restoreJson}
-                onChange={(e) => setRestoreJson(e.target.value)}
-                placeholder='Paste exported {"version": "1.0.0", "data": {...}} JSON here...'
-                style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
-              />
-            </div>
+            <div className="card" style={{ opacity: 0.85 }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Restore Database Snapshot (Locked)</div>
+                  <div className="card-subtitle">Disabled until transactional recovery (PR-004)</div>
+                </div>
+                <span className="badge badge-late">Safety Locked</span>
+              </div>
 
-            <button
-              onClick={handleRestoreBackup}
-              disabled={restoring || !restoreJson.trim()}
-              className="btn btn-danger"
-            >
-              <Upload size={16} />
-              <span>{restoring ? 'Restoring...' : 'Restore System Backup'}</span>
-            </button>
+              <div className="form-group">
+                <label className="form-label">Paste Backup JSON Content</label>
+                <textarea
+                  className="form-textarea"
+                  rows={8}
+                  disabled
+                  placeholder="Restore operations are locked to prevent unrecoverable data loss..."
+                  style={{ fontFamily: 'monospace', fontSize: '0.75rem', opacity: 0.6, cursor: 'not-allowed' }}
+                />
+              </div>
+
+              <button
+                disabled
+                className="btn btn-secondary"
+                style={{ opacity: 0.5, cursor: 'not-allowed' }}
+              >
+                <Upload size={16} />
+                <span>Restore Endpoint Disabled (Safety Containment)</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -464,8 +523,12 @@ export const AdminSettings: React.FC = () => {
                     value={userFormData.password}
                     onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
                     placeholder="••••••••"
+                    minLength={8}
                     required
                   />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                    Must be at least 8 characters long and contain both letters and numbers.
+                  </span>
                 </div>
 
                 <div className="form-group">

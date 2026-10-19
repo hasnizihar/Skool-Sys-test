@@ -1,19 +1,9 @@
 import { Router } from 'express';
 import { db } from '../db/database.js';
-import { requireAuth, getUserAssignments } from '../middleware/auth.js';
+import { requireAuth, getUserAssignments, canManageClassAttendance, canViewClassAttendance } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 
 const router = Router();
-
-// Check if user is authorized to manage attendance for this class
-function canManageAttendance(user: any, classId: number): boolean {
-  if (user.role === 'admin') return true;
-  if (user.role === 'class_teacher') {
-    const assignments = getUserAssignments(user.id);
-    return assignments.assignedClassIds.includes(Number(classId));
-  }
-  return false;
-}
 
 // Get Attendance Session for a Class and Date
 router.get('/session', requireAuth, (req, res) => {
@@ -26,6 +16,12 @@ router.get('/session', requireAuth, (req, res) => {
 
   const cId = Number(classId);
   const dt = String(date);
+
+  // Record-level permission check: must be admin or assigned to this class
+  if (!canViewClassAttendance(req.user!, cId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to view attendance for this class.' });
+    return;
+  }
 
   const session = db.prepare(`
     SELECT s.*, u.full_name as taken_by_name, c.name as class_name, c.grade
@@ -91,8 +87,8 @@ router.post('/session', requireAuth, (req, res) => {
   const dt = String(date);
 
   // Check authorization
-  if (!canManageAttendance(user, cId)) {
-    res.status(403).json({ error: 'You are not assigned as the class teacher for this class.' });
+  if (!canManageClassAttendance(user, cId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned as the class teacher for this class.' });
     return;
   }
 
@@ -162,7 +158,7 @@ router.post('/sync', requireAuth, (req, res) => {
       const cId = Number(item.classId);
       const dt = String(item.date);
 
-      if (!canManageAttendance(user, cId)) {
+      if (!canManageClassAttendance(user, cId)) {
         errors.push({ id: item.id, error: `Unauthorized for class ${cId}` });
         continue;
       }
@@ -263,10 +259,26 @@ router.get('/reports/daily', requireAuth, (req, res) => {
     ORDER BY c.grade ASC, c.name ASC, s.admission_no ASC
   `).all(dt);
 
+  let classes = classSummaries;
+  let absents = absentStudents;
+
+  // Record-level permission check: non-admin teachers only see reports for their assigned classes
+  if (req.user!.role !== 'admin') {
+    const assignments = getUserAssignments(req.user!.id);
+    const allowed = new Set(assignments.assignedClassIds);
+    classes = classSummaries.filter((c: any) => allowed.has(Number(c.class_id)));
+    const classMap = new Map<string, number>();
+    classSummaries.forEach((c: any) => classMap.set(c.class_name, Number(c.class_id)));
+    absents = absentStudents.filter((st: any) => {
+      const cid = classMap.get(st.class_name);
+      return cid ? allowed.has(cid) : false;
+    });
+  }
+
   res.json({
     date: dt,
-    classes: classSummaries,
-    absentStudents
+    classes,
+    absentStudents: absents
   });
 });
 
@@ -280,6 +292,12 @@ router.get('/reports/monthly', requireAuth, (req, res) => {
   }
 
   const cId = Number(classId);
+
+  // Record-level permission check: must be admin or assigned to this class
+  if (!canViewClassAttendance(req.user!, cId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to this class.' });
+    return;
+  }
   const y = Number(year);
   const m = Number(month); // 1-12
   const monthStr = m < 10 ? `0${m}` : `${m}`;

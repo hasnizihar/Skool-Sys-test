@@ -291,8 +291,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       {/* Class Statistics Widget */}
       {stats && (
         <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+          <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
+            <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
               <TrendingUp size={24} />
             </div>
             <div>
@@ -301,8 +301,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
             </div>
           </div>
 
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
+          <div className="stat-card" style={{ borderLeft: '4px solid var(--present)' }}>
+            <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
               <Award size={24} />
             </div>
             <div>
@@ -311,8 +311,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
             </div>
           </div>
 
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#fef3c7', color: '#b45309' }}>
+          <div className="stat-card" style={{ borderLeft: '4px solid var(--accent)' }}>
+            <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--accent-dark)' }}>
               <GraduationCap size={24} />
             </div>
             <div>
@@ -321,8 +321,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
             </div>
           </div>
 
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#eff6ff', color: '#0284c7' }}>
+          <div className="stat-card" style={{ borderLeft: '4px solid var(--border-color)' }}>
+            <div className="stat-icon" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
               <Users size={24} />
             </div>
             <div>

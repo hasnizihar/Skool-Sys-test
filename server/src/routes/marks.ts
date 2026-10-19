@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/database.js';
-import { requireAuth, getUserAssignments } from '../middleware/auth.js';
+import { requireAuth, getUserAssignments, canManageMarks, canViewMarksSheet, canAccessClass } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 
 const router = Router();
@@ -16,23 +16,6 @@ function calcGradeLetter(score: number | null, isAbsent: boolean, isExempt: bool
   return 'F';
 }
 
-// Can teacher enter marks for this exam/class/subject?
-function canEnterMarks(user: any, classId: number, subjectId: number): boolean {
-  if (user.role === 'admin') return true;
-  const assignments = getUserAssignments(user.id);
-
-  // Check if assigned as subject teacher for this class & subject
-  const match = assignments.assignments.find((a: any) =>
-    a.class_id === Number(classId) && (a.subject_id === Number(subjectId) || a.subject_id === null)
-  );
-  if (match) return true;
-
-  // Check if class teacher for this class
-  if (assignments.isClassTeacherFor.includes(Number(classId))) return true;
-
-  return false;
-}
-
 // Marks Sheet for Class, Exam, and Subject
 router.get('/sheet', requireAuth, (req, res) => {
   const { examId, classId, subjectId } = req.query;
@@ -45,6 +28,12 @@ router.get('/sheet', requireAuth, (req, res) => {
   const eId = Number(examId);
   const cId = Number(classId);
   const sId = Number(subjectId);
+
+  // Record-level permission check: must be admin or assigned to class/subject
+  if (!canViewMarksSheet(req.user!, cId, sId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to view marks for this class or subject.' });
+    return;
+  }
 
   const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(eId);
   const classInfo = db.prepare('SELECT * FROM classes WHERE id = ?').get(cId);
@@ -123,8 +112,8 @@ router.post('/sheet', requireAuth, (req, res) => {
   const cId = Number(classId);
   const sId = Number(subjectId);
 
-  if (!canEnterMarks(user, cId, sId)) {
-    res.status(403).json({ error: 'You are not assigned as the subject or class teacher for this class.' });
+  if (!canManageMarks(user, cId, sId)) {
+    res.status(403).json({ error: 'Access denied. You are not authorized to enter marks for this class and subject.' });
     return;
   }
 
@@ -184,6 +173,12 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
 
   if (!student) {
     res.status(404).json({ error: 'Student not enrolled or not found.' });
+    return;
+  }
+
+  // Record-level permission check: non-admin teachers can only view reports for students in their assigned classes
+  if (req.user!.role !== 'admin' && !canAccessClass(req.user!, student.class_id)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to this student\'s class.' });
     return;
   }
 
