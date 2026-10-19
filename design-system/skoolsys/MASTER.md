@@ -15,31 +15,29 @@
 
 ---
 
-## 🎨 Global Color Tokens
+## 🎨 Global Color Tokens — Modern Academic Minimalism (Kattankudy Central College)
 
 High-contrast, semantic tokens designed for accessibility (WCAG AA 4.5:1 minimum on all text, 3:1 on controls and meaningful icons).
 
 | Role | Hex Light | Hex Dark | CSS Variable | Semantic Usage |
 | :--- | :--- | :--- | :--- | :--- |
-| **Primary (Brand / Academic)** | `#4338ca` | `#6366f1` | `--primary` | Primary CTAs, active navigation items, brand highlights |
-| **Primary Hover** | `#3730a3` | `#4f46e5` | `--primary-hover` | Button hover and pressed states |
-| **Primary Light / Glow** | `#eef2ff` | `rgba(99, 102, 241, 0.15)` | `--primary-light` | Active background pills, subtle badge backgrounds |
-| **Secondary (Progress Teal)** | `#0d9488` | `#14b8a6` | `--secondary` | Analytics accents, report highlights, progress meters |
-| **Secondary Light** | `#f0fdfa` | `rgba(20, 184, 166, 0.15)` | `--secondary-light` | Progress backgrounds |
-| **Accent / CTA (Amber Gold)** | `#d97706` | `#f59e0b` | `--color-accent` | High-priority triggers, star performers, distinction flags |
-| **App Background** | `#f8fafc` | `#0b0f19` | `--bg-app` | Canvas background for the entire application |
-| **Card / Surface** | `#ffffff` | `#111827` | `--bg-surface` | Elevated containers, data cards, drawers, modals |
-| **Subtle Background** | `#f1f5f9` | `#1e293b` | `--bg-subtle` | Table headers, muted button backgrounds, sidebar footers |
-| **Border / Divider** | `#e2e8f0` | `#1e293b` | `--border-color` | Card outlines, table cell dividers, form borders |
-| **Focus Ring** | `#4338ca` | `#818cf8` | `--border-focus` | 3px keyboard accessibility focus ring |
-| **Text Primary (Main)** | `#0f172a` | `#f8fafc` | `--text-main` | Headers, table values, body text (contrast >= 9:1) |
-| **Text Muted** | `#64748b` | `#94a3b8` | `--text-muted` | Subtitles, field labels, metadata, table headers |
+| **Primary (Institutional Green)** | `#026536` | `#10b981` | `--primary` | Sidebar, primary buttons, active navigation |
+| **Primary Hover** | `#014d29` | `#059669` | `--primary-hover` | Button hover and pressed states |
+| **Primary Pale / Light** | `#e8f4ec` | `rgba(16, 185, 129, 0.16)` | `--primary-light` | Soft highlights and selected backgrounds |
+| **Academic Yellow (Accent)** | `#F1EF22` | `#F1EF22` | `--accent` | Highlights, active indicators, small decorative accents |
+| **App Background / Canvas** | `#F5F7F6` | `#0c1410` | `--bg-app` | Canvas background for the entire application |
+| **Card / Surface (White)** | `#FFFFFF` | `#131f19` | `--bg-surface` | Elevated containers, data cards, drawers, modals |
+| **Subtle Background** | `#EDF2EF` | `#192720` | `--bg-subtle` | Table headers, muted button backgrounds |
+| **Border / Divider** | `#E2E9E4` | `#23372d` | `--border-color` | Subtle component boundaries |
+| **Focus Ring** | `#026536` | `#10b981` | `--border-focus` | Keyboard accessibility focus ring |
+| **Text Primary (Main)** | `#172B22` | `#f0fdf4` | `--text-main` | Headings and content (contrast >= 9:1) |
+| **Text Muted** | `#66766D` | `#8ba195` | `--text-muted` | Descriptions and metadata |
 
 ### Attendance & State Semantic Colors
 
 | Status | Active Hex | Background Light | Background Dark | CSS Variable | Meaning |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **[P] Present** | `#059669` | `#ecfdf5` | `rgba(16, 185, 129, 0.16)` | `--present` | Student in class |
+| **[P] Present** | `#026536` | `#E8F4EC` | `rgba(16, 185, 129, 0.16)` | `--present` | Student in class |
 | **[A] Absent** | `#dc2626` | `#fef2f2` | `rgba(239, 68, 68, 0.16)` | `--absent` | Unexcused absence (triggers telephone follow-up) |
 | **[L] Late** | `#d97706` | `#fffbeb` | `rgba(245, 158, 11, 0.16)` | `--late` | Arrived after morning bell |
 | **[E] Excused** | `#2563eb` | `#eff6ff` | `rgba(59, 130, 246, 0.16)` | `--excused` | Medical or official school permission |

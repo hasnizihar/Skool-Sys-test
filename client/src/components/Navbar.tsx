@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, ShieldCheck, Sparkles, Wifi, Sun, Moon, Calendar } from 'lucide-react';
+import { Menu, ShieldCheck, Wifi, Sun, Moon, Calendar } from 'lucide-react';
 
 interface NavbarProps {
   onToggleSidebar: () => void;
@@ -44,7 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <div>
           <div className="navbar-brand-crumb">
-            <span className="navbar-crumb-parent">Portal</span>
+            <span className="navbar-crumb-parent">KCC Portal</span>
             <span className="navbar-crumb-sep">/</span>
             <h1 className="navbar-title">{title}</h1>
           </div>
@@ -58,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 backgroundColor: 'var(--primary)'
               }}
             />
-            Academic Year 2026 • Term 1 Assessment Period
+            Kattankudy Central College • Academic Year 2026 • Term 1
           </p>
         </div>
       </div>
@@ -71,7 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             color: 'var(--text-muted)',
             border: '1px solid var(--border-color)',
             fontSize: '0.75rem',
-            padding: '0.3rem 0.65rem'
+            padding: '0.35rem 0.65rem'
           }}
           title="Current date"
         >
@@ -80,15 +80,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div
-          className="badge"
+          className="badge badge-present"
           style={{
-            background: 'var(--present-bg)',
-            color: 'var(--present)',
-            border: '1px solid var(--present-border)',
             fontSize: '0.75rem',
-            padding: '0.3rem 0.65rem'
+            padding: '0.35rem 0.65rem'
           }}
-          title="Local School Network Status: Connected"
+          title="Campus Network: Connected & Synchronized"
         >
           <span
             style={{
@@ -105,14 +102,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {user?.role === 'admin' && (
           <div
-            className="badge"
+            className="badge badge-brand"
             style={{
-              background: 'var(--primary-light)',
-              color: 'var(--primary)',
-              fontWeight: 600,
               fontSize: '0.75rem',
-              border: '1px solid rgba(67, 56, 202, 0.25)',
-              padding: '0.3rem 0.65rem'
+              padding: '0.35rem 0.65rem'
             }}
           >
             <ShieldCheck size={13} />
@@ -129,9 +122,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           >
             {theme === 'dark' ? (
-              <Sun size={17} style={{ color: '#f59e0b' }} />
+              <Sun size={16} style={{ color: 'var(--accent)' }} />
             ) : (
-              <Moon size={17} style={{ color: 'var(--primary)' }} />
+              <Moon size={16} style={{ color: 'var(--primary)' }} />
             )}
           </button>
         )}

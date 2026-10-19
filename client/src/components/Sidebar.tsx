@@ -10,9 +10,9 @@ import {
   LogOut,
   Moon,
   Sun,
-  School,
   X
 } from 'lucide-react';
+import { CollegeLogo } from './CollegeLogo';
 
 interface SidebarProps {
   currentTab: string;
@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleNav = (tab: string) => {
     setCurrentTab(tab);
-    if (window.innerWidth < 768) {
+    if (window.innerWidth < 1024) {
       onClose();
     }
   };
@@ -50,20 +50,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isOpen && (
         <div
           onClick={onClose}
-          aria-label="Close sidebar"
+          aria-label="Close navigation sidebar"
           className="sidebar-backdrop"
         />
       )}
 
       <aside className={`sidebar ${isOpen ? 'open' : ''}`} aria-label="Main Navigation">
+        {/* College Brand Header */}
         <div className="sidebar-header" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div className="brand-badge">
-              <School size={22} />
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            {/* College Logo in White Container on Green Background */}
+            <CollegeLogo size={36} inContainer={true} />
             <div className="brand-info">
               <h2>SkoolSys</h2>
-              <p>Grades 6–13 Portal</p>
+              <p>Kattankudy Central College</p>
             </div>
           </div>
 
@@ -71,7 +71,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onClose}
               className="btn btn-secondary btn-icon"
-              style={{ width: 32, height: 32, minHeight: 32 }}
+              style={{
+                width: 32,
+                height: 32,
+                minHeight: 32,
+                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+                border: 'none'
+              }}
               aria-label="Close navigation"
             >
               <X size={16} />
@@ -79,6 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
+        {/* Navigation Links */}
         <nav className="nav-links">
           <div className="nav-section-title">Core Management</div>
 
@@ -110,6 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <CalendarCheck size={18} />
               <span>Take Attendance</span>
+              <span className="nav-item-badge">Daily</span>
             </button>
           )}
 
@@ -158,10 +167,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </nav>
 
+        {/* Sidebar Footer with Faculty User Info */}
         <div className="sidebar-footer">
           <div className="user-snippet">
             <div className="user-avatar">
-              {user?.full_name?.charAt(0) || 'U'}
+              {user?.full_name?.charAt(0) || 'K'}
             </div>
             <div className="user-details">
               <div className="user-name" title={user?.full_name}>{user?.full_name}</div>
@@ -169,16 +179,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.35rem' }}>
             <button
               onClick={toggleTheme}
               className="btn btn-secondary btn-sm"
-              style={{ flex: 1 }}
+              style={{
+                flex: 1,
+                backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                color: '#FFFFFF',
+                border: '1px solid rgba(255, 255, 255, 0.15)'
+              }}
               title="Toggle Light/Dark Theme"
               aria-label={`Toggle Theme. Current is ${theme}`}
             >
-              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-              <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+              {theme === 'dark' ? <Sun size={14} style={{ color: 'var(--accent)' }} /> : <Moon size={14} />}
+              <span style={{ fontSize: '0.75rem' }}>{theme === 'dark' ? 'Light' : 'Dark'}</span>
             </button>
 
             <button
@@ -186,9 +201,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="btn btn-secondary btn-sm btn-icon"
               title="Sign Out"
               aria-label="Sign Out"
-              style={{ color: 'var(--absent)' }}
+              style={{
+                backgroundColor: 'rgba(220, 38, 38, 0.2)',
+                color: '#fca5a5',
+                border: '1px solid rgba(220, 38, 38, 0.35)'
+              }}
             >
-              <LogOut size={16} />
+              <LogOut size={15} />
             </button>
           </div>
         </div>
