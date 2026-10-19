@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { runMigration004 } from './migrations/004_attendance_integrity.js';
+import { runMigration005 } from './migrations/005_examination_integrity.js';
 import { createSafeDatabaseBackup, generateTimestampedBackupPath } from './backupUtils.js';
 
 export function getDbPath(): string {
@@ -266,6 +267,54 @@ export function initDatabase() {
       }
       console.error('Server startup halted to prevent schema corruption or partial state.\n');
       throw new Error(`Migration 004 failed: ${migErr.message}. Server startup halted.`);
+    }
+  }
+
+  // Safe migration 005: Examination integrity, canonical marks & audit trail
+  const vRow5 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
+  const ver5 = Number(vRow5?.user_version || 0);
+
+  const sheetsTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'marks_sheets';"
+  ).get() as { cnt: number };
+  const hasSheetsTable = Number(sheetsTableCheck?.cnt || 0) > 0;
+
+  const marksSheetIdCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM pragma_table_info('marks') WHERE name = 'sheet_id';"
+  ).get() as { cnt: number };
+  const hasSheetIdCol = Number(marksSheetIdCheck?.cnt || 0) > 0;
+
+  const needsMigration005 = ver5 < 5 || !hasSheetsTable || !hasSheetIdCol;
+
+  if (needsMigration005) {
+    let backupPath: string | null = null;
+    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
+      try {
+        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
+        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
+        createSafeDatabaseBackup(db, backupPath);
+        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 005!');
+        console.error(backupErr.message);
+        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
+      }
+    }
+
+    try {
+      const result = runMigration005(db);
+      if (result.applied) {
+        console.log(
+          `[Database Migration] Migration 005 applied successfully (Schema V${result.version}). Migrated ${result.migratedMarks} marks across ${result.migratedSheets} sheets, quarantined ${result.quarantinedMarks} ambiguous marks.`
+        );
+      }
+    } catch (migErr: any) {
+      console.error('\n❌ FATAL: Migration 005 failed during server startup!');
+      console.error(migErr.message);
+      if (backupPath) {
+        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
+      }
+      throw new Error(`Migration 005 failed: ${migErr.message}. Server startup halted.`);
     }
   }
 }

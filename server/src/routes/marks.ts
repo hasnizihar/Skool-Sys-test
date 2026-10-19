@@ -117,13 +117,28 @@ router.post('/sheet', requireAuth, (req, res) => {
     return;
   }
 
+  // Ensure marks_sheet exists
+  let sheet = db.prepare('SELECT id FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(eId, cId, sId) as { id: number } | undefined;
+  if (!sheet) {
+    const classRow = db.prepare('SELECT academic_year_id FROM classes WHERE id = ?').get(cId) as any;
+    const examRow = db.prepare('SELECT academic_year_id FROM examinations WHERE id = ?').get(eId) as any;
+    const yearId = examRow?.academic_year_id || classRow?.academic_year_id || 1;
+    const result = db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(eId, cId, sId, yearId, user.id, status || 'submitted');
+    sheet = { id: Number(result.lastInsertRowid) };
+  } else if (status) {
+    db.prepare("UPDATE marks_sheets SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, sheet.id);
+  }
+
   const upsert = db.prepare(`
-    INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, is_absent, is_exempt, max_score, grade_letter, status, entered_by_user_id, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 100, ?, ?, ?, datetime('now'))
+    INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, max_score, score, assessment_status, grade_letter, status, entered_by_user_id, updated_at)
+    VALUES (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(examination_id, subject_id, student_id) DO UPDATE SET
+      sheet_id = excluded.sheet_id,
       score = excluded.score,
-      is_absent = excluded.is_absent,
-      is_exempt = excluded.is_exempt,
+      assessment_status = excluded.assessment_status,
       grade_letter = excluded.grade_letter,
       status = excluded.status,
       entered_by_user_id = excluded.entered_by_user_id,
@@ -133,14 +148,29 @@ router.post('/sheet', requireAuth, (req, res) => {
   for (const m of marks) {
     const isAbsent = Boolean(m.is_absent);
     const isExempt = Boolean(m.is_exempt);
-    let score = (m.score === null || m.score === '' || isAbsent || isExempt) ? null : Math.max(0, Math.min(100, Number(m.score)));
+    let assessmentStatus = 'PRESENT';
+    let score: number | null = null;
+
+    if (isAbsent) {
+      assessmentStatus = 'ABSENT';
+      score = null;
+    } else if (isExempt) {
+      assessmentStatus = 'EXEMPT';
+      score = null;
+    } else if (m.score === null || m.score === '' || m.score === undefined) {
+      assessmentStatus = 'NOT_ASSESSED';
+      score = null;
+    } else {
+      assessmentStatus = 'PRESENT';
+      score = Math.max(0, Math.min(100, Math.round(Number(m.score) * 10) / 10));
+    }
     const gradeLetter = calcGradeLetter(score, isAbsent, isExempt);
 
     upsert.run(
+      sheet.id,
       eId, cId, sId, Number(m.student_id),
       score,
-      isAbsent ? 1 : 0,
-      isExempt ? 1 : 0,
+      assessmentStatus,
       gradeLetter,
       status || 'submitted',
       user.id
