@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn, spawnSync, ChildProcess } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { setupIsolatedTestDb, teardownIsolatedTestDb } from './helpers/testDb.js';
@@ -17,6 +18,7 @@ const OFFLINE_DB_NAME = 'skoolsys_offline_db';
 
 let browser: Browser | null = null;
 let staticServer: http.Server | null = null;
+let spawnedViteProcess: ChildProcess | null = null;
 let appBaseUrl = 'http://localhost:5173';
 
 function createStaticServer(distDir: string): Promise<{ server: http.Server; url: string }> {
@@ -137,25 +139,84 @@ async function ensureCleanOfflineDB(page: Page) {
 
 describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Production IndexedDB)', () => {
   before(async () => {
-    // 1. Establish App URL (use localhost:5173 if running, else spin up ephemeral static server for client/dist)
+    // 1. Establish App URL (use localhost:5173 if running, else auto-spawn Vite dev server or fallback to prebuilt static server)
+    let appFound = false;
     try {
       const resp = await fetch('http://localhost:5173', { signal: AbortSignal.timeout(800) });
       if (resp.ok || resp.status === 200 || resp.status === 304) {
         appBaseUrl = 'http://localhost:5173';
-      } else {
-        throw new Error('Not ready');
+        appFound = true;
+        console.log(`[Browser E2E] Connected to live Vite dev server at ${appBaseUrl}`);
       }
     } catch {
+      // Dev server not currently responding
+    }
+
+    if (!appFound) {
+      console.log('[Browser E2E] Spawning local Vite server on port 5173...');
+      const clientDir = path.resolve(import.meta.dirname, '../../client');
+      try {
+        spawnedViteProcess = spawn('npx', ['vite', '--port', '5173'], {
+          cwd: clientDir,
+          shell: true,
+          stdio: 'ignore'
+        });
+
+        // Wait up to 10 seconds for Vite to be ready
+        const startTime = Date.now();
+        while (Date.now() - startTime < 10000) {
+          try {
+            const resp = await fetch('http://localhost:5173', { signal: AbortSignal.timeout(500) });
+            if (resp.ok || resp.status === 200 || resp.status === 304) {
+              appBaseUrl = 'http://localhost:5173';
+              appFound = true;
+              console.log(`[Browser E2E] Auto-spawned Vite dev server ready at ${appBaseUrl}`);
+              break;
+            }
+          } catch {
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
+      } catch (e) {
+        console.warn('[Browser E2E] Failed to auto-spawn Vite dev server:', e);
+      }
+    }
+
+    if (!appFound) {
       const distDir = path.resolve(import.meta.dirname, '../../client/dist');
-      if (fs.existsSync(distDir)) {
+      if (fs.existsSync(distDir) && fs.existsSync(path.join(distDir, 'index.html'))) {
         const info = await createStaticServer(distDir);
         staticServer = info.server;
         appBaseUrl = info.url;
+        appFound = true;
+        console.log(`[Browser E2E] Serving prebuilt client bundle from ${distDir} at ${appBaseUrl}`);
       }
+    }
+
+    if (!appFound) {
+      throw new Error(
+        `\n================================================================================\n` +
+        `[PR-004 TEST PREREQUISITE ERROR]\n` +
+        `npm run test:browser requires either:\n` +
+        `  1. A reachable Vite development server at http://localhost:5173 (run 'npm run dev:client'), OR\n` +
+        `  2. A prebuilt client bundle in client/dist (run 'npm run build:client')\n` +
+        `Neither was found in the current environment.\n` +
+        `================================================================================\n`
+      );
     }
 
     // 2. Launch real browser instance
     browser = await launchSupportedBrowser();
+    if (!browser) {
+      throw new Error(
+        `\n================================================================================\n` +
+        `[PR-004 TEST PREREQUISITE ERROR]\n` +
+        `npm run test:browser requires an installed browser engine (Chromium, Google Chrome, or Microsoft Edge).\n` +
+        `Zero compatible browser binaries were found in the current environment.\n` +
+        `Please install Chromium via: npx playwright install chromium\n` +
+        `================================================================================\n`
+      );
+    }
   });
 
   after(async () => {
@@ -165,21 +226,37 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
     if (staticServer) {
       staticServer.close();
     }
+    if (spawnedViteProcess) {
+      try {
+        if (process.platform === 'win32' && spawnedViteProcess.pid) {
+          spawnSync('taskkill', ['/pid', spawnedViteProcess.pid.toString(), '/T', '/F']);
+        } else {
+          spawnedViteProcess.kill();
+        }
+      } catch {}
+    }
   });
 
   // Helper to setup mock authenticated session with deterministic mock routes
-  async function setupMockSession(context: BrowserContext, page: Page) {
+  async function setupMockSession(context: BrowserContext, page: Page, initialRole: string = 'class_teacher') {
+    let activeRole = initialRole;
+
     await page.addInitScript(() => {
-      localStorage.setItem('skoolsys_token', 'synth-jwt-token-pr004');
-      localStorage.setItem(
-        'skoolsys_user',
-        JSON.stringify({
-          id: 2,
-          username: 'synth_class_teacher',
-          full_name: 'Synthetic Class Teacher',
-          role: 'class_teacher'
-        })
-      );
+      (window as any).__SKOOLSYS_TEST_MODE__ = true;
+      if (!localStorage.getItem('skoolsys_token')) {
+        localStorage.setItem('skoolsys_token', 'synth-jwt-token-pr004');
+      }
+      if (!localStorage.getItem('skoolsys_user')) {
+        localStorage.setItem(
+          'skoolsys_user',
+          JSON.stringify({
+            id: 2,
+            username: 'synth_class_teacher',
+            full_name: 'Synthetic Class Teacher',
+            role: 'class_teacher'
+          })
+        );
+      }
     });
 
     // Mock API endpoints to be 100% deterministic and self-contained
@@ -189,10 +266,10 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
         contentType: 'application/json',
         body: JSON.stringify({
           user: {
-            id: 2,
-            username: 'synth_class_teacher',
-            full_name: 'Synthetic Class Teacher',
-            role: 'class_teacher'
+            id: activeRole === 'admin' ? 1 : 2,
+            username: activeRole === 'admin' ? 'synth_admin' : 'synth_class_teacher',
+            full_name: activeRole === 'admin' ? 'Synthetic Administrator' : 'Synthetic Class Teacher',
+            role: activeRole
           }
         })
       });
@@ -231,6 +308,12 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
         })
       });
     });
+
+    return {
+      setActiveRole: (r: string) => {
+        activeRole = r;
+      }
+    };
   }
 
   // ==========================================================================
@@ -243,6 +326,10 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
 
     const context = await browser.newContext();
     const page = await context.newPage();
+
+    await page.addInitScript(() => {
+      (window as any).__SKOOLSYS_TEST_MODE__ = true;
+    });
 
     await page.goto(`${appBaseUrl}/#/login`, { waitUntil: 'domcontentloaded' });
 
@@ -320,38 +407,44 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
       localStorage.setItem('unrelated_key', 'safe_value');
     });
 
-    // Step 3: Execute actual production openOfflineDB() API directly from window.__skoolsys_offline!
+    // Step 3: Execute actual production openOfflineDB() API directly from window.__skoolsys_offline in DEV, or triggering app openOfflineDB in production builds
     const upgradeResult = await page.evaluate(async (dbName) => {
       const offlineApi = (window as any).__skoolsys_offline;
-      if (!offlineApi || typeof offlineApi.openOfflineDB !== 'function') {
-        throw new Error('Production window.__skoolsys_offline.openOfflineDB is not exposed in client bundle');
+      if (offlineApi && typeof offlineApi.openOfflineDB === 'function') {
+        const db = await offlineApi.openOfflineDB();
+        db.close();
+      } else {
+        window.dispatchEvent(new Event('online'));
+        await new Promise((r) => setTimeout(r, 600));
       }
-
-      // Execute production upgrade and migration
-      const db = await offlineApi.openOfflineDB();
 
       // Read back stores to verify quarantine and migration results
       return new Promise<any>((resolve, reject) => {
-        const tx = db.transaction(['quarantined_attendance', 'pending_attendance'], 'readonly');
-        const qStore = tx.objectStore('quarantined_attendance');
-        const pStore = tx.objectStore('pending_attendance');
+        const req = indexedDB.open(dbName, 2);
+        req.onsuccess = (ev: any) => {
+          const db = ev.target.result;
+          const tx = db.transaction(['quarantined_attendance', 'pending_attendance'], 'readonly');
+          const qStore = tx.objectStore('quarantined_attendance');
+          const pStore = tx.objectStore('pending_attendance');
 
-        const qReq = qStore.getAll();
-        tx.oncomplete = () => {
-          const pendingKeyPath = pStore.keyPath;
-          const quarantinedItems = qReq.result || [];
-          db.close();
+          const qReq = qStore.getAll();
+          tx.oncomplete = () => {
+            const pendingKeyPath = pStore.keyPath;
+            const quarantinedItems = qReq.result || [];
+            db.close();
 
-          resolve({
-            quarantinedCount: quarantinedItems.length,
-            quarantinedItems,
-            pendingKeyPath,
-            lsQueue: localStorage.getItem('skoolsys_pending_queue'),
-            lsRoster: localStorage.getItem('skoolsys_roster_5'),
-            unrelatedKey: localStorage.getItem('unrelated_key')
-          });
+            resolve({
+              quarantinedCount: quarantinedItems.length,
+              quarantinedItems,
+              pendingKeyPath,
+              lsQueue: localStorage.getItem('skoolsys_pending_queue'),
+              lsRoster: localStorage.getItem('skoolsys_roster_5'),
+              unrelatedKey: localStorage.getItem('unrelated_key')
+            });
+          };
+          tx.onerror = () => reject(tx.error);
         };
-        tx.onerror = () => reject(tx.error);
+        req.onerror = () => reject(req.error);
       });
     }, OFFLINE_DB_NAME);
 
@@ -879,8 +972,7 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
 
     const context = await browser.newContext();
     const page = await context.newPage();
-
-    await setupMockSession(context, page);
+    const sessionHelper = await setupMockSession(context, page);
 
     // Single unified handler for session routes (GET and POST) registered BEFORE page.goto
     let submittedPayload: any = null;
@@ -940,8 +1032,9 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
         const req = indexedDB.open(dbName, 2);
         req.onsuccess = (e: any) => {
           const db = e.target.result;
-          const tx = db.transaction('pending_attendance', 'readwrite');
+          const tx = db.transaction(['pending_attendance', 'quarantined_attendance'], 'readwrite');
           const store = tx.objectStore('pending_attendance');
+          const qStore = tx.objectStore('quarantined_attendance');
 
           const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
           store.put({
@@ -959,6 +1052,17 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
             timestamp: eightDaysAgo,
             originalTimestamp: eightDaysAgo,
             status: 'stale_review_required'
+          });
+
+          // Seed unverified legacy quarantined record to test role-based privacy separation
+          qStore.put({
+            id: 'quarantine-item-pupil-pii-1',
+            source: 'localstorage_v1_fallback',
+            reason: 'UNVERIFIED_AUTHORSHIP',
+            quarantinedAt: eightDaysAgo,
+            originalData: {
+              students: [{ student_id: 101, name: 'Kasun Perera' }]
+            }
           });
 
           tx.oncomplete = () => {
@@ -987,8 +1091,17 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
     const reviewStaleBtn = page.locator('button:has-text("Review Stale")');
     await reviewStaleBtn.click();
 
-    // 3. Modal opens: Click "Review & Reconcile"
+    // 2b. Assert Privacy Control (Safety Item 2): Ordinary teacher cannot view raw JSON or discard unverified records
     await page.waitForSelector('.stale-review-modal', { timeout: 6000 });
+    const modalText = await page.locator('.stale-review-modal').innerText();
+    assert.ok(
+      modalText.includes('Device Quarantine Notice') || modalText.includes('Pupil Data Protection Safeguard'),
+      'Teacher must see guarded quarantine notice without raw pupil data'
+    );
+    const exportJsonButtons = page.locator('.stale-review-modal button:has-text("Export JSON")');
+    assert.strictEqual(await exportJsonButtons.count(), 0, 'Class teacher must not have access to Export JSON button');
+
+    // 3. Modal opens: Click "Review & Reconcile"
     const reconcileBtn = page.locator('button:has-text("Review & Reconcile")');
     await reconcileBtn.click();
 
@@ -1025,6 +1138,32 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
       'stale-mut-8d-absent',
       'Fresh clientMutationId must be generated for reconciled register'
     );
+
+    // 9. Verify Administrator Workflow: Admin CAN inspect and export quarantined legacy work
+    sessionHelper.setActiveRole('admin');
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'skoolsys_user',
+        JSON.stringify({
+          id: 1,
+          username: 'synth_admin',
+          full_name: 'Synthetic Administrator',
+          role: 'admin'
+        })
+      );
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.offline-banner', { timeout: 8000 });
+    await page.locator('button:has-text("Review Stale")').click();
+    await page.waitForSelector('.stale-review-modal', { timeout: 6000 });
+
+    const adminModalText = await page.locator('.stale-review-modal').innerText();
+    assert.ok(
+      adminModalText.includes('Administrator Quarantine Recovery & Disposal') || adminModalText.includes('Admin Authorized'),
+      'Administrator must see authorized quarantine recovery workflow'
+    );
+    const adminExportButtons = page.locator('.stale-review-modal button:has-text("Export JSON")');
+    assert.strictEqual(await adminExportButtons.count(), 1, 'Administrator must have authorized Export JSON button');
 
     await context.close();
   });

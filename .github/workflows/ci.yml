@@ -62,3 +62,12 @@ jobs:
 
       - name: Build Frontend (Vite production bundle)
         run: npm run build:client
+
+      - name: Install Playwright Chromium Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Genuine Browser E2E Test Suite
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-isolated-synthetic-test-key-32chars-min!
+        run: npm run test:browser

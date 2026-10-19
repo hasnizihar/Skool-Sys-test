@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "test": "tsx test/helpers/run_backend.ts",
     "test:browser": "tsx --test test/attendance_browser_real.test.ts",
     "test:all": "tsx --test test/**/*.test.ts",

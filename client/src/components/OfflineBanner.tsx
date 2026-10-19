@@ -33,6 +33,7 @@ export const OfflineBanner: React.FC = () => {
   } | null>(null);
 
   const currentUser = getCurrentUser();
+  const isAdmin = currentUser?.role === 'admin';
 
   const checkQueue = async () => {
     if (!currentUser?.id) {
@@ -289,20 +290,52 @@ export const OfflineBanner: React.FC = () => {
   };
 
   const handleExportQuarantined = (item: QuarantinedAttendanceItem) => {
-    const blob = new Blob([JSON.stringify(item, null, 2)], { type: 'application/json' });
+    if (!isAdmin) {
+      alert('Access Denied: Only administrators are authorized to export unverified pupil attendance records.');
+      return;
+    }
+    const confirmed = confirm(
+      `ADMINISTRATOR DATA EXPORT CONFIRMATION\n\nYou are exporting unverified legacy attendance data (ID: ${item.id}).\nExported records may contain pupil identification data.\n\nThis export is logged and must comply with KCC Student Data Protection Policy.\n\nProceed with export?`
+    );
+    if (!confirmed) return;
+
+    console.info(`[AUDIT] Administrator ${currentUser?.username} (ID: ${currentUser?.id}) exported quarantined attendance record ${item.id} at ${new Date().toISOString()}`);
+
+    const exportPayload = {
+      notice: 'KATTANKUDY CENTRAL COLLEGE NATIONAL SCHOOL — RESTRICTED AUDIT EXPORT',
+      confidentiality: 'STRICTLY CONFIDENTIAL — CONTAINS UNVERIFIED LEGACY ATTENDANCE DATA',
+      exportedBy: {
+        id: currentUser?.id,
+        username: currentUser?.username,
+        role: currentUser?.role
+      },
+      exportedAt: new Date().toISOString(),
+      quarantinedRecord: item
+    };
+
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `quarantined-attendance-${item.id}.json`;
+    a.download = `quarantined-attendance-${item.id}-admin-export.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleDiscardQuarantined = async (id: string) => {
-    if (confirm('Are you sure you want to discard this quarantined legacy record? This cannot be undone.')) {
-      await removeQuarantinedItem(id);
-      await checkQueue();
+    if (!isAdmin) {
+      alert('Access Denied: Only administrators are authorized to discard quarantined pupil records.');
+      return;
     }
+    const confirmed = confirm(
+      `ADMINISTRATOR DATA DISPOSAL CONFIRMATION\n\nPermanently discard quarantined record ID: ${id}?\n\nThis action cannot be undone and will be recorded in the audit trail.\n\nConfirm permanent disposal?`
+    );
+    if (!confirmed) return;
+
+    console.info(`[AUDIT] Administrator ${currentUser?.username} (ID: ${currentUser?.id}) permanently discarded quarantined record ${id} at ${new Date().toISOString()}`);
+
+    await removeQuarantinedItem(id);
+    await checkQueue();
   };
 
   if (!currentUser) return null;
@@ -313,7 +346,8 @@ export const OfflineBanner: React.FC = () => {
   const staleItems = pendingQueue.filter(
     (i) => i.status === 'stale_review_required' || i.status === 'legacy_review_required'
   );
-  const staleCount = staleItems.length + quarantinedItems.length;
+  // Restrict quarantined review count to administrators only; teachers only review their own mutations
+  const staleCount = staleItems.length + (isAdmin ? quarantinedItems.length : 0);
 
   if (isOnline && pendingQueue.length === 0 && quarantinedItems.length === 0 && !lastSyncMsg) {
     return null;
@@ -354,7 +388,9 @@ export const OfflineBanner: React.FC = () => {
               : isRejectedState
               ? `❌ Submission Rejected: ${rejectedCount} register(s) failed server authorization or academic-year validation.`
               : isStaleState
-              ? `⏳ Retention Expired: ${staleCount} register(s) older than 7 days require teacher re-verification before synchronization.`
+              ? (staleItems.length > 0
+                  ? `⏳ Retention Expired: ${staleItems.length} register(s) older than 7 days require teacher re-verification before synchronization.`
+                  : `🛡️ Device Quarantine: ${quarantinedItems.length} legacy record(s) on this device require administrator review.`)
               : lastSyncMsg || `Online — ${pendingCount} pending register(s) ready to sync.`}
           </span>
         </div>
@@ -656,53 +692,74 @@ export const OfflineBanner: React.FC = () => {
 
                   {quarantinedItems.length > 0 && (
                     <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                      <h5 style={{ margin: '0 0 0.35rem 0', color: '#b45309', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', fontWeight: 700 }}>
-                        <AlertTriangle size={15} />
-                        Quarantined Legacy Work ({quarantinedItems.length})
-                      </h5>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.6rem', lineHeight: 1.35 }}>
-                        Preserved from legacy storage ({quarantinedItems.filter((q) => q.source === 'localstorage_v1_fallback').length} from localStorage fallback). Lacking verified user ownership, these records are never auto-synced. Teachers or administrators can export JSON or discard.
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {quarantinedItems.map((q) => (
-                          <div
-                            key={q.id}
-                            style={{
-                              background: '#fffbeb',
-                              border: '1px solid #fef3c7',
-                              borderRadius: 'var(--radius-sm)',
-                              padding: '0.6rem 0.75rem',
-                              fontSize: '0.775rem'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div>
-                                <strong>ID: {q.id}</strong> — Source:{' '}
-                                <em>{q.source === 'localstorage_v1_fallback' ? 'Legacy LocalStorage Fallback' : 'Legacy IndexedDB v1'}</em>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.725rem', marginTop: '0.15rem' }}>{q.reason}</div>
-                              </div>
-                              <div style={{ display: 'flex', gap: '0.35rem' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleExportQuarantined(q)}
-                                  className="btn btn-secondary btn-sm"
-                                  style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}
-                                >
-                                  Export JSON
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDiscardQuarantined(q.id)}
-                                  className="btn btn-secondary btn-sm"
-                                  style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem', color: '#dc2626' }}
-                                >
-                                  Discard
-                                </button>
-                              </div>
-                            </div>
+                      {isAdmin ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                            <h5 style={{ margin: 0, color: '#b45309', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', fontWeight: 700 }}>
+                              <AlertTriangle size={15} />
+                              Administrator Quarantine Recovery & Disposal ({quarantinedItems.length})
+                            </h5>
+                            <span className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.7rem', fontWeight: 700 }}>
+                              Admin Authorized
+                            </span>
                           </div>
-                        ))}
-                      </div>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.6rem', lineHeight: 1.35 }}>
+                            Preserved from legacy storage ({quarantinedItems.filter((q) => q.source === 'localstorage_v1_fallback').length} from localStorage fallback). Unverified ownership requires administrator authorization and audit before export or permanent deletion.
+                          </p>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {quarantinedItems.map((q) => (
+                              <div
+                                key={q.id}
+                                style={{
+                                  background: '#fffbeb',
+                                  border: '1px solid #fef3c7',
+                                  borderRadius: 'var(--radius-sm)',
+                                  padding: '0.6rem 0.75rem',
+                                  fontSize: '0.775rem'
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div>
+                                    <strong>ID: {q.id}</strong> — Source:{' '}
+                                    <em>{q.source === 'localstorage_v1_fallback' ? 'Legacy LocalStorage Fallback' : 'Legacy IndexedDB v1'}</em>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.725rem', marginTop: '0.15rem' }}>{q.reason}</div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleExportQuarantined(q)}
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}
+                                      title="Export unverified JSON data with audit tracking"
+                                    >
+                                      Export JSON
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDiscardQuarantined(q.id)}
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem', color: '#dc2626' }}
+                                      title="Permanently discard quarantined record with audit tracking"
+                                    >
+                                      Discard
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                          <h5 style={{ margin: '0 0 0.25rem 0', color: '#475569', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 700 }}>
+                            <AlertTriangle size={15} color="#64748b" />
+                            Device Quarantine Notice ({quarantinedItems.length} legacy unassigned record{quarantinedItems.length > 1 ? 's' : ''})
+                          </h5>
+                          <p style={{ fontSize: '0.75rem', color: '#64748b', margin: 0, lineHeight: 1.4 }}>
+                            <strong>Pupil Data Protection Safeguard:</strong> This workstation holds {quarantinedItems.length} quarantined legacy record(s) from earlier application versions with unverified authorship. In accordance with KCC Student Data Protection Policy, class teachers may not inspect, export raw JSON, or delete unverified pupil records. Please contact a System Administrator to perform authorized recovery or data disposal.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

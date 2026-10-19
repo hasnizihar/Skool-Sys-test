@@ -1027,18 +1027,23 @@ export function exportMutationJson(mutation: OfflineAttendanceMutation): string 
   );
 }
 
-// Expose production offline engine on window for production runtime invocation
+// Narrow Hardening (PR-004 Acceptance Hardening):
+// Strictly guard window.__skoolsys_offline test interface so that it is NEVER exposed in production release bundles.
+// It is only attached when running in development mode (import.meta.env.DEV) AND when an explicit opt-in test flag
+// window.__SKOOLSYS_TEST_MODE__ is present. In release bundles, Vite treeshakes and eliminates this entirely.
 if (typeof window !== 'undefined') {
-  (window as any).__skoolsys_offline = {
-    openOfflineDB,
-    migrateLegacyLocalStorageQueue,
-    buildRosterCacheKey,
-    cacheClassRoster,
-    getCachedClassRoster,
-    getPendingAttendanceQueue,
-    getDeviceQuarantineSummary,
-    queueOfflineAttendance,
-    clearCachedRostersForUser
-  };
+  if (import.meta.env.DEV && ((window as any).__SKOOLSYS_TEST_MODE__ === true || (window as any).__ENABLE_OFFLINE_TEST_HOOKS__ === true)) {
+    (window as any).__skoolsys_offline = {
+      openOfflineDB,
+      migrateLegacyLocalStorageQueue,
+      buildRosterCacheKey,
+      cacheClassRoster,
+      getCachedClassRoster,
+      getPendingAttendanceQueue,
+      getDeviceQuarantineSummary,
+      queueOfflineAttendance,
+      clearCachedRostersForUser
+    };
+  }
 }
 
