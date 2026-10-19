@@ -4,6 +4,12 @@ import { db } from '../db/database.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 import { runSeed } from '../db/seed.js';
+import {
+  grantAcademicAuthorization,
+  revokeAcademicAuthorization,
+  AcademicAuthRole,
+  GradeBand
+} from '../services/academicAuthorizationService.js';
 
 const router = Router();
 
@@ -184,6 +190,121 @@ router.delete('/assignments/:id', (req, res) => {
   logAudit(req.user!.id, req.user!.username, 'ASSIGNMENT_DELETE', 'teacher_assignments', id, assignment, req.ip);
 
   res.json({ success: true, message: 'Assignment removed.' });
+});
+
+// List Academic Staff Authorizations
+router.get('/academic-authorizations', (req, res) => {
+  const { user_id, academic_year_id, is_active } = req.query;
+
+  let query = `
+    SELECT asa.*, u.full_name as user_full_name, u.email as user_email, u.role as system_role,
+           ay.name as academic_year_name,
+           granter.full_name as granter_name,
+           revoker.full_name as revoker_name
+    FROM academic_staff_authorizations asa
+    JOIN users u ON asa.user_id = u.id
+    JOIN academic_years ay ON asa.academic_year_id = ay.id
+    JOIN users granter ON asa.granted_by_user_id = granter.id
+    LEFT JOIN users revoker ON asa.revoked_by_user_id = revoker.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+
+  if (user_id) {
+    query += ' AND asa.user_id = ?';
+    params.push(Number(user_id));
+  }
+  if (academic_year_id) {
+    query += ' AND asa.academic_year_id = ?';
+    params.push(Number(academic_year_id));
+  }
+  if (is_active !== undefined) {
+    query += ' AND asa.is_active = ?';
+    params.push(is_active === 'true' || is_active === '1' ? 1 : 0);
+  }
+
+  query += ' ORDER BY asa.id DESC';
+  const authorizations = db.prepare(query).all(...params);
+  res.json({ authorizations });
+});
+
+// Grant Academic Staff Authorization
+router.post('/academic-authorizations', (req, res) => {
+  const { user_id, academic_year_id, auth_role, grade_band } = req.body;
+
+  if (!user_id || !academic_year_id || !auth_role || !grade_band) {
+    res.status(400).json({ error: 'user_id, academic_year_id, auth_role, and grade_band are required.' });
+    return;
+  }
+
+  const validRoles: AcademicAuthRole[] = ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'];
+  if (!validRoles.includes(auth_role)) {
+    res.status(400).json({ error: `Invalid auth_role '${auth_role}'. Must be one of: ${validRoles.join(', ')}.` });
+    return;
+  }
+
+  const validBands: GradeBand[] = ['junior_6_9', 'ol_10_11', 'al_12_13', 'all'];
+  if (!validBands.includes(grade_band)) {
+    res.status(400).json({ error: `Invalid grade_band '${grade_band}'. Must be one of: ${validBands.join(', ')}.` });
+    return;
+  }
+
+  try {
+    const result = grantAcademicAuthorization({
+      userId: Number(user_id),
+      academicYearId: Number(academic_year_id),
+      authRole: auth_role as AcademicAuthRole,
+      gradeBand: grade_band as GradeBand,
+      grantedByUserId: req.user!.id
+    });
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'ACADEMIC_AUTHORIZATION_GRANT',
+      'academic_staff_authorizations',
+      result.id,
+      { user_id, academic_year_id, auth_role, grade_band },
+      req.ip
+    );
+
+    res.status(201).json({ success: true, id: result.id });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to grant academic authorization.' });
+  }
+});
+
+// Revoke Academic Staff Authorization
+router.post('/academic-authorizations/:id/revoke', (req, res) => {
+  const authorizationId = Number(req.params.id);
+  const { reason } = req.body;
+
+  if (!reason || !reason.trim()) {
+    res.status(400).json({ error: 'A mandatory revocation reason must be provided.' });
+    return;
+  }
+
+  try {
+    revokeAcademicAuthorization({
+      authorizationId,
+      revokedByUserId: req.user!.id,
+      reason: reason.trim()
+    });
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'ACADEMIC_AUTHORIZATION_REVOKE',
+      'academic_staff_authorizations',
+      authorizationId,
+      { reason: reason.trim() },
+      req.ip
+    );
+
+    res.json({ success: true, message: 'Academic authorization revoked successfully.' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to revoke academic authorization.' });
+  }
 });
 
 // Audit Logs

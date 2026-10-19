@@ -238,3 +238,48 @@ export function requireRole(allowedRoles: string[]) {
     next();
   };
 }
+
+import {
+  canReviewMarksSheet,
+  canApproveMarksSheet,
+  getActiveStaffAuthorizations,
+  hasAcademicStaffRole,
+  AcademicAuthRole,
+  GradeBand,
+  AcademicStaffAuthorization
+} from '../services/academicAuthorizationService.js';
+
+export {
+  canReviewMarksSheet,
+  canApproveMarksSheet,
+  getActiveStaffAuthorizations,
+  hasAcademicStaffRole
+};
+export type { AcademicAuthRole, GradeBand, AcademicStaffAuthorization };
+
+export function requireAcademicStaffRole(
+  allowedRoles: AcademicAuthRole[],
+  getAcademicYearId?: (req: Request) => number | undefined
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized.' });
+      return;
+    }
+    if (req.user.role === 'admin') {
+      next();
+      return;
+    }
+    const yearId = getAcademicYearId ? getAcademicYearId(req) : undefined;
+    const activeAuths = getActiveStaffAuthorizations(req.user.id, yearId);
+    const hasRole = activeAuths.some((a: AcademicStaffAuthorization) => allowedRoles.includes(a.auth_role));
+    if (!hasRole) {
+      res.status(403).json({
+        error: `Access denied. Requires one of academic appointments: ${allowedRoles.join(', ')}.`
+      });
+      return;
+    }
+    next();
+  };
+}
+
