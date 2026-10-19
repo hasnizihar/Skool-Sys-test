@@ -79,7 +79,19 @@ export function getUserAssignments(userId: number) {
 export function canAccessClass(user: AuthUser, classId: number): boolean {
   if (user.role === 'admin') return true;
   const assignments = getUserAssignments(user.id);
-  return assignments.assignedClassIds.includes(Number(classId));
+  if (assignments.assignedClassIds.includes(Number(classId))) return true;
+
+  // Also check academic staff leadership appointments
+  const classRow = db.prepare('SELECT academic_year_id, grade FROM classes WHERE id = ?').get(classId) as { academic_year_id: number; grade: number } | undefined;
+  if (classRow && classRow.academic_year_id) {
+    const auths = getActiveStaffAuthorizations(user.id, classRow.academic_year_id);
+    return auths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      doesBandCoverGrade(a.grade_band, classRow.grade)
+    );
+  }
+
+  return false;
 }
 
 export function canManageClassAttendance(user: AuthUser, classId: number): boolean {
@@ -147,8 +159,10 @@ export function canAccessStudent(user: AuthUser, studentId: number): boolean {
   if (user.role === 'admin') return true;
 
   const enrollment = db.prepare(`
-    SELECT class_id FROM enrollments
-    WHERE student_id = ? AND status = 'enrolled'
+    SELECT e.class_id, e.academic_year_id, c.grade
+    FROM enrollments e
+    JOIN classes c ON e.class_id = c.id
+    WHERE e.student_id = ? AND e.status = 'enrolled'
   `).get(Number(studentId)) as any;
 
   if (!enrollment || !enrollment.class_id) {
@@ -156,7 +170,18 @@ export function canAccessStudent(user: AuthUser, studentId: number): boolean {
   }
 
   const assignments = getUserAssignments(user.id);
-  return assignments.assignedClassIds.includes(Number(enrollment.class_id));
+  if (assignments.assignedClassIds.includes(Number(enrollment.class_id))) return true;
+
+  // Also check academic staff leadership appointments
+  if (enrollment.academic_year_id) {
+    const auths = getActiveStaffAuthorizations(user.id, enrollment.academic_year_id);
+    return auths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      doesBandCoverGrade(a.grade_band, enrollment.grade)
+    );
+  }
+
+  return false;
 }
 
 /**
@@ -242,8 +267,10 @@ export function requireRole(allowedRoles: string[]) {
 import {
   canReviewMarksSheet,
   canApproveMarksSheet,
+  canPublishExamination,
   getActiveStaffAuthorizations,
   hasAcademicStaffRole,
+  doesBandCoverGrade,
   AcademicAuthRole,
   GradeBand,
   AcademicStaffAuthorization
@@ -252,34 +279,58 @@ import {
 export {
   canReviewMarksSheet,
   canApproveMarksSheet,
+  canPublishExamination,
   getActiveStaffAuthorizations,
-  hasAcademicStaffRole
+  hasAcademicStaffRole,
+  doesBandCoverGrade
 };
 export type { AcademicAuthRole, GradeBand, AcademicStaffAuthorization };
 
+/**
+ * Middleware requiring active academic staff appointment.
+ * STRICT ENFORCEMENT:
+ * - Requires explicit academic year scope; never falls back to an unscoped or cross-year check.
+ * - If grade scope is provided, verifies that the user's appointment covers the grade band.
+ * - Base admin alone does not bypass without an active academic appointment for that scope.
+ */
 export function requireAcademicStaffRole(
   allowedRoles: AcademicAuthRole[],
-  getAcademicYearId?: (req: Request) => number | undefined
+  getScope: (req: Request) => { academicYearId: number; grade?: number } | number | undefined
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       res.status(401).json({ error: 'Unauthorized.' });
       return;
     }
-    if (req.user.role === 'admin') {
-      next();
+
+    const scope = getScope ? getScope(req) : undefined;
+    const yearId = typeof scope === 'number' ? scope : scope?.academicYearId;
+    const grade = typeof scope === 'object' ? scope?.grade : undefined;
+
+    if (!yearId || isNaN(yearId)) {
+      res.status(400).json({
+        error: 'Academic authorization check failed: Explicit academic year scope is required.'
+      });
       return;
     }
-    const yearId = getAcademicYearId ? getAcademicYearId(req) : undefined;
+
     const activeAuths = getActiveStaffAuthorizations(req.user.id, yearId);
-    const hasRole = activeAuths.some((a: AcademicStaffAuthorization) => allowedRoles.includes(a.auth_role));
+    const hasRole = activeAuths.some((a: AcademicStaffAuthorization) => {
+      if (!allowedRoles.includes(a.auth_role)) return false;
+      if (grade !== undefined) {
+        return doesBandCoverGrade(a.grade_band, grade);
+      }
+      return true;
+    });
+
     if (!hasRole) {
       res.status(403).json({
-        error: `Access denied. Requires one of academic appointments: ${allowedRoles.join(', ')}.`
+        error: `Access denied. Requires active academic appointment in: ${allowedRoles.join(', ')} covering this academic year${grade !== undefined ? ` and grade ${grade}` : ''}.`
       });
       return;
     }
     next();
   };
 }
+
 

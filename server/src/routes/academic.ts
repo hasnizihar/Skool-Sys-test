@@ -204,7 +204,14 @@ router.get('/enrollments/class/:classId/subject/:subjectId', requireAuth, (req, 
 
 // Enroll Student in Subject (Admin, Principal, Section Head, or assigned Class Teacher)
 router.post('/enrollments', requireAuth, (req, res) => {
-  const { student_id, subject_id, class_id, academic_year_id, enrollment_category, is_verified } = req.body;
+  const {
+    student_id,
+    subject_id,
+    class_id,
+    academic_year_id,
+    enrollment_category
+    // Note: is_verified, verified_by_user_id, status, enrollment_status are intentionally ignored/stripped
+  } = req.body;
 
   if (!student_id || !subject_id || !class_id || !academic_year_id || !enrollment_category) {
     res.status(400).json({ error: 'student_id, subject_id, class_id, academic_year_id, and enrollment_category are required.' });
@@ -218,14 +225,12 @@ router.post('/enrollments', requireAuth, (req, res) => {
   }
 
   try {
-    const verifiedBy = is_verified ? req.user!.id : undefined;
     const result = enrollStudentInSubject({
       studentId: Number(student_id),
       subjectId: Number(subject_id),
       classId: Number(class_id),
       academicYearId: Number(academic_year_id),
-      enrollmentCategory: enrollment_category as EnrollmentCategory,
-      verifiedByUserId: verifiedBy
+      enrollmentCategory: enrollment_category as EnrollmentCategory
     });
 
     logAudit(
@@ -240,49 +245,60 @@ router.post('/enrollments', requireAuth, (req, res) => {
 
     res.status(201).json({ success: true, id: result.id, status: result.status });
   } catch (err: any) {
-    res.status(400).json({ error: err.message || 'Failed to enroll student in subject.' });
+    const statusCode = err.statusCode || (err.message?.includes('already exists') ? 409 : 400);
+    res.status(statusCode).json({ error: err.message || 'Failed to enroll student in subject.' });
   }
 });
 
-// Verify Student Subject Enrollment (Leadership role / Admin)
+// Verify Student Subject Enrollment (Requires active Section Head, Vice Principal Academic, or Principal appointment)
 router.patch('/enrollments/:id/verify', requireAuth, (req, res) => {
   const enrollmentId = Number(req.params.id);
+  if (!enrollmentId || isNaN(enrollmentId)) {
+    res.status(400).json({ error: 'Valid enrollment ID is required.' });
+    return;
+  }
 
   try {
-    verifyStudentEnrollment(enrollmentId, req.user!.id);
+    const result = verifyStudentEnrollment(enrollmentId, req.user!);
     logAudit(
       req.user!.id,
       req.user!.username,
       'STUDENT_SUBJECT_VERIFY',
       'student_subject_enrollments',
       enrollmentId,
-      {},
+      { previous_status: result.enrollment?.enrollment_status, new_status: 'confirmed' },
       req.ip
     );
     res.json({ success: true, message: 'Student subject enrollment confirmed.' });
   } catch (err: any) {
-    res.status(400).json({ error: err.message || 'Failed to verify enrollment.' });
+    const status = err.statusCode || (err.message?.includes('Access denied') ? 403 : 400);
+    res.status(status).json({ error: err.message || 'Failed to verify enrollment.' });
   }
 });
 
-// Drop Student Subject Enrollment
+// Drop Student Subject Enrollment (Requires active Section Head, Vice Principal Academic, or Principal appointment)
 router.patch('/enrollments/:id/drop', requireAuth, (req, res) => {
   const enrollmentId = Number(req.params.id);
+  if (!enrollmentId || isNaN(enrollmentId)) {
+    res.status(400).json({ error: 'Valid enrollment ID is required.' });
+    return;
+  }
 
   try {
-    dropStudentEnrollment(enrollmentId, req.user!.id);
+    const result = dropStudentEnrollment(enrollmentId, req.user!);
     logAudit(
       req.user!.id,
       req.user!.username,
       'STUDENT_SUBJECT_DROP',
       'student_subject_enrollments',
       enrollmentId,
-      {},
+      { previous_status: result.enrollment?.enrollment_status, new_status: 'dropped' },
       req.ip
     );
     res.json({ success: true, message: 'Student subject enrollment marked as dropped.' });
   } catch (err: any) {
-    res.status(400).json({ error: err.message || 'Failed to drop enrollment.' });
+    const status = err.statusCode || (err.message?.includes('Access denied') ? 403 : 400);
+    res.status(status).json({ error: err.message || 'Failed to drop enrollment.' });
   }
 });
 

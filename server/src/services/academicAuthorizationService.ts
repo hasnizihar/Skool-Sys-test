@@ -187,11 +187,14 @@ export function revokeAcademicAuthorization(params: {
 }
 
 /**
- * Institutional Segregation of Duties (SoD): Review Permission Check
+ * Institutional Segregation of Duties (SoD): Review / Endorsement Permission Check
+ * 
+ * Permitted roles:
+ * - Principal, Vice Principal Academic, Section Head, Exam Coordinator
+ * covering the academic year and class grade.
+ * Note: Base admin alone without academic staff authorization cannot review.
  */
 export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string } {
-  if (user.role === 'admin') return { allowed: true };
-
   const sheet = db.prepare(`
     SELECT ms.id, ms.examination_id, ms.class_id, ms.academic_year_id, c.grade
     FROM marks_sheets ms
@@ -218,16 +221,22 @@ export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed:
 }
 
 /**
- * Institutional Segregation of Duties (SoD): Approval Permission Check
+ * Institutional Segregation of Duties (SoD): Final Approval Permission Check
  * 
  * STRICT INVARIANTS:
- * 1. Assigned teacher cannot approve own marks sheet (ANTI_SELF_APPROVAL_TEACHER).
- * 2. User who entered or modified any marks cannot approve sheet (ANTI_SELF_APPROVAL_ENTRANT).
- * 3. User must hold Principal, Vice Principal Academic, or Section Head covering the class grade and year.
+ * 1. Anti-Self-Approval: Assigned teacher cannot approve own marks sheet (SELF_APPROVAL_TEACHER).
+ * 2. Anti-Self-Approval: User who entered or modified marks cannot approve sheet (SELF_APPROVAL_ENTRANT).
+ *    (NOTE: Current check inspects marks.entered_by_user_id. Full immutable lifetime revision author history
+ *    will be durably enforced in Gate 3/4 via marks_revisions and audit trails.)
+ * 3. Anti-Self-Approval: Reviewer who endorsed the sheet cannot self-approve as final approver (SELF_APPROVAL_REVIEWER).
+ * 4. Role Authority: Restricted to designated, independent Principal or Vice Principal Academic appointment
+ *    covering this academic year and grade band. Section Heads endorse/review but cannot perform final approval.
+ * 5. Base admin alone without an active academic staff appointment cannot approve.
  */
 export function canApproveMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string; code?: string } {
   const sheet = db.prepare(`
-    SELECT ms.id, ms.examination_id, ms.class_id, ms.subject_id, ms.academic_year_id, ms.teacher_id, c.grade
+    SELECT ms.id, ms.examination_id, ms.class_id, ms.subject_id, ms.academic_year_id,
+           ms.teacher_id, ms.reviewed_by_user_id, c.grade
     FROM marks_sheets ms
     JOIN classes c ON ms.class_id = c.id
     WHERE ms.id = ?
@@ -238,6 +247,7 @@ export function canApproveMarksSheet(user: AuthUser, sheetId: number): { allowed
     subject_id: number;
     academic_year_id: number;
     teacher_id: number | null;
+    reviewed_by_user_id: number | null;
     grade: number;
   } | undefined;
 
@@ -268,15 +278,21 @@ export function canApproveMarksSheet(user: AuthUser, sheetId: number): { allowed
     };
   }
 
-  // 3. Admin override (if not teacher and not entrant)
-  if (user.role === 'admin') {
-    return { allowed: true };
+  // 3. Anti-Self-Approval: Reviewer / Endorser Check
+  if (sheet.reviewed_by_user_id !== null && Number(sheet.reviewed_by_user_id) === user.id) {
+    return {
+      allowed: false,
+      reason: 'Institutional Segregation Violation: The reviewer who endorsed the sheet cannot self-approve as final approver. Reviewer and final approver roles must be strictly separated.',
+      code: 'SELF_APPROVAL_REVIEWER'
+    };
   }
 
   // 4. Role Authority Check via academic_staff_authorizations
+  // Strictly restricted to Principal or Vice Principal Academic.
+  // Section Heads only review/endorse. Plain admin without active appointment cannot approve.
   const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
   const approverAuth = activeAuths.find(a =>
-    ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+    ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
     doesBandCoverGrade(a.grade_band, sheet.grade)
   );
 
@@ -286,7 +302,35 @@ export function canApproveMarksSheet(user: AuthUser, sheetId: number): { allowed
 
   return {
     allowed: false,
-    reason: 'Access denied: Requires Principal, Vice Principal Academic, or Section Head appointment covering this grade band and academic year.',
+    reason: 'Access denied: Final approval requires active Principal or Vice Principal Academic appointment covering this grade band and academic year. Section Heads endorse/review but cannot finalize approval, and plain admin accounts without appointment cannot approve.',
     code: 'INSUFFICIENT_AUTHORIZATION'
   };
 }
+
+/**
+ * Examination Publication Authorization Check
+ * Independent whole-exam publication requires Principal or Vice Principal Academic appointment
+ * covering the examination academic year with all-band scope.
+ */
+export function canPublishExamination(user: AuthUser, examinationId: number): { allowed: boolean; reason?: string } {
+  const exam = db.prepare('SELECT id, academic_year_id FROM examinations WHERE id = ?').get(examinationId) as { id: number; academic_year_id: number } | undefined;
+  if (!exam) {
+    return { allowed: false, reason: 'Examination not found.' };
+  }
+
+  const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+  const canPublish = activeAuths.some(a =>
+    ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
+    a.grade_band === 'all'
+  );
+
+  if (canPublish) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    reason: 'Access denied: Independent examination publication requires Principal or Vice Principal Academic appointment with all-band scope.'
+  };
+}
+
