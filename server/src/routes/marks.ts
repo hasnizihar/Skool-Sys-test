@@ -99,12 +99,23 @@ router.get('/sheet', requireAuth, (req, res) => {
 });
 
 // Bulk Save Marks for Subject Sheet
+// NOTE: Legacy marks endpoint - known security boundary pending Gate 3 comprehensive refactoring.
+// Enforces basic fail-closed gates (no privileged status injection, no locked sheet overwrite, no year fallback).
 router.post('/sheet', requireAuth, (req, res) => {
   const { examId, classId, subjectId, marks, status } = req.body;
   const user = req.user!;
 
   if (!examId || !classId || !subjectId || !Array.isArray(marks)) {
     res.status(400).json({ error: 'Missing examId, classId, subjectId, or marks array.' });
+    return;
+  }
+
+  // Security gate: Client cannot inject privileged workflow statuses via legacy endpoint
+  const targetStatus = status || 'submitted';
+  if (!['draft', 'submitted'].includes(targetStatus)) {
+    res.status(400).json({
+      error: `Invalid status '${targetStatus}': legacy marks entry may only set 'draft' or 'submitted'. Privileged workflow statuses require formal moderation.`
+    });
     return;
   }
 
@@ -117,64 +128,154 @@ router.post('/sheet', requireAuth, (req, res) => {
     return;
   }
 
-  // Ensure marks_sheet exists
-  let sheet = db.prepare('SELECT id FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(eId, cId, sId) as { id: number } | undefined;
-  if (!sheet) {
-    const classRow = db.prepare('SELECT academic_year_id FROM classes WHERE id = ?').get(cId) as any;
-    const examRow = db.prepare('SELECT academic_year_id FROM examinations WHERE id = ?').get(eId) as any;
-    const yearId = examRow?.academic_year_id || classRow?.academic_year_id || 1;
-    const result = db.prepare(`
-      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, status)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(eId, cId, sId, yearId, user.id, status || 'submitted');
-    sheet = { id: Number(result.lastInsertRowid) };
-  } else if (status) {
-    db.prepare("UPDATE marks_sheets SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, sheet.id);
+  // Verify class and exam existence and academic year consistency without fabricated fallback
+  const classRow = db.prepare('SELECT id, academic_year_id FROM classes WHERE id = ?').get(cId) as any;
+  const examRow = db.prepare('SELECT id, academic_year_id FROM examinations WHERE id = ?').get(eId) as any;
+
+  if (!classRow || !examRow) {
+    res.status(404).json({ error: 'Class or Examination not found.' });
+    return;
   }
 
-  const upsert = db.prepare(`
-    INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, max_score, score, assessment_status, grade_letter, status, entered_by_user_id, updated_at)
-    VALUES (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(examination_id, subject_id, student_id) DO UPDATE SET
-      sheet_id = excluded.sheet_id,
-      score = excluded.score,
-      assessment_status = excluded.assessment_status,
-      grade_letter = excluded.grade_letter,
-      status = excluded.status,
-      entered_by_user_id = excluded.entered_by_user_id,
-      updated_at = datetime('now')
-  `);
+  if (!classRow.academic_year_id || !examRow.academic_year_id) {
+    res.status(400).json({ error: 'Missing or indeterminate academic year for class or examination.' });
+    return;
+  }
+
+  if (classRow.academic_year_id !== examRow.academic_year_id) {
+    res.status(400).json({
+      error: `Academic year mismatch: examination year (${examRow.academic_year_id}) does not match class year (${classRow.academic_year_id}).`
+    });
+    return;
+  }
+
+  const yearId = classRow.academic_year_id;
+
+  // Check if sheet exists and whether it is locked against direct legacy writes
+  let sheet = db.prepare('SELECT id, status FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(eId, cId, sId) as { id: number; status: string } | undefined;
+
+  if (sheet && !['draft', 'submitted'].includes(sheet.status)) {
+    res.status(403).json({
+      error: `Sheet is locked in status '${sheet.status}' and cannot be overwritten via legacy marks entry.`
+    });
+    return;
+  }
+
+  // Pre-validate all marks inputs to prevent partial writes and avoid silent clamping or truncation
+  interface ValidatedMark {
+    studentId: number;
+    score: number | null;
+    assessmentStatus: string;
+    gradeLetter: string;
+  }
+  const validatedMarks: ValidatedMark[] = [];
 
   for (const m of marks) {
+    const studentId = Number(m.student_id);
+    if (!studentId || isNaN(studentId)) {
+      res.status(400).json({ error: 'Each mark must contain a valid student_id.' });
+      return;
+    }
+
     const isAbsent = Boolean(m.is_absent);
     const isExempt = Boolean(m.is_exempt);
+
+    if (isAbsent && isExempt) {
+      res.status(400).json({ error: `Student ID ${studentId} cannot be marked both absent and exempt.` });
+      return;
+    }
+
     let assessmentStatus = 'PRESENT';
     let score: number | null = null;
 
     if (isAbsent) {
+      if (m.score !== null && m.score !== undefined && m.score !== '') {
+        res.status(400).json({ error: `Student ID ${studentId} is marked absent but has a score provided.` });
+        return;
+      }
       assessmentStatus = 'ABSENT';
       score = null;
     } else if (isExempt) {
+      if (m.score !== null && m.score !== undefined && m.score !== '') {
+        res.status(400).json({ error: `Student ID ${studentId} is marked exempt but has a score provided.` });
+        return;
+      }
       assessmentStatus = 'EXEMPT';
       score = null;
     } else if (m.score === null || m.score === '' || m.score === undefined) {
       assessmentStatus = 'NOT_ASSESSED';
       score = null;
     } else {
+      const numScore = Number(m.score);
+      if (isNaN(numScore)) {
+        res.status(400).json({ error: `Score '${m.score}' for student ID ${studentId} is not a valid number.` });
+        return;
+      }
+      if (numScore < 0.0 || numScore > 100.0) {
+        res.status(400).json({ error: `Score ${numScore} for student ID ${studentId} is out of bounds [0, 100].` });
+        return;
+      }
+      if (Math.round(numScore * 10) / 10 !== numScore) {
+        res.status(400).json({ error: `Score ${numScore} for student ID ${studentId} exceeds allowed 1-decimal precision.` });
+        return;
+      }
       assessmentStatus = 'PRESENT';
-      score = Math.max(0, Math.min(100, Math.round(Number(m.score) * 10) / 10));
+      score = numScore;
     }
-    const gradeLetter = calcGradeLetter(score, isAbsent, isExempt);
 
-    upsert.run(
-      sheet.id,
-      eId, cId, sId, Number(m.student_id),
+    const gradeLetter = calcGradeLetter(score, isAbsent, isExempt);
+    validatedMarks.push({
+      studentId,
       score,
       assessmentStatus,
-      gradeLetter,
-      status || 'submitted',
-      user.id
-    );
+      gradeLetter
+    });
+  }
+
+  // Atomically write sheet and marks
+  db.exec('BEGIN IMMEDIATE TRANSACTION;');
+  try {
+    if (!sheet) {
+      const result = db.prepare(`
+        INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(eId, cId, sId, yearId, user.id, targetStatus);
+      sheet = { id: Number(result.lastInsertRowid), status: targetStatus };
+    } else {
+      db.prepare("UPDATE marks_sheets SET status = ?, updated_at = datetime('now') WHERE id = ?").run(targetStatus, sheet.id);
+    }
+
+    const upsert = db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, max_score, score, assessment_status, grade_letter, status, entered_by_user_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(examination_id, subject_id, student_id) DO UPDATE SET
+        sheet_id = excluded.sheet_id,
+        score = excluded.score,
+        assessment_status = excluded.assessment_status,
+        grade_letter = excluded.grade_letter,
+        status = excluded.status,
+        entered_by_user_id = excluded.entered_by_user_id,
+        updated_at = datetime('now')
+    `);
+
+    for (const vm of validatedMarks) {
+      upsert.run(
+        sheet.id,
+        eId, cId, sId, vm.studentId,
+        vm.score,
+        vm.assessmentStatus,
+        vm.gradeLetter,
+        targetStatus,
+        user.id
+      );
+    }
+
+    db.exec('COMMIT;');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK;');
+    } catch {}
+    throw err;
   }
 
   logAudit(user.id, user.username, 'MARKS_SUBMIT', 'marks', `${eId}-${sId}-${cId}`, { examId: eId, subjectId: sId, count: marks.length }, req.ip);

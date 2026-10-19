@@ -64,23 +64,24 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
         academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
         term_number INTEGER NOT NULL CHECK(term_number IN (1, 2, 3)),
         name TEXT NOT NULL,
-        start_date TEXT NOT NULL,
-        end_date TEXT NOT NULL,
+        start_date TEXT,
+        end_date TEXT,
+        is_verified INTEGER NOT NULL DEFAULT 0 CHECK(is_verified IN (0, 1)),
         UNIQUE(academic_year_id, term_number)
       );
     `);
 
-    // Ensure all existing academic years have default term boundaries
-    const existingYears = db.prepare('SELECT id, name, start_date, end_date FROM academic_years').all() as any[];
+    // Ensure all existing academic years have default provisional term placeholders WITHOUT fabricating dates
+    const existingYears = db.prepare('SELECT id, name FROM academic_years').all() as any[];
     const insertTermStmt = db.prepare(`
-      INSERT OR IGNORE INTO academic_terms (academic_year_id, term_number, name, start_date, end_date)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO academic_terms (academic_year_id, term_number, name, start_date, end_date, is_verified)
+      VALUES (?, ?, ?, NULL, NULL, 0)
     `);
 
     for (const yr of existingYears) {
-      insertTermStmt.run(yr.id, 1, `Term 1 (${yr.name})`, yr.start_date, yr.end_date);
-      insertTermStmt.run(yr.id, 2, `Term 2 (${yr.name})`, yr.start_date, yr.end_date);
-      insertTermStmt.run(yr.id, 3, `Term 3 (${yr.name})`, yr.start_date, yr.end_date);
+      insertTermStmt.run(yr.id, 1, `Term 1 (${yr.name})`);
+      insertTermStmt.run(yr.id, 2, `Term 2 (${yr.name})`);
+      insertTermStmt.run(yr.id, 3, `Term 3 (${yr.name})`);
     }
 
     // Step B: Upgrade examinations table with operational fields if missing
@@ -356,8 +357,13 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
     const marksTableExists = db.prepare(
       "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'marks';"
     ).get() as { cnt: number };
+    const hasLegacyMarksTable = Number(marksTableExists?.cnt || 0) > 0;
 
-    if (Number(marksTableExists?.cnt || 0) > 0) {
+    const preflightTotalMarks = hasLegacyMarksTable
+      ? (db.prepare('SELECT COUNT(*) as cnt FROM marks').get() as { cnt: number }).cnt
+      : 0;
+
+    if (preflightTotalMarks > 0) {
       // Find all distinct legacy sheets
       const legacySheets = db.prepare(`
         SELECT DISTINCT examination_id, class_id, subject_id
@@ -438,7 +444,7 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
           continue;
         }
 
-        // 3. Resolve teacher assignment truthfully from teacher_assignments
+        // 3. Resolve teacher assignment truthfully from teacher_assignments ONLY
         const assignments = db.prepare(`
           SELECT teacher_id FROM teacher_assignments
           WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ?
@@ -447,18 +453,9 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
         let resolvedTeacherId: number | null = null;
         if (assignments.length === 1) {
           resolvedTeacherId = assignments[0].teacher_id;
-        } else {
-          // If no unique assignment, check entered_by_user_id
-          const entryUsers = db.prepare(`
-            SELECT DISTINCT entered_by_user_id FROM marks
-            WHERE examination_id = ? AND class_id = ? AND subject_id = ? AND entered_by_user_id IS NOT NULL
-          `).all(sheet.examination_id, sheet.class_id, sheet.subject_id) as { entered_by_user_id: number }[];
-
-          if (entryUsers.length === 1) {
-            const userCheck = db.prepare('SELECT id FROM users WHERE id = ?').get(entryUsers[0].entered_by_user_id);
-            if (userCheck) resolvedTeacherId = entryUsers[0].entered_by_user_id;
-          }
         }
+        // If no unique teacher assignment exists, teacher_id remains NULL.
+        // We strictly NEVER substitute entered_by_user_id for appointed teacher ownership.
 
         // 4. Determine sheet status without fabricating approval
         const sheetStatus = exam.is_published === 1 ? 'legacy_unmoderated' : 'draft';
@@ -487,7 +484,28 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
             continue;
           }
 
-          const maxScore = Number(row.max_score || 100.0);
+          // Validate max_score: must be numeric and strictly in (0, 1000]
+          if (row.max_score === null || row.max_score === undefined) {
+            insertQuarantineStmt.run(
+              row.id, sheet.examination_id, sheet.class_id, sheet.subject_id, row.student_id,
+              row.score, row.is_absent, row.is_exempt, row.status,
+              JSON.stringify(row), 'INVALID_MAX_SCORE_NULL_OR_MISSING'
+            );
+            quarantinedMarks++;
+            continue;
+          }
+
+          const maxScore = Number(row.max_score);
+          if (isNaN(maxScore) || maxScore <= 0.0 || maxScore > 1000.0) {
+            insertQuarantineStmt.run(
+              row.id, sheet.examination_id, sheet.class_id, sheet.subject_id, row.student_id,
+              row.score, row.is_absent, row.is_exempt, row.status,
+              JSON.stringify(row), `INVALID_MAX_SCORE: ${row.max_score} not in (0, 1000]`
+            );
+            quarantinedMarks++;
+            continue;
+          }
+
           const rawScore = row.score !== null && row.score !== undefined ? Number(row.score) : null;
           const isAbsent = Boolean(row.is_absent);
           const isExempt = Boolean(row.is_exempt);
@@ -513,11 +531,32 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
             continue;
           }
 
+          if (rawScore !== null && isNaN(rawScore)) {
+            insertQuarantineStmt.run(
+              row.id, sheet.examination_id, sheet.class_id, sheet.subject_id, row.student_id,
+              row.score, row.is_absent, row.is_exempt, row.status,
+              JSON.stringify(row), `INVALID_SCORE_NAN: ${row.score}`
+            );
+            quarantinedMarks++;
+            continue;
+          }
+
           if (rawScore !== null && (rawScore < 0.0 || rawScore > maxScore)) {
             insertQuarantineStmt.run(
               row.id, sheet.examination_id, sheet.class_id, sheet.subject_id, row.student_id,
               row.score, row.is_absent, row.is_exempt, row.status,
               JSON.stringify(row), `SCORE_OUT_OF_BOUNDS: ${rawScore} not in [0, ${maxScore}]`
+            );
+            quarantinedMarks++;
+            continue;
+          }
+
+          // Strict precision validation: NEVER silently round scores like 81.25 -> 81.3
+          if (rawScore !== null && Math.round(rawScore * 10) / 10 !== rawScore) {
+            insertQuarantineStmt.run(
+              row.id, sheet.examination_id, sheet.class_id, sheet.subject_id, row.student_id,
+              row.score, row.is_absent, row.is_exempt, row.status,
+              JSON.stringify(row), `NON_CANONICAL_PRECISION: score ${rawScore} exceeds single-decimal precision`
             );
             quarantinedMarks++;
             continue;
@@ -538,7 +577,7 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
             finalScore = null;
           } else {
             finalStatus = 'PRESENT';
-            finalScore = Math.round(rawScore * 10) / 10;
+            finalScore = rawScore; // Exact representation without silent truncation/rounding
           }
 
           insertMarkNewStmt.run(
@@ -551,14 +590,13 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
           migratedMarks++;
         }
       }
-
-      // Step K: Replace marks table atomically
-      db.exec('DROP TABLE marks;');
-      db.exec('ALTER TABLE marks_new RENAME TO marks;');
-    } else {
-      // Clean initialization of marks table
-      db.exec('ALTER TABLE marks_new RENAME TO marks;');
     }
+
+    // Step K: Replace marks table atomically
+    if (hasLegacyMarksTable) {
+      db.exec('DROP TABLE marks;');
+    }
+    db.exec('ALTER TABLE marks_new RENAME TO marks;');
 
     // Step L: Recreate Indexes
     db.exec(`
@@ -570,6 +608,22 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
       CREATE INDEX IF NOT EXISTS idx_student_subject_lookup ON student_subject_enrollments(class_id, subject_id, academic_year_id);
       CREATE INDEX IF NOT EXISTS idx_marks_audit_student ON marks_audit_history(student_id, examination_id);
     `);
+
+    // Invariant Verification 0: Reconcile exact marks count in-transaction
+    if (migratedMarks + quarantinedMarks !== preflightTotalMarks) {
+      throw new Error(
+        `Migration 005 Reconciliation Invariant Violation: migrated (${migratedMarks}) + quarantined (${quarantinedMarks}) = ${migratedMarks + quarantinedMarks} !== preflight total (${preflightTotalMarks})`
+      );
+    }
+
+    const marksInDb = (db.prepare('SELECT COUNT(*) as cnt FROM marks').get() as { cnt: number }).cnt;
+    const quarantinedInDb = (db.prepare('SELECT COUNT(*) as cnt FROM quarantined_legacy_marks').get() as { cnt: number }).cnt;
+    if (marksInDb !== migratedMarks) {
+      throw new Error(`Migration 005 Invariant Violation: active marks count in DB (${marksInDb}) !== tracked migratedMarks (${migratedMarks})`);
+    }
+    if (quarantinedInDb !== quarantinedMarks) {
+      throw new Error(`Migration 005 Invariant Violation: quarantined marks count in DB (${quarantinedInDb}) !== tracked quarantinedMarks (${quarantinedMarks})`);
+    }
 
     // Invariant Verification 1: PRAGMA foreign_key_check
     const fkErrors = db.prepare('PRAGMA foreign_key_check;').all();

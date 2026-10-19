@@ -6,6 +6,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { runMigration005, TARGET_SCHEMA_VERSION } from '../src/db/migrations/005_examination_integrity.js';
 import { createSafeDatabaseBackup, generateTimestampedBackupPath } from '../src/db/backupUtils.js';
+import { startTestServer, TestServerInstance } from './helpers/testServer.js';
+import { setupIsolatedTestDb, teardownIsolatedTestDb } from './helpers/testDb.js';
+import { closeDatabase } from '../src/db/database.js';
 
 /**
  * Creates an ephemeral test SQLite database representing the real PR-004 baseline schema.
@@ -170,7 +173,7 @@ function createPR004TestDb(dbPath: string): DatabaseSync {
   return db;
 }
 
-describe('PR-005 Gate 1: SQLite Migration 005 & Canonical Marks Integrity Tests', () => {
+describe('PR-005 Gate 1R: SQLite Migration 005 & Canonical Marks Integrity Tests', () => {
   let tmpDir: string;
 
   function getTmpDbPath(): string {
@@ -576,5 +579,261 @@ describe('PR-005 Gate 1: SQLite Migration 005 & Canonical Marks Integrity Tests'
     assert.strictEqual(secondRun.version, 5);
 
     db.close();
+  });
+
+  it('EXAM-MIG-10: truthful academic terms — terms 1, 2, and 3 are created with provisional is_verified = 0 and NULL boundaries without fabricating dates', () => {
+    const dbPath = getTmpDbPath();
+    const db = createPR004TestDb(dbPath);
+
+    db.exec(`
+      INSERT INTO academic_years (id, name, start_date, end_date) VALUES (1, '2026', '2026-01-01', '2026-12-31');
+    `);
+
+    runMigration005(db);
+
+    const terms = db.prepare('SELECT * FROM academic_terms WHERE academic_year_id = 1 ORDER BY term_number').all() as any[];
+    assert.strictEqual(terms.length, 3, 'Must create terms 1, 2, 3');
+
+    for (let i = 0; i < 3; i++) {
+      const t = terms[i];
+      assert.strictEqual(t.term_number, i + 1);
+      assert.strictEqual(t.start_date, null, `Term ${i + 1} start_date must be NULL (never fabricated)`);
+      assert.strictEqual(t.end_date, null, `Term ${i + 1} end_date must be NULL (never fabricated)`);
+      assert.strictEqual(t.is_verified, 0, `Term ${i + 1} is_verified must be 0 pending school ratification`);
+    }
+
+    db.close();
+  });
+
+  it('EXAM-MIG-11: unverified teacher attribution — marks_sheets.teacher_id remains NULL when no appointment exists, despite known entered_by_user_id', () => {
+    const dbPath = getTmpDbPath();
+    const db = createPR004TestDb(dbPath);
+
+    db.exec(`
+      INSERT INTO academic_years (id, name, start_date, end_date) VALUES (1, '2026', '2026-01-01', '2026-12-31');
+      INSERT INTO users (id, username, email, password_hash, full_name, role) VALUES (1, 'entrant', 'e@test.edu', 'h', 'Entrant User', 'subject_teacher');
+      INSERT INTO classes (id, grade, name, academic_year_id) VALUES (1, 8, 'Grade 8-A', 1);
+      INSERT INTO subjects (id, code, name, grade_level) VALUES (1, 'MATH', 'Mathematics', '6-11');
+      INSERT INTO examinations (id, name, term, academic_year_id, is_published) VALUES (1, 'Exam 1', 1, 1, 1);
+      INSERT INTO students (id, admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone)
+        VALUES (101, 'S-101', 'Student A', 'A', '2012-01-01', 'Male', 'G', 'F', '0771111111');
+
+      -- NO teacher_assignments row seeded for this class and subject!
+      -- But entered_by_user_id is 1
+      INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, is_absent, is_exempt, max_score, entered_by_user_id)
+        VALUES (1, 1, 1, 101, 75.0, 0, 0, 100, 1);
+    `);
+
+    const result = runMigration005(db);
+    assert.strictEqual(result.applied, true);
+
+    const sheet = db.prepare('SELECT * FROM marks_sheets WHERE examination_id = 1 AND class_id = 1 AND subject_id = 1').get() as any;
+    assert.ok(sheet);
+    assert.strictEqual(sheet.teacher_id, null, 'Must never substitute entrant for appointed teacher ownership');
+    assert.strictEqual(sheet.status, 'legacy_unmoderated');
+
+    const mark = db.prepare('SELECT * FROM marks WHERE student_id = 101').get() as any;
+    assert.strictEqual(mark.entered_by_user_id, 1, 'Mark row must preserve original entrant provenance');
+
+    db.close();
+  });
+
+  it('EXAM-MIG-12: exact score precision preservation — score 81.25 is losslessly quarantined, never silently rounded to 81.3', () => {
+    const dbPath = getTmpDbPath();
+    const db = createPR004TestDb(dbPath);
+
+    db.exec(`
+      INSERT INTO academic_years (id, name, start_date, end_date) VALUES (1, '2026', '2026-01-01', '2026-12-31');
+      INSERT INTO users (id, username, email, password_hash, full_name, role) VALUES (1, 't', 't@test.edu', 'h', 'T', 'subject_teacher');
+      INSERT INTO classes (id, grade, name, academic_year_id) VALUES (1, 8, 'Grade 8-A', 1);
+      INSERT INTO subjects (id, code, name, grade_level) VALUES (1, 'MATH', 'Mathematics', '6-11');
+      INSERT INTO examinations (id, name, term, academic_year_id, is_published) VALUES (1, 'Exam 1', 1, 1, 1);
+      INSERT INTO students (id, admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone)
+        VALUES (101, 'S-101', 'Student A', 'A', '2012-01-01', 'Male', 'G', 'F', '0771111111');
+
+      -- Raw score has 2 decimal places (81.25)
+      INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, is_absent, is_exempt, max_score)
+        VALUES (1, 1, 1, 101, 81.25, 0, 0, 100);
+    `);
+
+    const result = runMigration005(db);
+    assert.strictEqual(result.applied, true);
+    assert.strictEqual(result.migratedMarks, 0, 'Must not migrate unrounded 81.25 into active marks table');
+    assert.strictEqual(result.quarantinedMarks, 1, 'Must losslessly quarantine 81.25');
+
+    const q = db.prepare('SELECT * FROM quarantined_legacy_marks WHERE student_id = 101').get() as any;
+    assert.ok(q.quarantine_reason.includes('NON_CANONICAL_PRECISION'));
+    assert.strictEqual(q.raw_score, 81.25, 'Quarantine must preserve exact original raw score');
+
+    db.close();
+  });
+
+  it('EXAM-MIG-13: comprehensive invalid max_score quarantine — 0, negative, and 1200 max scores are losslessly quarantined without aborting migration', () => {
+    const dbPath = getTmpDbPath();
+    const db = createPR004TestDb(dbPath);
+
+    db.exec(`
+      INSERT INTO academic_years (id, name, start_date, end_date) VALUES (1, '2026', '2026-01-01', '2026-12-31');
+      INSERT INTO users (id, username, email, password_hash, full_name, role) VALUES (1, 't', 't@test.edu', 'h', 'T', 'subject_teacher');
+      INSERT INTO classes (id, grade, name, academic_year_id) VALUES (1, 8, 'Grade 8-A', 1);
+      INSERT INTO subjects (id, code, name, grade_level) VALUES (1, 'MATH', 'Mathematics', '6-11');
+      INSERT INTO examinations (id, name, term, academic_year_id, is_published) VALUES (1, 'Exam 1', 1, 1, 1);
+      INSERT INTO students (id, admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone)
+        VALUES (101, 'S-101', 'Student A', 'A', '2012-01-01', 'Male', 'G', 'F', '0771111111'),
+               (102, 'S-102', 'Student B', 'B', '2012-01-01', 'Female', 'G', 'M', '0772222222'),
+               (103, 'S-103', 'Student C', 'C', '2012-01-01', 'Male', 'G', 'F', '0773333333'),
+               (104, 'S-104', 'Student D', 'D', '2012-01-01', 'Female', 'G', 'M', '0774444444');
+
+      -- Student 101: max_score = 0
+      -- Student 102: max_score = -10
+      -- Student 103: max_score = 1200 (exceeds DB limit of 1000)
+      -- Student 104: max_score = 100 (valid)
+      INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, is_absent, is_exempt, max_score)
+        VALUES 
+          (1, 1, 1, 101, 0, 0, 0, 0),
+          (1, 1, 1, 102, 10, 0, 0, -10),
+          (1, 1, 1, 103, 500, 0, 0, 1200),
+          (1, 1, 1, 104, 75.0, 0, 0, 100);
+    `);
+
+    const result = runMigration005(db);
+    assert.strictEqual(result.applied, true);
+    assert.strictEqual(result.migratedMarks, 1, 'Only valid max_score=100 row should migrate');
+    assert.strictEqual(result.quarantinedMarks, 3, 'All 3 invalid max_score rows must be quarantined');
+
+    const quarantined = db.prepare('SELECT student_id, quarantine_reason FROM quarantined_legacy_marks ORDER BY student_id').all() as any[];
+    assert.strictEqual(quarantined.length, 3);
+    assert.ok(quarantined[0].quarantine_reason.includes('INVALID_MAX_SCORE: 0'));
+    assert.ok(quarantined[1].quarantine_reason.includes('INVALID_MAX_SCORE: -10'));
+    assert.ok(quarantined[2].quarantine_reason.includes('INVALID_MAX_SCORE: 1200'));
+
+    db.close();
+  });
+
+  it('EXAM-MIG-14: in-transaction reconciliation invariant strictly enforces migratedMarks + quarantinedMarks === preflightTotal', () => {
+    const dbPath = getTmpDbPath();
+    const db = createPR004TestDb(dbPath);
+
+    db.exec(`
+      INSERT INTO academic_years (id, name, start_date, end_date) VALUES (1, '2026', '2026-01-01', '2026-12-31');
+      INSERT INTO users (id, username, email, password_hash, full_name, role) VALUES (1, 't', 't@test.edu', 'h', 'T', 'subject_teacher');
+      INSERT INTO classes (id, grade, name, academic_year_id) VALUES (1, 8, 'Grade 8-A', 1);
+      INSERT INTO subjects (id, code, name, grade_level) VALUES (1, 'MATH', 'Mathematics', '6-11');
+      INSERT INTO examinations (id, name, term, academic_year_id, is_published) VALUES (1, 'Exam 1', 1, 1, 1);
+      INSERT INTO students (id, admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone)
+        VALUES (101, 'S-101', 'Student A', 'A', '2012-01-01', 'Male', 'G', 'F', '0771111111'),
+               (102, 'S-102', 'Student B', 'B', '2012-01-01', 'Female', 'G', 'M', '0772222222'),
+               (103, 'S-103', 'Student C', 'C', '2012-01-01', 'Male', 'G', 'F', '0773333333'),
+               (104, 'S-104', 'Student D', 'D', '2012-01-01', 'Female', 'G', 'M', '0774444444'),
+               (105, 'S-105', 'Student E', 'E', '2012-01-01', 'Male', 'G', 'F', '0775555555');
+
+      -- 5 legacy marks: 2 valid, 3 quarantined (precision, out-of-bounds, absent+score)
+      INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, is_absent, is_exempt, max_score)
+        VALUES 
+          (1, 1, 1, 101, 80.0, 0, 0, 100),
+          (1, 1, 1, 102, 90.5, 0, 0, 100),
+          (1, 1, 1, 103, 75.25, 0, 0, 100),
+          (1, 1, 1, 104, 150.0, 0, 0, 100),
+          (1, 1, 1, 105, 50.0, 1, 0, 100);
+    `);
+
+    const result = runMigration005(db);
+    assert.strictEqual(result.applied, true);
+    assert.strictEqual(result.migratedMarks, 2);
+    assert.strictEqual(result.quarantinedMarks, 3);
+    assert.strictEqual(result.migratedMarks + result.quarantinedMarks, 5);
+
+    db.close();
+  });
+
+  describe('EXAM-MIG-15: legacy POST /api/marks/sheet security hardening', () => {
+    let fixtures: any;
+    let server: TestServerInstance;
+    let teacherToken: string;
+
+    before(async () => {
+      fixtures = setupIsolatedTestDb();
+      process.env.DB_PATH = fixtures.dbPath;
+      process.env.NODE_ENV = 'test';
+      server = await startTestServer();
+
+      // Authenticate Subject Teacher
+      const stLogin = await server.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: fixtures.subjectTeacher.username,
+          password: fixtures.subjectTeacher.password
+        })
+      });
+      teacherToken = (await stLogin.json()).token;
+    });
+
+    after(async () => {
+      await server.close();
+      closeDatabase();
+      teardownIsolatedTestDb(fixtures.dbPath);
+    });
+
+    it('rejects privileged status injection like approved or published with 400', async () => {
+      const res = await server.request('/api/marks/sheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          examId: 1,
+          classId: fixtures.testClassA.id,
+          subjectId: fixtures.testSubjectMath.id,
+          status: 'approved',
+          marks: [{ student_id: fixtures.studentA.id, score: 85 }]
+        })
+      });
+
+      assert.strictEqual(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error.includes('Invalid status'));
+    });
+
+    it('rejects scores with invalid precision (>1 decimal) with 400', async () => {
+      const res = await server.request('/api/marks/sheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          examId: 1,
+          classId: fixtures.testClassA.id,
+          subjectId: fixtures.testSubjectMath.id,
+          marks: [{ student_id: fixtures.studentA.id, score: 85.25 }]
+        })
+      });
+
+      assert.strictEqual(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error.includes('exceeds allowed 1-decimal precision'));
+    });
+
+    it('rejects out of bounds score (<0 or >100) with 400 without silent clamping', async () => {
+      const res = await server.request('/api/marks/sheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          examId: 1,
+          classId: fixtures.testClassA.id,
+          subjectId: fixtures.testSubjectMath.id,
+          marks: [{ student_id: fixtures.studentA.id, score: 105 }]
+        })
+      });
+
+      assert.strictEqual(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error.includes('out of bounds'));
+    });
   });
 });
