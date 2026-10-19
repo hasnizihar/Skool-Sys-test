@@ -156,7 +156,8 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
       console.log('[Browser E2E] Spawning local Vite server on port 5173...');
       const clientDir = path.resolve(import.meta.dirname, '../../client');
       try {
-        spawnedViteProcess = spawn('npx', ['vite', '--port', '5173'], {
+        const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+        spawnedViteProcess = spawn(npxCmd, ['vite', '--port', '5173'], {
           cwd: clientDir,
           shell: true,
           stdio: 'ignore'
