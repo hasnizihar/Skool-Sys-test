@@ -189,23 +189,50 @@ export function revokeAcademicAuthorization(params: {
 /**
  * Institutional Segregation of Duties (SoD): Review / Endorsement Permission Check
  * 
- * Permitted roles:
- * - Principal, Vice Principal Academic, Section Head, Exam Coordinator
- * covering the academic year and class grade.
- * Note: Base admin alone without academic staff authorization cannot review.
+ * STRICT INVARIANTS:
+ * 1. Anti-Self-Review: Assigned teacher cannot review or endorse their own marks sheet (SELF_REVIEW_TEACHER).
+ * 2. Anti-Self-Review: User who entered or modified marks cannot review or endorse the sheet (SELF_REVIEW_ENTRANT).
+ * 3. Permitted roles:
+ *    - Principal, Vice Principal Academic, Section Head, Exam Coordinator
+ *    covering the academic year and class grade.
+ *    Note: Base admin alone without academic staff authorization cannot review.
  */
-export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string } {
+export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string; code?: string } {
   const sheet = db.prepare(`
-    SELECT ms.id, ms.examination_id, ms.class_id, ms.academic_year_id, c.grade
+    SELECT ms.id, ms.examination_id, ms.class_id, ms.academic_year_id, ms.teacher_id, c.grade
     FROM marks_sheets ms
     JOIN classes c ON ms.class_id = c.id
     WHERE ms.id = ?
-  `).get(sheetId) as { id: number; examination_id: number; class_id: number; academic_year_id: number; grade: number } | undefined;
+  `).get(sheetId) as { id: number; examination_id: number; class_id: number; academic_year_id: number; teacher_id: number | null; grade: number } | undefined;
 
   if (!sheet) {
-    return { allowed: false, reason: 'SHEET_NOT_FOUND' };
+    return { allowed: false, reason: 'Marks sheet not found.', code: 'SHEET_NOT_FOUND' };
   }
 
+  // 1. Anti-Self-Review: Assigned Teacher Check
+  if (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id) {
+    return {
+      allowed: false,
+      reason: 'Institutional Segregation Violation: The assigned teacher cannot review or endorse their own marks sheet.',
+      code: 'SELF_REVIEW_TEACHER'
+    };
+  }
+
+  // 2. Anti-Self-Review: Entrant / Modifier Check
+  const entrantCheck = db.prepare(`
+    SELECT COUNT(*) as cnt FROM marks
+    WHERE sheet_id = ? AND entered_by_user_id = ?
+  `).get(sheetId, user.id) as { cnt: number };
+
+  if (entrantCheck.cnt > 0) {
+    return {
+      allowed: false,
+      reason: 'Institutional Segregation Violation: The user who entered or modified marks cannot review or endorse the sheet.',
+      code: 'SELF_REVIEW_ENTRANT'
+    };
+  }
+
+  // 3. Scoped Leadership Appointment Check
   const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
   const eligible = activeAuths.some(a =>
     ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role) &&
@@ -216,7 +243,48 @@ export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed:
 
   return {
     allowed: false,
-    reason: 'UNAUTHORIZED: User does not hold an active academic leadership appointment covering this class and academic year.'
+    reason: 'UNAUTHORIZED: User does not hold an active academic leadership appointment covering this class and academic year.',
+    code: 'INSUFFICIENT_AUTHORIZATION'
+  };
+}
+
+/**
+ * Institutional Permission Check: Read-Only Inspection / Viewing of Marks Sheet
+ * 
+ * Permitted if:
+ * 1. Assigned teacher for this sheet, OR
+ * 2. Active academic leadership appointment (Principal, Vice Principal Academic, Section Head, Exam Coordinator)
+ *    covering the academic year and class grade.
+ */
+export function canViewMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string } {
+  const sheet = db.prepare(`
+    SELECT ms.id, ms.class_id, ms.academic_year_id, ms.teacher_id, c.grade
+    FROM marks_sheets ms
+    JOIN classes c ON ms.class_id = c.id
+    WHERE ms.id = ?
+  `).get(sheetId) as { id: number; class_id: number; academic_year_id: number; teacher_id: number | null; grade: number } | undefined;
+
+  if (!sheet) {
+    return { allowed: false, reason: 'Marks sheet not found.' };
+  }
+
+  // Assigned teacher can always view their own sheet
+  if (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id) {
+    return { allowed: true };
+  }
+
+  // Authorized leadership can view sheets in their scope
+  const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
+  const eligible = activeAuths.some(a =>
+    ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role) &&
+    doesBandCoverGrade(a.grade_band, sheet.grade)
+  );
+
+  if (eligible) return { allowed: true };
+
+  return {
+    allowed: false,
+    reason: 'UNAUTHORIZED: User does not have permission to view this marks sheet.'
   };
 }
 

@@ -259,17 +259,13 @@ router.patch('/enrollments/:id/verify', requireAuth, (req, res) => {
   }
 
   try {
-    const result = verifyStudentEnrollment(enrollmentId, req.user!);
-    logAudit(
-      req.user!.id,
-      req.user!.username,
-      'STUDENT_SUBJECT_VERIFY',
-      'student_subject_enrollments',
-      enrollmentId,
-      { previous_status: result.enrollment?.enrollment_status, new_status: 'confirmed' },
-      req.ip
-    );
-    res.json({ success: true, message: 'Student subject enrollment confirmed.' });
+    const result = verifyStudentEnrollment(enrollmentId, req.user!, { ipAddress: req.ip });
+    res.json({
+      success: true,
+      message: 'Student subject enrollment confirmed.',
+      previous_status: result.previousStatus,
+      status: 'confirmed'
+    });
   } catch (err: any) {
     const status = err.statusCode || (err.message?.includes('Access denied') ? 403 : 400);
     res.status(status).json({ error: err.message || 'Failed to verify enrollment.' });
@@ -285,17 +281,16 @@ router.patch('/enrollments/:id/drop', requireAuth, (req, res) => {
   }
 
   try {
-    const result = dropStudentEnrollment(enrollmentId, req.user!);
-    logAudit(
-      req.user!.id,
-      req.user!.username,
-      'STUDENT_SUBJECT_DROP',
-      'student_subject_enrollments',
-      enrollmentId,
-      { previous_status: result.enrollment?.enrollment_status, new_status: 'dropped' },
-      req.ip
-    );
-    res.json({ success: true, message: 'Student subject enrollment marked as dropped.' });
+    const result = dropStudentEnrollment(enrollmentId, req.user!, {
+      ipAddress: req.ip,
+      reason: req.body?.reason
+    });
+    res.json({
+      success: true,
+      message: 'Student subject enrollment marked as dropped.',
+      previous_status: result.previousStatus,
+      status: 'dropped'
+    });
   } catch (err: any) {
     const status = err.statusCode || (err.message?.includes('Access denied') ? 403 : 400);
     res.status(status).json({ error: err.message || 'Failed to drop enrollment.' });

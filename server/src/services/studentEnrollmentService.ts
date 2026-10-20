@@ -3,6 +3,7 @@ import {
   getActiveStaffAuthorizations,
   doesBandCoverGrade
 } from './academicAuthorizationService.js';
+import { logAuditTx } from '../utils/audit.js';
 
 export type EnrollmentStatus = 'confirmed' | 'provisional_unverified' | 'dropped' | 'transferred';
 export type EnrollmentCategory =
@@ -353,34 +354,110 @@ export function canManageEnrollmentAction(
 
 /**
  * Confirms a student's provisional enrollment.
- * Atomically checks actor authority and mutates status.
+ * Atomically checks live actor authority, validates state transitions,
+ * executes conditional update, and writes audit log within a single write transaction.
  */
 export function verifyStudentEnrollment(
   enrollmentId: number,
-  verifier: number | { id: number }
-): { success: boolean; enrollment: any } {
+  verifier: number | { id: number; username?: string },
+  auditContext?: { ipAddress?: string }
+): { success: boolean; enrollment: any; previousStatus: string } {
   const verifierUserId = typeof verifier === 'number' ? verifier : verifier.id;
-
-  const authCheck = canManageEnrollmentAction(verifierUserId, enrollmentId);
-  if (!authCheck.allowed) {
-    const err = new Error(authCheck.reason);
-    (err as any).statusCode = authCheck.statusCode || 403;
-    throw err;
-  }
+  const verifierUsername = typeof verifier === 'number' ? null : (verifier.username || null);
+  const ipAddress = auditContext?.ipAddress || '127.0.0.1';
 
   db.exec('BEGIN IMMEDIATE;');
   try {
-    db.prepare(`
+    // 1. Live active user check
+    const user = db.prepare('SELECT id, username, is_active FROM users WHERE id = ?').get(verifierUserId) as { id: number; username: string; is_active: number } | undefined;
+    if (!user || user.is_active !== 1) {
+      const err = new Error('User account is inactive or not found.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+
+    // 2. Query target record with class grade and academic year
+    const enrollment = db.prepare(`
+      SELECT sse.id, sse.student_id, sse.subject_id, sse.class_id, sse.academic_year_id,
+             sse.enrollment_status, sse.enrollment_category,
+             c.grade
+      FROM student_subject_enrollments sse
+      JOIN classes c ON sse.class_id = c.id
+      WHERE sse.id = ?
+    `).get(enrollmentId) as any;
+
+    if (!enrollment) {
+      const err = new Error('Subject enrollment record not found.');
+      (err as any).statusCode = 404;
+      throw err;
+    }
+
+    // 3. Live scoped authorization check
+    const activeAuths = getActiveStaffAuthorizations(verifierUserId, enrollment.academic_year_id);
+    const authorized = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      doesBandCoverGrade(a.grade_band, enrollment.grade)
+    );
+
+    if (!authorized) {
+      const err = new Error('Access denied: Requires active Section Head, Vice Principal Academic, or Principal appointment covering this grade band and academic year.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+
+    // 4. State machine & transition validation
+    const previousStatus = enrollment.enrollment_status;
+    if (previousStatus === 'confirmed') {
+      const err = new Error('Enrollment is already confirmed. Reconfirmation or stamp overwrite is prohibited.');
+      (err as any).statusCode = 409;
+      throw err;
+    }
+    if (previousStatus === 'dropped') {
+      const err = new Error("Cannot confirm an enrollment with status 'dropped'. Dropped records cannot be revived via ordinary verification.");
+      (err as any).statusCode = 409;
+      throw err;
+    }
+    if (previousStatus === 'transferred') {
+      const err = new Error("Cannot confirm an enrollment with status 'transferred'. Transferred records cannot be revived via ordinary verification.");
+      (err as any).statusCode = 409;
+      throw err;
+    }
+    if (previousStatus !== 'provisional_unverified') {
+      const err = new Error(`Invalid enrollment status transition from '${previousStatus}' to 'confirmed'.`);
+      (err as any).statusCode = 409;
+      throw err;
+    }
+
+    // 5. Conditional SQL UPDATE ensuring exactly 1 row changed
+    const updateRes = db.prepare(`
       UPDATE student_subject_enrollments SET
         enrollment_status = 'confirmed',
         verified_by_user_id = ?,
         verified_at = datetime('now')
-      WHERE id = ?
+      WHERE id = ? AND enrollment_status = 'provisional_unverified'
     `).run(verifierUserId, enrollmentId);
+
+    if (updateRes.changes !== 1) {
+      const err = new Error('Concurrent modification detected or enrollment status changed.');
+      (err as any).statusCode = 409;
+      throw err;
+    }
+
+    // 6. Log audit INSIDE the transaction (fails closed if audit insert fails)
+    logAuditTx(
+      db,
+      verifierUserId,
+      verifierUsername || user.username,
+      'STUDENT_SUBJECT_VERIFY',
+      'student_subject_enrollments',
+      enrollmentId,
+      { previous_status: previousStatus, new_status: 'confirmed' },
+      ipAddress
+    );
 
     const updated = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
     db.exec('COMMIT;');
-    return { success: true, enrollment: updated };
+    return { success: true, enrollment: updated, previousStatus };
   } catch (err) {
     db.exec('ROLLBACK;');
     throw err;
@@ -389,34 +466,105 @@ export function verifyStudentEnrollment(
 
 /**
  * Marks an enrollment as dropped.
- * Atomically checks actor authority and mutates status.
+ * Atomically checks live actor authority, validates state transitions,
+ * executes conditional update, and writes audit log within a single write transaction.
  */
 export function dropStudentEnrollment(
   enrollmentId: number,
-  actor: number | { id: number }
-): { success: boolean; enrollment: any } {
+  actor: number | { id: number; username?: string },
+  auditContext?: { ipAddress?: string; reason?: string }
+): { success: boolean; enrollment: any; previousStatus: string } {
   const actorUserId = typeof actor === 'number' ? actor : actor.id;
-
-  const authCheck = canManageEnrollmentAction(actorUserId, enrollmentId);
-  if (!authCheck.allowed) {
-    const err = new Error(authCheck.reason);
-    (err as any).statusCode = authCheck.statusCode || 403;
-    throw err;
-  }
+  const actorUsername = typeof actor === 'number' ? null : (actor.username || null);
+  const ipAddress = auditContext?.ipAddress || '127.0.0.1';
 
   db.exec('BEGIN IMMEDIATE;');
   try {
-    db.prepare(`
+    // 1. Live active user check
+    const user = db.prepare('SELECT id, username, is_active FROM users WHERE id = ?').get(actorUserId) as { id: number; username: string; is_active: number } | undefined;
+    if (!user || user.is_active !== 1) {
+      const err = new Error('User account is inactive or not found.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+
+    // 2. Query target record with class grade and academic year
+    const enrollment = db.prepare(`
+      SELECT sse.id, sse.student_id, sse.subject_id, sse.class_id, sse.academic_year_id,
+             sse.enrollment_status, sse.enrollment_category,
+             c.grade
+      FROM student_subject_enrollments sse
+      JOIN classes c ON sse.class_id = c.id
+      WHERE sse.id = ?
+    `).get(enrollmentId) as any;
+
+    if (!enrollment) {
+      const err = new Error('Subject enrollment record not found.');
+      (err as any).statusCode = 404;
+      throw err;
+    }
+
+    // 3. Live scoped authorization check
+    const activeAuths = getActiveStaffAuthorizations(actorUserId, enrollment.academic_year_id);
+    const authorized = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      doesBandCoverGrade(a.grade_band, enrollment.grade)
+    );
+
+    if (!authorized) {
+      const err = new Error('Access denied: Requires active Section Head, Vice Principal Academic, or Principal appointment covering this grade band and academic year.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+
+    // 4. State machine & transition validation
+    const previousStatus = enrollment.enrollment_status;
+    if (previousStatus === 'dropped') {
+      const err = new Error('Enrollment is already marked as dropped. Repeated drop operation is prohibited.');
+      (err as any).statusCode = 409;
+      throw err;
+    }
+    if (previousStatus === 'transferred') {
+      const err = new Error('Cannot drop an enrollment that has been transferred.');
+      (err as any).statusCode = 409;
+      throw err;
+    }
+    if (!['provisional_unverified', 'confirmed'].includes(previousStatus)) {
+      const err = new Error(`Invalid enrollment status transition from '${previousStatus}' to 'dropped'.`);
+      (err as any).statusCode = 409;
+      throw err;
+    }
+
+    // 5. Conditional SQL UPDATE ensuring exactly 1 row changed
+    const updateRes = db.prepare(`
       UPDATE student_subject_enrollments SET
         enrollment_status = 'dropped',
         verified_by_user_id = ?,
         verified_at = datetime('now')
-      WHERE id = ?
+      WHERE id = ? AND enrollment_status IN ('provisional_unverified', 'confirmed')
     `).run(actorUserId, enrollmentId);
+
+    if (updateRes.changes !== 1) {
+      const err = new Error('Concurrent modification detected or enrollment status changed.');
+      (err as any).statusCode = 409;
+      throw err;
+    }
+
+    // 6. Log audit INSIDE the transaction (fails closed if audit insert fails)
+    logAuditTx(
+      db,
+      actorUserId,
+      actorUsername || user.username,
+      'STUDENT_SUBJECT_DROP',
+      'student_subject_enrollments',
+      enrollmentId,
+      { previous_status: previousStatus, new_status: 'dropped', reason: auditContext?.reason || null },
+      ipAddress
+    );
 
     const updated = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
     db.exec('COMMIT;');
-    return { success: true, enrollment: updated };
+    return { success: true, enrollment: updated, previousStatus };
   } catch (err) {
     db.exec('ROLLBACK;');
     throw err;

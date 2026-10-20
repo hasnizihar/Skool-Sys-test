@@ -10,6 +10,7 @@ import {
   getActiveStaffAuthorizations,
   hasAcademicStaffRole,
   canReviewMarksSheet,
+  canViewMarksSheet,
   canApproveMarksSheet,
   canPublishExamination,
   getGradeBandForGrade,
@@ -1060,5 +1061,305 @@ describe('PR-005 Gate 2R: Academic Staff Authorization, Segregation of Duties & 
     outOfBandMiddleware(mockReqValid, mockResGrade, () => {});
     assert.equal(gradeRejectStatus, 403);
     assert.match(gradeRejectBody.error, /Access denied/i);
+  });
+
+  // 21. Gate 3A: Anti-Self-Review Enforcement for Assigned Teacher and Entrant
+  test('EXAM-AUTH-26: Assigned sheet teacher CANNOT review or endorse own marks sheet even if appointed Section Head', () => {
+    // Grant teacherUserId a Section Head appointment covering Junior 6-9
+    grantAcademicAuthorization({
+      userId: teacherUserId,
+      academicYearId: year2026Id,
+      authRole: 'section_head',
+      gradeBand: 'junior_6_9',
+      grantedByUserId: adminUserId
+    });
+
+    const teacherAsSHUser = {
+      id: teacherUserId,
+      username: 'auth_teacher',
+      email: 'teacher@kcc.test',
+      full_name: 'Teacher Kamal',
+      role: 'subject_teacher' as const
+    };
+
+    // teacherUserId is the assigned teacher on sheetJuniorId
+    const reviewCheck = canReviewMarksSheet(teacherAsSHUser, sheetJuniorId);
+    assert.equal(reviewCheck.allowed, false);
+    assert.equal(reviewCheck.code, 'SELF_REVIEW_TEACHER');
+    assert.match(reviewCheck.reason || '', /assigned teacher cannot review or endorse/i);
+
+    // Clean up temporary appointment
+    const authRow = getActiveStaffAuthorizations(teacherUserId, year2026Id).find(a => a.auth_role === 'section_head');
+    if (authRow) {
+      revokeAcademicAuthorization({ authorizationId: authRow.id, revokedByUserId: adminUserId, reason: 'Test cleanup' });
+    }
+  });
+
+  test('EXAM-AUTH-27: User who entered or modified marks CANNOT review or endorse marks sheet even if holding Section Head appointment', () => {
+    // Create new sheet where teacher is someone else (teacher2UserId)
+    const entrantSheetRes = db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, status)
+      VALUES (?, ?, ?, ?, ?, 'submitted')
+    `).run(exam2026JuniorId, classJuniorId, subjectReligionId, year2026Id, teacher2UserId);
+    const entrantSheetId = Number(entrantSheetRes.lastInsertRowid);
+
+    // sectionHeadUserId enters a mark for this sheet
+    db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 92, 100, 'PRESENT', 'A', 'submitted', ?)
+    `).run(entrantSheetId, exam2026JuniorId, classJuniorId, subjectReligionId, studentBId, sectionHeadUserId);
+
+    const shUser = {
+      id: sectionHeadUserId,
+      username: 'auth_sh',
+      email: 'sectionhead@kcc.test',
+      full_name: 'Section Head',
+      role: 'subject_teacher' as const
+    };
+
+    // Attempting to review sheet where sectionHeadUserId entered marks -> blocked
+    const reviewCheck = canReviewMarksSheet(shUser, entrantSheetId);
+    assert.equal(reviewCheck.allowed, false);
+    assert.equal(reviewCheck.code, 'SELF_REVIEW_ENTRANT');
+    assert.match(reviewCheck.reason || '', /user who entered or modified marks cannot review/i);
+  });
+
+  test('EXAM-AUTH-28: canViewMarksSheet permits assigned teacher and scoped leadership read-only inspection, but denies out-of-scope viewer', () => {
+    const teacherUser = { id: teacherUserId, username: 'auth_teacher', email: 'teacher@kcc.test', full_name: 'Teacher Kamal', role: 'subject_teacher' as const };
+    const shUser = { id: sectionHeadUserId, username: 'auth_sh', email: 'sectionhead@kcc.test', full_name: 'Section Head', role: 'subject_teacher' as const };
+    const teacher2User = { id: teacher2UserId, username: 'auth_teacher_2', email: 'teacher2@kcc.test', full_name: 'Teacher Sunethra', role: 'subject_teacher' as const };
+
+    // 1. Assigned teacher can view own sheet (even if self-review is prohibited)
+    const teacherView = canViewMarksSheet(teacherUser, sheetJuniorId);
+    assert.equal(teacherView.allowed, true);
+
+    // 2. Scoped Section Head can view junior sheet
+    const shView = canViewMarksSheet(shUser, sheetJuniorId);
+    assert.equal(shView.allowed, true);
+
+    // 3. Unrelated teacher with no appointment cannot view sheet
+    const unauthView = canViewMarksSheet(teacher2User, sheetJuniorId);
+    assert.equal(unauthView.allowed, false);
+    assert.match(unauthView.reason || '', /UNAUTHORIZED/i);
+  });
+
+  // 22. Gate 3A: Enrolment State Machine & Transition Invariants via HTTP API
+  test('EXAM-AUTH-29: Reconfirming an already confirmed enrollment fails with 409 Conflict; zero DB writes and zero audit entries', async () => {
+    // Create student and confirmed enrollment
+    const stuRes = db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status)
+      VALUES ('AUTH-STU-RECONF', 'Student Reconf', 'Reconf', '2012-01-01', 'Male', 'Colombo', 'G', 'P', '0771112233', 'reconf@test.lk', '0771112233', 'Active')
+    `).run();
+    const stuId = Number(stuRes.lastInsertRowid);
+    db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, ?)').run(stuId, classJuniorId, year2026Id, 'enrolled');
+
+    const enrollRes = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at, created_at)
+      VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+    `).run(stuId, subjectSciId, classJuniorId, year2026Id, principalUserId);
+    const enrollmentId = Number(enrollRes.lastInsertRowid);
+
+    const snapshotBefore = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
+    const auditCountBefore = (db.prepare('SELECT COUNT(*) as cnt FROM audit_logs WHERE entity_id = ?').get(String(enrollmentId)) as any).cnt;
+
+    // Attempt PATCH /verify on already confirmed enrollment -> 409 Conflict
+    const res = await testServer.request(`/api/academic/enrollments/${enrollmentId}/verify`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${sectionHeadToken}` }
+    });
+
+    assert.equal(res.status, 409);
+    const body = await res.json() as any;
+    assert.match(body.error, /already confirmed.*reconfirmation.*prohibited/i);
+
+    // Verify DB unchanged: status, verified_at, verified_by_user_id exactly identical
+    const snapshotAfter = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
+    assert.deepEqual(snapshotAfter, snapshotBefore);
+
+    // Verify zero audit rows created
+    const auditCountAfter = (db.prepare('SELECT COUNT(*) as cnt FROM audit_logs WHERE entity_id = ?').get(String(enrollmentId)) as any).cnt;
+    assert.equal(auditCountAfter, auditCountBefore);
+  });
+
+  test('EXAM-AUTH-30: Cannot confirm a dropped enrollment; returns 409 Conflict, zero DB writes, and zero audit entries', async () => {
+    // Create student and dropped enrollment
+    const stuRes = db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status)
+      VALUES ('AUTH-STU-DROPCONF', 'Student DropConf', 'DC', '2012-01-01', 'Male', 'Colombo', 'G', 'P', '0771112233', 'dc@test.lk', '0771112233', 'Active')
+    `).run();
+    const stuId = Number(stuRes.lastInsertRowid);
+    db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, ?)').run(stuId, classJuniorId, year2026Id, 'enrolled');
+
+    const enrollRes = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at, created_at)
+      VALUES (?, ?, ?, ?, 'dropped', 'core_compulsory', ?, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+    `).run(stuId, subjectSciId, classJuniorId, year2026Id, sectionHeadUserId);
+    const enrollmentId = Number(enrollRes.lastInsertRowid);
+
+    const snapshotBefore = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
+    const auditCountBefore = (db.prepare('SELECT COUNT(*) as cnt FROM audit_logs WHERE entity_id = ?').get(String(enrollmentId)) as any).cnt;
+
+    // Attempt PATCH /verify on dropped enrollment -> 409 Conflict
+    const res = await testServer.request(`/api/academic/enrollments/${enrollmentId}/verify`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${sectionHeadToken}` }
+    });
+
+    assert.equal(res.status, 409);
+    const body = await res.json() as any;
+    assert.match(body.error, /dropped.*cannot be revived via ordinary verification/i);
+
+    // Verify DB unchanged
+    const snapshotAfter = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
+    assert.deepEqual(snapshotAfter, snapshotBefore);
+
+    // Verify zero audit rows created
+    const auditCountAfter = (db.prepare('SELECT COUNT(*) as cnt FROM audit_logs WHERE entity_id = ?').get(String(enrollmentId)) as any).cnt;
+    assert.equal(auditCountAfter, auditCountBefore);
+  });
+
+  test('EXAM-AUTH-31: Cannot confirm a transferred enrollment; returns 409 Conflict, zero DB writes, and zero audit entries', async () => {
+    // Create student and transferred enrollment
+    const stuRes = db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status)
+      VALUES ('AUTH-STU-TRANSCONF', 'Student TransConf', 'TC', '2012-01-01', 'Male', 'Colombo', 'G', 'P', '0771112233', 'tc@test.lk', '0771112233', 'Active')
+    `).run();
+    const stuId = Number(stuRes.lastInsertRowid);
+    db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, ?)').run(stuId, classJuniorId, year2026Id, 'enrolled');
+
+    const enrollRes = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, created_at)
+      VALUES (?, ?, ?, ?, 'transferred', 'core_compulsory', '2026-01-01 00:00:00')
+    `).run(stuId, subjectSciId, classJuniorId, year2026Id);
+    const enrollmentId = Number(enrollRes.lastInsertRowid);
+
+    const snapshotBefore = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
+    const auditCountBefore = (db.prepare('SELECT COUNT(*) as cnt FROM audit_logs WHERE entity_id = ?').get(String(enrollmentId)) as any).cnt;
+
+    // Attempt PATCH /verify on transferred enrollment -> 409 Conflict
+    const res = await testServer.request(`/api/academic/enrollments/${enrollmentId}/verify`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${sectionHeadToken}` }
+    });
+
+    assert.equal(res.status, 409);
+    const body = await res.json() as any;
+    assert.match(body.error, /transferred.*cannot be revived via ordinary verification/i);
+
+    // Verify DB unchanged
+    const snapshotAfter = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(enrollmentId);
+    assert.deepEqual(snapshotAfter, snapshotBefore);
+
+    // Verify zero audit rows created
+    const auditCountAfter = (db.prepare('SELECT COUNT(*) as cnt FROM audit_logs WHERE entity_id = ?').get(String(enrollmentId)) as any).cnt;
+    assert.equal(auditCountAfter, auditCountBefore);
+  });
+
+  test('EXAM-AUTH-32: Cannot drop an already dropped or transferred enrollment; returns 409 Conflict and zero DB writes', async () => {
+    // 1. dropped -> dropped
+    const stuRes = db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status)
+      VALUES ('AUTH-STU-DROPDROP', 'Student DropDrop', 'DD', '2012-01-01', 'Male', 'Colombo', 'G', 'P', '0771112233', 'dd@test.lk', '0771112233', 'Active')
+    `).run();
+    const stuId = Number(stuRes.lastInsertRowid);
+    db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, ?)').run(stuId, classJuniorId, year2026Id, 'enrolled');
+
+    const enrollRes1 = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, created_at)
+      VALUES (?, ?, ?, ?, 'dropped', 'core_compulsory', '2026-01-01 00:00:00')
+    `).run(stuId, subjectSciId, classJuniorId, year2026Id);
+    const dropId = Number(enrollRes1.lastInsertRowid);
+
+    const snapshotBeforeDrop = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(dropId);
+
+    const dropRes = await testServer.request(`/api/academic/enrollments/${dropId}/drop`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${sectionHeadToken}` }
+    });
+    assert.equal(dropRes.status, 409);
+    assert.deepEqual(db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(dropId), snapshotBeforeDrop);
+
+    // 2. transferred -> dropped
+    const enrollRes2 = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, created_at)
+      VALUES (?, ?, ?, ?, 'transferred', 'core_compulsory', '2026-01-01 00:00:00')
+    `).run(stuId, subjectMathId, classJuniorId, year2026Id);
+    const transId = Number(enrollRes2.lastInsertRowid);
+
+    const snapshotBeforeTrans = db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(transId);
+
+    const transDropRes = await testServer.request(`/api/academic/enrollments/${transId}/drop`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${sectionHeadToken}` }
+    });
+    assert.equal(transDropRes.status, 409);
+    assert.deepEqual(db.prepare('SELECT * FROM student_subject_enrollments WHERE id = ?').get(transId), snapshotBeforeTrans);
+  });
+
+  test('EXAM-AUTH-33: Audit history accurately records previous_status (not post-state) and mutation + audit are atomic', async () => {
+    // 1. Create a provisional enrollment
+    const stuRes = db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status)
+      VALUES ('AUTH-STU-AUDIT', 'Student Audit', 'Audit', '2012-01-01', 'Male', 'Colombo', 'G', 'P', '0771112233', 'audit@test.lk', '0771112233', 'Active')
+    `).run();
+    const stuId = Number(stuRes.lastInsertRowid);
+    db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, ?)').run(stuId, classJuniorId, year2026Id, 'enrolled');
+
+    const enrollRes = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, created_at)
+      VALUES (?, ?, ?, ?, 'provisional_unverified', 'core_compulsory', '2026-01-01 00:00:00')
+    `).run(stuId, subjectSciId, classJuniorId, year2026Id);
+    const enrollId = Number(enrollRes.lastInsertRowid);
+
+    // 2. Perform verification via API
+    const verifyRes = await testServer.request(`/api/academic/enrollments/${enrollId}/verify`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${sectionHeadToken}` }
+    });
+    assert.equal(verifyRes.status, 200);
+    const verifyBody = await verifyRes.json() as any;
+    assert.equal(verifyBody.previous_status, 'provisional_unverified');
+    assert.equal(verifyBody.status, 'confirmed');
+
+    // 3. Inspect audit_logs table for true previous_status and new_status
+    const verifyAudit = db.prepare(`
+      SELECT * FROM audit_logs
+      WHERE action = 'STUDENT_SUBJECT_VERIFY' AND entity_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(String(enrollId)) as any;
+
+    assert.ok(verifyAudit);
+    assert.equal(verifyAudit.user_id, sectionHeadUserId);
+    const verifyDetails = JSON.parse(verifyAudit.details);
+    assert.equal(verifyDetails.previous_status, 'provisional_unverified');
+    assert.equal(verifyDetails.new_status, 'confirmed');
+
+    // 4. Now drop the confirmed enrollment
+    const dropRes = await testServer.request(`/api/academic/enrollments/${enrollId}/drop`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${sectionHeadToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ reason: 'Student dropped elective by institutional request' })
+    });
+    assert.equal(dropRes.status, 200);
+    const dropBody = await dropRes.json() as any;
+    assert.equal(dropBody.previous_status, 'confirmed');
+    assert.equal(dropBody.status, 'dropped');
+
+    // 5. Inspect drop audit log for true previous_status = confirmed and new_status = dropped
+    const dropAudit = db.prepare(`
+      SELECT * FROM audit_logs
+      WHERE action = 'STUDENT_SUBJECT_DROP' AND entity_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(String(enrollId)) as any;
+
+    assert.ok(dropAudit);
+    assert.equal(dropAudit.user_id, sectionHeadUserId);
+    const dropDetails = JSON.parse(dropAudit.details);
+    assert.equal(dropDetails.previous_status, 'confirmed');
+    assert.equal(dropDetails.new_status, 'dropped');
+    assert.equal(dropDetails.reason, 'Student dropped elective by institutional request');
   });
 });
