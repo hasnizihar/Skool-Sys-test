@@ -23,7 +23,10 @@ import {
   submitMarksSheet,
   reviewMarksSheet,
   approveMarksSheet,
-  getMarksSheetHistory
+  getMarksSheetHistory,
+  getMarksSheetRevisionSnapshot,
+  calcGradeLetter,
+  evaluateProvisionalGrade
 } from '../src/services/marksWorkflowService.js';
 
 describe('PR-005 Gate 3B: Marks Workflow, Revision Control, CAS Concurrency & Legacy Containment', () => {
@@ -580,35 +583,488 @@ describe('PR-005 Gate 3B: Marks Workflow, Revision Control, CAS Concurrency & Le
     assert.ok(history.revisions.length >= 3);
   });
 
-  // Test 9: Legacy routes containment and unpublished results confidentiality
-  test('EXAM-WORK-09: Legacy routes contain confidentiality leaks and reject privileged status injection', async () => {
-    // 1. Unauthorized teacher attempting to view unpublished exam marks sheet -> 403 Forbidden
-    const unpubRes = await testServer.request(`/api/marks/sheet?examId=${examUnpublishedId}&classId=${class8AId}&subjectId=${subjectMathId}`, {
+  // Test 9: Unpublished report card confidentiality & truthful reporting (P0-03, P0-04)
+  test('EXAM-WORK-09: Unpublished student report strictly blocks in-scope teachers; leadership preview is watermarked; empty attendance is null', async () => {
+    // Set Kamal as class teacher for 8A
+    db.prepare('UPDATE classes SET class_teacher_id = ? WHERE id = ?').run(teacherKamalUserId, class8AId);
+
+    // 1. In-scope assigned class teacher (Kamal) attempting to view student report on unpublished exam -> 403 Forbidden
+    const classTeacherRes = await testServer.request(`/api/marks/student-report/${student1Id}/${examUnpublishedId}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(classTeacherRes.status, 403);
+    const ctBody = await classTeacherRes.json() as any;
+    assert.equal(ctBody.code, 'UNPUBLISHED_RESULTS_LOCKED');
+    assert.match(ctBody.error, /Unpublished examination results are confidential/i);
+
+    // 2. In-scope assigned subject teacher (Sunethra) attempting to view student report on unpublished exam -> 403 Forbidden
+    const subjectTeacherRes = await testServer.request(`/api/marks/student-report/${student1Id}/${examUnpublishedId}`, {
+      headers: { Authorization: `Bearer ${teacherSunethraToken}` }
+    });
+    assert.equal(subjectTeacherRes.status, 403);
+    const stBody = await subjectTeacherRes.json() as any;
+    assert.equal(stBody.code, 'UNPUBLISHED_RESULTS_LOCKED');
+
+    // 3. Out-of-scope unauthorized teacher attempting to view -> 403 Forbidden
+    const unauthRes = await testServer.request(`/api/marks/student-report/${student1Id}/${examUnpublishedId}`, {
       headers: { Authorization: `Bearer ${unauthorizedTeacherToken}` }
     });
-    assert.equal(unpubRes.status, 403);
-    assert.match((await unpubRes.json() as any).error, /Access denied/i);
+    assert.equal(unauthRes.status, 403);
 
-    // 2. Unauthorized teacher attempting to view student report on unpublished exam -> 403 Forbidden
-    const reportRes = await testServer.request(`/api/marks/student-report/${student1Id}/${examUnpublishedId}`, {
-      headers: { Authorization: `Bearer ${unauthorizedTeacherToken}` }
+    // 4. Authorized Section Head (Nimali) previews unpublished report -> 200 OK with provisional watermark
+    const leaderRes = await testServer.request(`/api/marks/student-report/${student1Id}/${examUnpublishedId}`, {
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}` }
     });
-    assert.equal(reportRes.status, 403);
-    assert.match((await reportRes.json() as any).error, /Access denied/i);
+    assert.equal(leaderRes.status, 200);
+    const leaderBody = await leaderRes.json() as any;
 
-    // 3. Privileged status injection rejection on legacy POST /api/marks/sheet -> 400
-    const injectRes = await testServer.request('/api/marks/sheet', {
+    assert.equal(leaderBody.is_provisional_preview, true);
+    assert.ok(leaderBody.confidentiality_watermark);
+    assert.equal(leaderBody.confidentiality_watermark.is_confidential, true);
+    assert.match(leaderBody.confidentiality_watermark.watermark_text, /CONFIDENTIAL LEADERSHIP PREVIEW ONLY/i);
+    assert.equal(leaderBody.confidentiality_watermark.previewed_by_user_id, sectionHeadNimaliUserId);
+
+    // P0-04 Truthful reporting checks:
+    // Rank must be null (deferred to Gate 4)
+    assert.equal(leaderBody.performance.rank, null);
+    assert.ok(leaderBody.performance.classRankNotice);
+
+    // Attendance with 0 recorded days must be null, never 100%
+    assert.equal(leaderBody.attendance.totalSchoolDays, 0);
+    assert.equal(leaderBody.attendance.attendancePercentage, null);
+    assert.equal(leaderBody.attendance.status, 'Not Recorded');
+  });
+
+  // Test 10: Legacy POST /api/marks/sheet negative tests & zero DB writes (P0-01)
+  test('EXAM-WORK-10: Legacy POST /api/marks/sheet rejects missing/stale baseRevision, cross-class student, dropped subject, and unassigned teacher with ZERO database writes', async () => {
+    // Setup a draft marks sheet for Science in 8A assigned to Sunethra
+    const sciSheetRes = db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+      VALUES (?, ?, ?, ?, ?, 1, 'draft')
+    `).run(exam2026Term1Id, class8AId, subjectSciId, year2026Id, teacherSunethraUserId);
+    const sciSheetId = Number(sciSheetRes.lastInsertRowid);
+
+    // Ensure student1 has confirmed enrollment in Science
+    const e1 = enrollStudentInSubject({
+      studentId: student1Id,
+      subjectId: subjectSciId,
+      classId: class8AId,
+      academicYearId: year2026Id,
+      enrollmentCategory: 'core_compulsory'
+    });
+    verifyStudentEnrollment(e1.id, sectionHeadNimaliUserId);
+
+    const getDbSnapshot = () => ({
+      marksCount: (db.prepare('SELECT count(*) as c FROM marks').get() as any).c,
+      auditCount: (db.prepare('SELECT count(*) as c FROM marks_audit_history').get() as any).c,
+      revCount: (db.prepare('SELECT count(*) as c FROM marks_sheet_revisions').get() as any).c,
+      sheetRev: (db.prepare('SELECT revision FROM marks_sheets WHERE id = ?').get(sciSheetId) as any).revision
+    });
+
+    const baseline = getDbSnapshot();
+
+    // 10.1: Missing baseRevision on existing sheet -> 400 MISSING_BASE_REVISION
+    const missingRevRes = await testServer.request('/api/marks/sheet', {
       method: 'POST',
       headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         examId: exam2026Term1Id,
         classId: class8AId,
         subjectId: subjectSciId,
-        status: 'approved', // INJECTION ATTEMPT!
+        marks: [{ student_id: student1Id, score: 85.0 }]
+        // baseRevision omitted!
+      })
+    });
+    assert.equal(missingRevRes.status, 400);
+    assert.equal((await missingRevRes.json() as any).code, 'MISSING_BASE_REVISION');
+    assert.deepEqual(getDbSnapshot(), baseline, 'Zero DB writes on missing baseRevision');
+
+    // 10.2: Stale baseRevision -> 409 STALE_REVISION
+    const staleRevRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: 999, // Stale!
         marks: [{ student_id: student1Id, score: 85.0 }]
       })
     });
-    assert.equal(injectRes.status, 400);
-    assert.match((await injectRes.json() as any).error, /legacy marks entry may only set 'draft' or 'submitted'/i);
+    assert.equal(staleRevRes.status, 409);
+    assert.equal((await staleRevRes.json() as any).code, 'STALE_REVISION');
+    assert.deepEqual(getDbSnapshot(), baseline, 'Zero DB writes on stale baseRevision');
+
+    // 10.3: Cross-class student ID -> 400 CROSS_CLASS_STUDENT
+    // Create student in Class 10A
+    const alienStudentId = Number(db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status)
+      VALUES ('STU-1001', 'Cross Class Student', 'Alien', '2010-01-01', 'Male', 'Colombo', 'Guardian', 'Parent', '0770000099', 'g@test.lk', '0770000099', 'Active')
+    `).run().lastInsertRowid);
+    db.prepare(`INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, 'enrolled')`).run(alienStudentId, class10AId, year2026Id);
+
+    const crossClassRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: 1,
+        marks: [{ student_id: alienStudentId, score: 85.0 }]
+      })
+    });
+    assert.equal(crossClassRes.status, 400);
+    assert.equal((await crossClassRes.json() as any).code, 'CROSS_CLASS_STUDENT');
+    assert.deepEqual(getDbSnapshot(), baseline, 'Zero DB writes on cross-class student ID');
+
+    // 10.4: Dropped subject student -> 400 INELIGIBLE_SUBJECT_ENROLLMENT
+    // Enroll and drop student3 in Science
+    const e3 = enrollStudentInSubject({
+      studentId: student3Id,
+      subjectId: subjectSciId,
+      classId: class8AId,
+      academicYearId: year2026Id,
+      enrollmentCategory: 'core_compulsory'
+    });
+    dropStudentEnrollment(e3.id, sectionHeadNimaliUserId, { reason: 'Subject dropped by guardian request' });
+
+    const droppedSubjRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: 1,
+        marks: [{ student_id: student3Id, score: 85.0 }]
+      })
+    });
+    assert.equal(droppedSubjRes.status, 400);
+    assert.equal((await droppedSubjRes.json() as any).code, 'INELIGIBLE_SUBJECT_ENROLLMENT');
+    assert.deepEqual(getDbSnapshot(), baseline, 'Zero DB writes on dropped subject enrollment');
+
+    // 10.5: Unassigned teacher attempt -> 403 UNASSIGNED_TEACHER
+    const unassignedRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: 1,
+        marks: [{ student_id: student1Id, score: 85.0 }]
+      })
+    });
+    assert.equal(unassignedRes.status, 403);
+    assert.equal((await unassignedRes.json() as any).code, 'UNASSIGNED_TEACHER');
+    assert.deepEqual(getDbSnapshot(), baseline, 'Zero DB writes on unassigned teacher attempt');
+  });
+
+  // Test 11: Legacy POST /api/marks/sheet submission delegation & full-roster checks (P0-01)
+  test('EXAM-WORK-11: Legacy POST /api/marks/sheet with status=submitted enforces confirmation and complete roster with zero writes on failure', async () => {
+    // Science in 8A: student1 is confirmed. Enroll student2 as PROVISIONAL.
+    const e2 = enrollStudentInSubject({
+      studentId: student2Id,
+      subjectId: subjectSciId,
+      classId: class8AId,
+      academicYearId: year2026Id,
+      enrollmentCategory: 'core_compulsory'
+    }); // student2 is provisional!
+
+    const sciSheet = db.prepare('SELECT id, revision, status FROM marks_sheets WHERE class_id = ? AND subject_id = ?').get(class8AId, subjectSciId) as any;
+
+    const getDbSnapshot = () => ({
+      marksCount: (db.prepare('SELECT count(*) as c FROM marks').get() as any).c,
+      auditCount: (db.prepare('SELECT count(*) as c FROM marks_audit_history').get() as any).c,
+      revCount: (db.prepare('SELECT count(*) as c FROM marks_sheet_revisions').get() as any).c,
+      sheetRev: (db.prepare('SELECT revision FROM marks_sheets WHERE id = ?').get(sciSheet.id) as any).revision,
+      sheetStatus: (db.prepare('SELECT status FROM marks_sheets WHERE id = ?').get(sciSheet.id) as any).status
+    });
+
+    const baseline = getDbSnapshot();
+
+    // 11.1: Submit with unconfirmed student enrollment -> 422 UNCONFIRMED_ENROLLMENT
+    const unconfRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: sciSheet.revision,
+        status: 'submitted',
+        marks: [
+          { student_id: student1Id, score: 88.0 },
+          { student_id: student2Id, score: 72.0 }
+        ]
+      })
+    });
+    assert.equal(unconfRes.status, 422);
+    assert.equal((await unconfRes.json() as any).code, 'UNCONFIRMED_ENROLLMENT');
+    assert.deepEqual(getDbSnapshot(), baseline, 'Zero DB writes on unconfirmed enrollment submission');
+
+    // Confirm student2 in Science
+    verifyStudentEnrollment(e2.id, sectionHeadNimaliUserId);
+
+    const baselineAfterConfirm = getDbSnapshot();
+
+    // 11.2: Submit with incomplete roster (student2 unassessed) -> 400 UNASSESSED_STUDENT
+    const unassessedRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: sciSheet.revision,
+        status: 'submitted',
+        marks: [
+          { student_id: student1Id, score: 88.0 }
+          // student2 omitted!
+        ]
+      })
+    });
+    assert.equal(unassessedRes.status, 400);
+    assert.equal((await unassessedRes.json() as any).code, 'UNASSESSED_STUDENT');
+    assert.deepEqual(getDbSnapshot(), baselineAfterConfirm, 'Zero DB writes on incomplete roster submission');
+
+    // 11.3: Successful submission via legacy endpoint
+    const successSubmitRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjectSciId,
+        baseRevision: sciSheet.revision,
+        status: 'submitted',
+        marks: [
+          { student_id: student1Id, score: 88.0 },
+          { student_id: student2Id, score: 72.0 }
+        ]
+      })
+    });
+    assert.equal(successSubmitRes.status, 200);
+    const successBody = await successSubmitRes.json() as any;
+    assert.equal(successBody.status, 'submitted');
+
+    const updatedSheet = db.prepare('SELECT status, revision FROM marks_sheets WHERE id = ?').get(sciSheet.id) as any;
+    assert.equal(updatedSheet.status, 'submitted');
+    assert.ok(updatedSheet.revision > sciSheet.revision);
+  });
+
+  // Test 12: Least privilege for draft & submit in canonical service (P0-02)
+  test('EXAM-WORK-12: Plain admin and review-only leadership CANNOT save draft or submit marks without verified teacher assignment', async () => {
+    // Setup a new sheet for Math in Class 10A, assigned to Kamal
+    const sheet10ARes = db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+      VALUES (?, ?, ?, ?, ?, 1, 'draft')
+    `).run(exam2026Term1Id, class10AId, subjectMathId, year2026Id, teacherKamalUserId);
+    const sheet10AId = Number(sheet10ARes.lastInsertRowid);
+
+    // 12.1: Plain admin attempts to save draft marks -> 403 UNASSIGNED_TEACHER
+    const adminDraftRes = await testServer.request(`/api/marks/sheets/${sheet10AId}/save-draft`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseRevision: 1,
+        marks: []
+      })
+    });
+    assert.equal(adminDraftRes.status, 403);
+    assert.equal((await adminDraftRes.json() as any).code, 'UNASSIGNED_TEACHER');
+
+    // 12.2: Section Head Nimali attempts to save draft marks -> 403 UNASSIGNED_TEACHER
+    const shDraftRes = await testServer.request(`/api/marks/sheets/${sheet10AId}/save-draft`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseRevision: 1,
+        marks: []
+      })
+    });
+    assert.equal(shDraftRes.status, 403);
+    assert.equal((await shDraftRes.json() as any).code, 'UNASSIGNED_TEACHER');
+
+    // 12.3: Plain admin attempts to submit marks sheet -> 403 UNASSIGNED_TEACHER
+    const adminSubmitRes = await testServer.request(`/api/marks/sheets/${sheet10AId}/submit`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseRevision: 1
+      })
+    });
+    assert.equal(adminSubmitRes.status, 403);
+    assert.equal((await adminSubmitRes.json() as any).code, 'UNASSIGNED_TEACHER');
+
+    // 12.4: Section Head attempts to submit marks sheet -> 403 UNASSIGNED_TEACHER
+    const shSubmitRes = await testServer.request(`/api/marks/sheets/${sheet10AId}/submit`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseRevision: 1
+      })
+    });
+    assert.equal(shSubmitRes.status, 403);
+    assert.equal((await shSubmitRes.json() as any).code, 'UNASSIGNED_TEACHER');
+  });
+
+  // Test 13: Participating subject roster validation in mixed elective/stream classes (P1-06)
+  test('EXAM-WORK-13: Submission checks ONLY participating students for the subject; classmates taking other electives do not block submission', async () => {
+    // Setup elective subjects in 10A: Art & Music
+    const subjArtId = Number(db.prepare(`INSERT INTO subjects (code, name, category, grade_level) VALUES ('ART_10', 'Western Art', 'Elective', '10-11')`).run().lastInsertRowid);
+    const subjMusicId = Number(db.prepare(`INSERT INTO subjects (code, name, category, grade_level) VALUES ('MUS_10', 'Eastern Music', 'Elective', '10-11')`).run().lastInsertRowid);
+
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class10AId, subjArtId);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class10AId, subjMusicId);
+
+    // Assign Sunethra to Art in 10A
+    db.prepare("INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id) VALUES (?, ?, ?, 'subject_teacher', ?)").run(teacherSunethraUserId, class10AId, subjArtId, year2026Id);
+
+    // Create 3 students enrolled in 10A
+    const stuA = Number(db.prepare(`INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status) VALUES ('E-101', 'Art Student 1', 'A1', '2010-01-01', 'Female', 'Kandy', 'Parent', 'Mother', '0771', 'e1@t.lk', '0771', 'Active')`).run().lastInsertRowid);
+    const stuB = Number(db.prepare(`INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status) VALUES ('E-102', 'Art Student 2', 'A2', '2010-01-01', 'Male', 'Kandy', 'Parent', 'Father', '0772', 'e2@t.lk', '0772', 'Active')`).run().lastInsertRowid);
+    const stuC = Number(db.prepare(`INSERT INTO students (admission_no, full_name, calling_name, dob, gender, address, guardian_name, guardian_relation, guardian_phone, guardian_email, emergency_contact, status) VALUES ('E-103', 'Music Student', 'M1', '2010-01-01', 'Female', 'Kandy', 'Parent', 'Mother', '0773', 'e3@t.lk', '0773', 'Active')`).run().lastInsertRowid);
+
+    db.prepare(`INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, 'enrolled')`).run(stuA, class10AId, year2026Id);
+    db.prepare(`INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, 'enrolled')`).run(stuB, class10AId, year2026Id);
+    db.prepare(`INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, 'enrolled')`).run(stuC, class10AId, year2026Id);
+
+    // StuA & StuB take Art. StuC takes Music!
+    const eStuA = enrollStudentInSubject({ studentId: stuA, subjectId: subjArtId, classId: class10AId, academicYearId: year2026Id, enrollmentCategory: 'ol_basket_1' });
+    const eStuB = enrollStudentInSubject({ studentId: stuB, subjectId: subjArtId, classId: class10AId, academicYearId: year2026Id, enrollmentCategory: 'ol_basket_1' });
+    enrollStudentInSubject({ studentId: stuC, subjectId: subjMusicId, classId: class10AId, academicYearId: year2026Id, enrollmentCategory: 'ol_basket_2' });
+
+    // StuA is confirmed. StuB is left provisional.
+    verifyStudentEnrollment(eStuA.id, principalPereraUserId);
+
+    // Create Art marks sheet
+    const artSheet = ensureMarksSheet(exam2026Term1Id, class10AId, subjArtId, { id: teacherSunethraUserId, username: 'wf_sunethra', role: 'subject_teacher' });
+
+    // Sunethra enters draft marks for StuA & StuB
+    saveDraftMarks({
+      sheetId: artSheet.id,
+      baseRevision: 1,
+      marks: [
+        { studentId: stuA, score: 92.0, assessmentStatus: 'PRESENT' },
+        { studentId: stuB, score: 81.0, assessmentStatus: 'PRESENT' }
+      ],
+      user: { id: teacherSunethraUserId, username: 'wf_sunethra', role: 'subject_teacher' }
+    });
+
+    // Attempt submit -> 422 because StuB (participating in Art) is unconfirmed!
+    const failSubmitRes = await testServer.request(`/api/marks/sheets/${artSheet.id}/submit`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseRevision: 2 })
+    });
+    assert.equal(failSubmitRes.status, 422);
+    assert.equal((await failSubmitRes.json() as any).code, 'UNCONFIRMED_ENROLLMENT');
+
+    // Confirm StuB
+    verifyStudentEnrollment(eStuB.id, principalPereraUserId);
+
+    // Submit now succeeds! Notice: StuC (who takes Music) is NOT enrolled in Art and does NOT block submission!
+    const successArtSubmit = await testServer.request(`/api/marks/sheets/${artSheet.id}/submit`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseRevision: 2 })
+    });
+    assert.equal(successArtSubmit.status, 200);
+    assert.equal((await successArtSubmit.json() as any).status, 'submitted');
+  });
+
+  // Test 14: Score normalization and provisional grade calculation test vectors (P1-05)
+  test('EXAM-WORK-14: calcGradeLetter and evaluateProvisionalGrade correctly normalize against max_score and tag as provisional', () => {
+    // 14.1: Audit test vector: 80 / 200 = 40% -> S (not A!)
+    assert.equal(calcGradeLetter(80, 'PRESENT', 200), 'S');
+    const prov80 = evaluateProvisionalGrade(80, 'PRESENT', 200);
+    assert.equal(prov80.gradeLetter, 'S');
+    assert.equal(prov80.percentage, 40.0);
+    assert.equal(prov80.isProvisional, true);
+
+    // 14.2: Audit test vector: 35 / 50 = 70% -> B (not S!)
+    assert.equal(calcGradeLetter(35, 'PRESENT', 50), 'B');
+    const prov35 = evaluateProvisionalGrade(35, 'PRESENT', 50);
+    assert.equal(prov35.gradeLetter, 'B');
+    assert.equal(prov35.percentage, 70.0);
+    assert.equal(prov35.isProvisional, true);
+
+    // 14.3: Standard cutoffs [75: A, 65: B, 50: C, 35: S, <35: F]
+    assert.equal(calcGradeLetter(90, 'PRESENT', 100), 'A');
+    assert.equal(calcGradeLetter(75, 'PRESENT', 100), 'A');
+    assert.equal(calcGradeLetter(74.9, 'PRESENT', 100), 'B');
+    assert.equal(calcGradeLetter(55, 'PRESENT', 100), 'C');
+    assert.equal(calcGradeLetter(35, 'PRESENT', 100), 'S');
+    assert.equal(calcGradeLetter(34.9, 'PRESENT', 100), 'F');
+    assert.equal(calcGradeLetter(0, 'PRESENT', 100), 'F');
+
+    // 14.4: Non-present and special assessment statuses
+    assert.equal(calcGradeLetter(null, 'NOT_ASSESSED', 100), '-');
+    assert.equal(calcGradeLetter(null, 'ABSENT', 100), 'AB');
+    assert.equal(calcGradeLetter(null, 'EXEMPT', 100), 'EX');
+    assert.equal(calcGradeLetter(null, 'MEDICAL', 100), 'MED');
+
+    // 14.5: Invalid/zero maxScore fails closed
+    assert.equal(calcGradeLetter(50, 'PRESENT', 0), '-');
+    assert.equal(calcGradeLetter(50, 'PRESENT', -100), '-');
+  });
+
+  // Test 15: Sheet creation invariants in ensureMarksSheet (P1-07)
+  test('EXAM-WORK-15: ensureMarksSheet rejects academic year mismatch, unoffered subjects, and leaves teacher_id null when unassigned', () => {
+    // 15.1: Mismatched academic year
+    const otherYearId = Number(db.prepare("INSERT INTO academic_years (name, start_date, end_date, is_current) VALUES ('2025', '2025-01-01', '2025-12-31', 0)").run().lastInsertRowid);
+    const mismatchedExamId = Number(db.prepare("INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status) VALUES ('Old Exam', 1, ?, '2025-03-01', '2025-03-15', 0, 'scheduled')").run(otherYearId).lastInsertRowid);
+
+    assert.throws(
+      () => ensureMarksSheet(mismatchedExamId, class8AId, subjectMathId, { id: adminUserId, username: 'admin', role: 'admin' }),
+      (err: any) => err.code === 'ACADEMIC_YEAR_MISMATCH'
+    );
+
+    // 15.2: Subject not offered in class
+    const unofferedSubjId = Number(db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('GER_8', 'German', 'Elective', '6-9')").run().lastInsertRowid);
+    assert.throws(
+      () => ensureMarksSheet(exam2026Term1Id, class8AId, unofferedSubjId, { id: adminUserId, username: 'admin', role: 'admin' }),
+      (err: any) => err.code === 'SUBJECT_NOT_OFFERED'
+    );
+
+    // 15.3: Subject offered, but unassigned teacher: teacher_id remains NULL (NEVER user.id)
+    const subjFrenchId = Number(db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('FRE_8', 'French', 'Elective', '6-9')").run().lastInsertRowid);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class8AId, subjFrenchId);
+
+    const sheetFrench = ensureMarksSheet(exam2026Term1Id, class8AId, subjFrenchId, { id: teacherKamalUserId, username: 'wf_kamal', role: 'subject_teacher' });
+    assert.equal(sheetFrench.teacher_id, null, 'Unassigned teacher must remain NULL, not fabricated to requesting user');
+  });
+
+  // Test 16: Revision snapshot retrieval and audit payload completeness (P1-08)
+  test('EXAM-WORK-16: Revisions history includes parsed marks payload and point-in-time snapshot endpoint returns full state', async () => {
+    // Math 8A sheet was approved in EXAM-WORK-07 at revision 10
+    // Fetch snapshot for revision 2 (draft save)
+    const snapRes = await testServer.request(`/api/marks/sheets/${sheetMath8AId}/revisions/2`, {
+      headers: { Authorization: `Bearer ${principalPereraToken}` }
+    });
+    assert.equal(snapRes.status, 200);
+    const snap = await snapRes.json() as any;
+
+    assert.equal(snap.sheet_id, sheetMath8AId);
+    assert.equal(snap.revision, 2);
+    assert.ok(snap.marks_payload_json);
+    assert.ok(Array.isArray(snap.marks_payload));
+    assert.ok(snap.marks_payload.length > 0);
+
+    // Fetch history and verify all revisions have marks_payload
+    const histRes = await testServer.request(`/api/marks/sheets/${sheetMath8AId}/history`, {
+      headers: { Authorization: `Bearer ${principalPereraToken}` }
+    });
+    assert.equal(histRes.status, 200);
+    const hist = await histRes.json() as any;
+
+    assert.ok(Array.isArray(hist.revisions));
+    for (const r of hist.revisions) {
+      assert.ok(r.marks_payload !== undefined, `Revision ${r.revision} must have marks_payload field`);
+      assert.ok(r.marks_payload_json, `Revision ${r.revision} must have marks_payload_json field`);
+    }
   });
 });
+

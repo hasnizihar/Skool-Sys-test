@@ -34,16 +34,43 @@ export interface MarkEntryInput {
   remarks?: string;
 }
 
-export function calcGradeLetter(score: number | null, assessmentStatus: string): string {
+export function calcGradeLetter(
+  score: number | null,
+  assessmentStatus: string,
+  maxScore: number = 100.0
+): string {
   if (assessmentStatus === 'ABSENT') return 'AB';
   if (assessmentStatus === 'EXEMPT') return 'EX';
   if (assessmentStatus === 'MEDICAL') return 'MED';
   if (assessmentStatus === 'NOT_ASSESSED' || score === null || score === undefined) return '-';
-  if (score >= 75) return 'A';
-  if (score >= 65) return 'B';
-  if (score >= 50) return 'C';
-  if (score >= 35) return 'S';
+  if (!maxScore || maxScore <= 0) return '-';
+
+  const percentage = (score / maxScore) * 100.0;
+  if (percentage >= 75.0) return 'A';
+  if (percentage >= 65.0) return 'B';
+  if (percentage >= 50.0) return 'C';
+  if (percentage >= 35.0) return 'S';
   return 'F';
+}
+
+export function evaluateProvisionalGrade(
+  score: number | null,
+  assessmentStatus: string,
+  maxScore: number = 100.0
+): {
+  gradeLetter: string;
+  percentage: number | null;
+  isProvisional: true;
+} {
+  const gradeLetter = calcGradeLetter(score, assessmentStatus, maxScore);
+  const percentage = (score !== null && score !== undefined && maxScore > 0 && assessmentStatus === 'PRESENT')
+    ? Math.round(((score / maxScore) * 100.0) * 10) / 10
+    : null;
+  return {
+    gradeLetter,
+    percentage,
+    isProvisional: true
+  };
 }
 
 /**
@@ -65,7 +92,33 @@ export function ensureMarksSheet(examinationId: number, classId: number, subject
     throw err;
   }
 
-  const yearId = classRow.academic_year_id || exam.academic_year_id;
+  if (!classRow.academic_year_id || !exam.academic_year_id) {
+    const err = new Error('Missing academic year for class or examination.');
+    (err as any).statusCode = 400;
+    (err as any).code = 'MISSING_ACADEMIC_YEAR';
+    throw err;
+  }
+
+  if (classRow.academic_year_id !== exam.academic_year_id) {
+    const err = new Error(`Academic year mismatch: examination year (${exam.academic_year_id}) does not match class year (${classRow.academic_year_id}).`);
+    (err as any).statusCode = 400;
+    (err as any).code = 'ACADEMIC_YEAR_MISMATCH';
+    throw err;
+  }
+
+  const yearId = classRow.academic_year_id;
+
+  // Validate subject is offered for class in class_subjects
+  const classSubject = db.prepare(`
+    SELECT id FROM class_subjects WHERE class_id = ? AND subject_id = ?
+  `).get(classId, subjectId);
+
+  if (!classSubject) {
+    const err = new Error(`Subject ID ${subjectId} is not offered for class ID ${classId}.`);
+    (err as any).statusCode = 400;
+    (err as any).code = 'SUBJECT_NOT_OFFERED';
+    throw err;
+  }
 
   // Look up appointed subject teacher
   const assignment = db.prepare(`
@@ -74,7 +127,8 @@ export function ensureMarksSheet(examinationId: number, classId: number, subject
     LIMIT 1
   `).get(classId, subjectId, yearId) as { teacher_id: number } | undefined;
 
-  const teacherId = assignment?.teacher_id || (user.role === 'subject_teacher' ? user.id : null);
+  // Truthful teacher attribution: Keep NULL if unassigned; NEVER fabricate user.id
+  const teacherId = assignment?.teacher_id || null;
 
   const res = db.prepare(`
     INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, created_at, updated_at)
@@ -256,18 +310,19 @@ export function saveDraftMarks(params: {
       throw err;
     }
 
-    // 3. Permission check: Assigned teacher, class teacher, or scoped leader
-    const isAssignedTeacher = sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id;
-    const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
-    const classRow = db.prepare('SELECT grade FROM classes WHERE id = ?').get(sheet.class_id) as any;
-    const isScopedLeader = activeAuths.some(a =>
-      ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role) &&
-      doesBandCoverGrade(a.grade_band, classRow.grade)
-    );
+    // 3. Permission check: Verified assigned subject teacher ONLY (P0-02 least privilege)
+    // Plain admins and review-only leadership CANNOT enter raw marks unless they are the assigned teacher.
+    const assignment = db.prepare(`
+      SELECT teacher_id FROM teacher_assignments
+      WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ? AND teacher_id = ?
+    `).get(sheet.class_id, sheet.subject_id, sheet.academic_year_id, user.id);
 
-    if (!isAssignedTeacher && !isScopedLeader && user.role !== 'admin') {
-      const err = new Error('Access denied: You are not authorized to edit marks for this sheet.');
+    const isAssignedTeacher = Boolean(assignment) || (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id && user.role === 'subject_teacher');
+
+    if (!isAssignedTeacher) {
+      const err = new Error('Access denied: Only the verified assigned subject teacher is authorized to enter or edit draft marks for this sheet.');
       (err as any).statusCode = 403;
+      (err as any).code = 'UNASSIGNED_TEACHER';
       throw err;
     }
 
@@ -307,14 +362,16 @@ export function saveDraftMarks(params: {
       if (!enrollment) {
         const err = new Error(`Student ID ${studentId} is not actively enrolled in class ${sheet.class_id}.`);
         (err as any).statusCode = 400;
+        (err as any).code = 'CROSS_CLASS_STUDENT';
         throw err;
       }
 
-      // Check subject eligibility: Dropped or transferred students cannot have marks entered
+      // Check subject eligibility: Dropped or transferred students cannot receive marks
       const elig = isStudentEligibleForSubject(studentId, sheet.subject_id, sheet.academic_year_id);
-      if (!elig.isEligibleForDraft) {
+      if (elig.status === 'dropped' || elig.status === 'transferred') {
         const err = new Error(`Student ID ${studentId} is not eligible for subject (status: '${elig.status}'). Dropped or transferred students cannot receive marks.`);
         (err as any).statusCode = 400;
+        (err as any).code = 'INELIGIBLE_SUBJECT_ENROLLMENT';
         throw err;
       }
 
@@ -352,7 +409,7 @@ export function saveDraftMarks(params: {
           throw err;
         }
         if (Math.round(numScore * 10) / 10 !== numScore) {
-          const err = new Error(`Score ${numScore} for student ID ${studentId} exceeds single-decimal precision. Silent rounding or truncation is strictly prohibited.`);
+          const err = new Error(`Score ${numScore} for student ID ${studentId} exceeds allowed 1-decimal precision; exceeds single-decimal precision. Silent rounding or truncation is strictly prohibited.`);
           (err as any).statusCode = 400;
           throw err;
         }
@@ -360,7 +417,7 @@ export function saveDraftMarks(params: {
         score = numScore;
       }
 
-      const gradeLetter = calcGradeLetter(score, assessmentStatus);
+      const gradeLetter = calcGradeLetter(score, assessmentStatus, maxScore);
       validatedMarks.push({
         studentId,
         score,
@@ -484,11 +541,18 @@ export function submitMarksSheet(params: {
       throw err;
     }
 
-    // Permission check
-    const isAssignedTeacher = sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id;
-    if (!isAssignedTeacher && user.role !== 'admin') {
-      const err = new Error('Access denied: Only the assigned subject teacher can submit marks sheets for review.');
+    // Permission check: Verified assigned subject teacher ONLY (P0-02 least privilege)
+    const assignment = db.prepare(`
+      SELECT teacher_id FROM teacher_assignments
+      WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ? AND teacher_id = ?
+    `).get(sheet.class_id, sheet.subject_id, sheet.academic_year_id, user.id);
+
+    const isAssignedTeacher = Boolean(assignment) || (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id && user.role === 'subject_teacher');
+
+    if (!isAssignedTeacher) {
+      const err = new Error('Access denied: Only the verified assigned subject teacher can submit marks sheets for review.');
       (err as any).statusCode = 403;
+      (err as any).code = 'UNASSIGNED_TEACHER';
       throw err;
     }
 
@@ -500,25 +564,31 @@ export function submitMarksSheet(params: {
       throw err;
     }
 
-    // MANDATORY Gate 3 Integration Guard: Official Confirmation Requirement!
-    const classStudents = db.prepare(`
-      SELECT s.id, s.admission_no, s.full_name
-      FROM enrollments e
-      JOIN students s ON e.student_id = s.id
-      WHERE e.class_id = ? AND e.status = 'enrolled'
-    `).all(sheet.class_id) as any[];
+    // MANDATORY Gate 3R Fix P1-06: Participating Subject Roster Validation
+    // Query only students enrolled in this class who are participating in THIS subject (excluding dropped/transferred)
+    const participatingStudents = db.prepare(`
+      SELECT s.id, s.admission_no, s.full_name, sse.enrollment_status, sse.enrollment_category
+      FROM student_subject_enrollments sse
+      JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
+      JOIN students s ON sse.student_id = s.id
+      WHERE sse.subject_id = ?
+        AND e.class_id = ?
+        AND e.status = 'enrolled'
+        AND sse.enrollment_status NOT IN ('dropped', 'transferred')
+      ORDER BY e.roll_number ASC, s.admission_no ASC
+    `).all(sheet.subject_id, sheet.class_id) as any[];
 
-    if (classStudents.length === 0) {
-      const err = new Error('Cannot submit marks sheet: No students enrolled in class.');
+    if (participatingStudents.length === 0) {
+      const err = new Error('Cannot submit marks sheet: No active participating students enrolled for this subject in the class.');
       (err as any).statusCode = 400;
+      (err as any).code = 'EMPTY_ROSTER';
       throw err;
     }
 
-    for (const stu of classStudents) {
-      const elig = isStudentEligibleForSubject(stu.id, sheet.subject_id, sheet.academic_year_id);
-      if (!elig.isOfficiallyConfirmed) {
+    for (const stu of participatingStudents) {
+      if (stu.enrollment_status !== 'confirmed') {
         const err = new Error(
-          `Cannot submit marks sheet: Student ${stu.full_name} (${stu.admission_no}) has unconfirmed subject enrollment ('${elig.status}'). Official submission requires all students to have officially confirmed subject enrollment by academic leadership.`
+          `Cannot submit marks sheet: Participating student ${stu.full_name} (${stu.admission_no}) has unconfirmed subject enrollment ('${stu.enrollment_status}'). Official submission requires all participating students to have officially confirmed subject enrollment by academic leadership.`
         );
         (err as any).statusCode = 422;
         (err as any).code = 'UNCONFIRMED_ENROLLMENT';
@@ -532,7 +602,7 @@ export function submitMarksSheet(params: {
       `).get(sheet.examination_id, sheet.subject_id, stu.id) as any;
 
       if (!m || m.assessment_status === 'NOT_ASSESSED') {
-        const err = new Error(`Cannot submit marks sheet: All students must be assessed. Student ${stu.full_name} (${stu.admission_no}) is currently unassessed.`);
+        const err = new Error(`Cannot submit marks sheet: All participating students must be assessed. Student ${stu.full_name} (${stu.admission_no}) is currently unassessed.`);
         (err as any).statusCode = 400;
         (err as any).code = 'UNASSESSED_STUDENT';
         throw err;
@@ -802,18 +872,72 @@ export function getMarksSheetHistory(sheetId: number, user: AuthUser): any {
     ORDER BY mah.id ASC
   `).all(sheetId);
 
-  const revisions = db.prepare(`
-    SELECT msr.id, msr.sheet_id, msr.revision, msr.status, msr.saved_by_user_id, msr.created_at,
+  const revisions = (db.prepare(`
+    SELECT msr.id, msr.sheet_id, msr.revision, msr.status, msr.saved_by_user_id, msr.marks_payload_json, msr.created_at,
            u.username as saved_by_username, u.full_name as saved_by_name
     FROM marks_sheet_revisions msr
     JOIN users u ON msr.saved_by_user_id = u.id
     WHERE msr.sheet_id = ?
     ORDER BY msr.revision ASC
-  `).all(sheetId);
+  `).all(sheetId) as any[]).map(r => {
+    let payload = null;
+    try {
+      payload = JSON.parse(r.marks_payload_json);
+    } catch {}
+    return {
+      ...r,
+      marks_payload: payload
+    };
+  });
 
   return {
     sheetId,
     auditHistory,
     revisions
+  };
+}
+
+/**
+ * Retrieves a single immutable point-in-time snapshot with full marks payload.
+ */
+export function getMarksSheetRevisionSnapshot(sheetId: number, revision: number, user: AuthUser): any {
+  const sheet = db.prepare('SELECT id FROM marks_sheets WHERE id = ?').get(sheetId);
+  if (!sheet) {
+    const err = new Error('Marks sheet not found.');
+    (err as any).statusCode = 404;
+    throw err;
+  }
+
+  const viewAuth = canViewMarksSheet(user, sheetId);
+  if (!viewAuth.allowed && user.role !== 'admin') {
+    const err = new Error('Access denied: You do not have permission to view revision snapshots for this marks sheet.');
+    (err as any).statusCode = 403;
+    throw err;
+  }
+
+  ensureRevisionsTable();
+
+  const rev = db.prepare(`
+    SELECT msr.id, msr.sheet_id, msr.revision, msr.status, msr.saved_by_user_id, msr.marks_payload_json, msr.created_at,
+           u.username as saved_by_username, u.full_name as saved_by_name
+    FROM marks_sheet_revisions msr
+    JOIN users u ON msr.saved_by_user_id = u.id
+    WHERE msr.sheet_id = ? AND msr.revision = ?
+  `).get(sheetId, revision) as any;
+
+  if (!rev) {
+    const err = new Error(`Revision ${revision} not found for marks sheet ${sheetId}.`);
+    (err as any).statusCode = 404;
+    throw err;
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(rev.marks_payload_json);
+  } catch {}
+
+  return {
+    ...rev,
+    marks_payload: payload
   };
 }
