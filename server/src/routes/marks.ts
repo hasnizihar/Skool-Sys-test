@@ -14,7 +14,8 @@ import {
   getMarksSheetHistory,
   getMarksSheetRevisionSnapshot,
   calcGradeLetter,
-  MarkEntryInput
+  MarkEntryInput,
+  saveOrSubmitLegacyMarksSheet
 } from '../services/marksWorkflowService.js';
 
 const router = Router();
@@ -130,13 +131,13 @@ router.get('/sheet', requireAuth, (req, res) => {
 });
 
 // Bulk Save Marks for Subject Sheet
-// NOTE: Legacy marks endpoint - strictly delegates to canonical workflow and enforces all Gate 3R invariants:
+// NOTE: Legacy marks endpoint - strictly delegates to atomic canonical workflow:
 // 1. Mandatory baseRevision on existing sheets (no overwrite of stale drafts)
 // 2. Strict cross-class student validation (no alien student insertion)
-// 3. Strict subject eligibility (no marks for dropped/transferred students)
-// 4. Verified assigned subject teacher ONLY (no admin/leadership write bypass)
-// 5. Atomic validation before write (fail-closed, zero partial writes on error)
-// 6. Complete revision snapshot and audit logging via canonical workflow
+// 3. Strict positive subject eligibility (no marks for non-enrolled, dropped, or transferred students)
+// 4. Verified actively assigned subject teacher ONLY (no admin/leadership write bypass, no sheet.teacher_id fallback)
+// 5. Fail-closed atomic transaction: invalid first writes never leave an empty sheet behind; failed submit rolls back draft
+// 6. Complete full-state revision snapshot and audit logging via canonical workflow
 router.post('/sheet', requireAuth, (req, res) => {
   const { examId, classId, subjectId, marks, status, baseRevision } = req.body;
   const user = req.user!;
@@ -155,279 +156,40 @@ router.post('/sheet', requireAuth, (req, res) => {
     return;
   }
 
-  const eId = Number(examId);
-  const cId = Number(classId);
-  const sId = Number(subjectId);
-
-  // 1. Verify class and exam existence and academic year consistency
-  const classRow = db.prepare('SELECT id, academic_year_id FROM classes WHERE id = ?').get(cId) as any;
-  const examRow = db.prepare('SELECT id, academic_year_id FROM examinations WHERE id = ?').get(eId) as any;
-
-  if (!classRow || !examRow) {
-    res.status(404).json({ error: 'Class or Examination not found.' });
-    return;
-  }
-
-  if (!classRow.academic_year_id || !examRow.academic_year_id) {
-    res.status(400).json({ error: 'Missing academic year for class or examination.', code: 'MISSING_ACADEMIC_YEAR' });
-    return;
-  }
-
-  if (classRow.academic_year_id !== examRow.academic_year_id) {
-    res.status(400).json({
-      error: `Academic year mismatch: examination year (${examRow.academic_year_id}) does not match class year (${classRow.academic_year_id}).`,
-      code: 'ACADEMIC_YEAR_MISMATCH'
-    });
-    return;
-  }
-
-  const yearId = classRow.academic_year_id;
-
-  // 2. Validate subject is offered for class in class_subjects
-  const classSubject = db.prepare('SELECT id FROM class_subjects WHERE class_id = ? AND subject_id = ?').get(cId, sId);
-  if (!classSubject) {
-    res.status(400).json({
-      error: `Subject ID ${sId} is not offered for class ID ${cId}.`,
-      code: 'SUBJECT_NOT_OFFERED'
-    });
-    return;
-  }
-
-  // 3. Permission check: Verified assigned subject teacher ONLY (P0-02 least privilege)
-  const assignment = db.prepare(`
-    SELECT teacher_id FROM teacher_assignments
-    WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ? AND teacher_id = ?
-  `).get(cId, sId, yearId, user.id);
-
-  let sheet = db.prepare('SELECT * FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(eId, cId, sId) as any;
-
-  const isAssignedTeacher = Boolean(assignment) || (sheet && sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id && user.role === 'subject_teacher');
-
-  if (!isAssignedTeacher) {
-    res.status(403).json({
-      error: 'Access denied: Only the verified assigned subject teacher is authorized to enter or submit marks.',
-      code: 'UNASSIGNED_TEACHER'
-    });
-    return;
-  }
-
-  // 4. Lock & Concurrency check (P0-01)
-  if (sheet) {
-    if (!['draft', 'returned'].includes(sheet.status)) {
-      res.status(403).json({
-        error: `Sheet is locked in status '${sheet.status}' and cannot be overwritten via legacy marks entry.`,
-        code: 'SHEET_LOCKED'
-      });
-      return;
-    }
-
-    // MANDATORY Gate 3R: baseRevision is REQUIRED when updating an existing sheet
-    if (baseRevision === undefined || baseRevision === null) {
-      res.status(400).json({
-        error: 'baseRevision is required when updating an existing marks sheet.',
-        code: 'MISSING_BASE_REVISION'
-      });
-      return;
-    }
-
-    const baseRevNum = Number(baseRevision);
-    if (sheet.revision !== baseRevNum) {
-      res.status(409).json({
-        error: `Concurrent modification detected. Sheet revision is ${sheet.revision}, but your request supplied baseRevision ${baseRevNum}. Please reload the latest sheet before saving.`,
-        code: 'STALE_REVISION',
-        currentRevision: sheet.revision,
-        baseRevision: baseRevNum
-      });
-      return;
-    }
-  }
-
-  // 5. Pre-validate student membership, subject eligibility, and score validity
+  // Pre-validate remarks type upfront before any database interaction (P1-04)
   for (const m of marks) {
-    const studentId = Number(m.student_id ?? m.studentId);
-    if (!studentId || isNaN(studentId)) {
-      res.status(400).json({ error: 'Each mark must contain a valid student_id.', code: 'INVALID_STUDENT_ID' });
-      return;
-    }
-
-    // Cross-class check: Must be actively enrolled in class cId
-    const enrollment = db.prepare(`
-      SELECT id FROM enrollments
-      WHERE student_id = ? AND class_id = ? AND academic_year_id = ? AND status = 'enrolled'
-    `).get(studentId, cId, yearId);
-
-    if (!enrollment) {
+    if (m.remarks !== null && m.remarks !== undefined && typeof m.remarks !== 'string') {
       res.status(400).json({
-        error: `Student ID ${studentId} is not actively enrolled in class ${cId}.`,
-        code: 'CROSS_CLASS_STUDENT'
+        error: `Invalid remarks for student ID ${m.student_id ?? m.studentId}: remarks must be a string or null.`,
+        code: 'INVALID_REMARKS_TYPE'
       });
       return;
-    }
-
-    // Subject eligibility check: Must not be dropped or transferred
-    const elig = isStudentEligibleForSubject(studentId, sId, yearId);
-    if (elig.status === 'dropped' || elig.status === 'transferred') {
-      res.status(400).json({
-        error: `Student ID ${studentId} is not eligible for subject (status: '${elig.status}'). Dropped or transferred students cannot receive marks.`,
-        code: 'INELIGIBLE_SUBJECT_ENROLLMENT'
-      });
-      return;
-    }
-
-    // Score precision, bounds, and absent/exempt validation
-    const isAbsent = Boolean(m.is_absent || m.isAbsent);
-    const isExempt = Boolean(m.is_exempt || m.isExempt);
-    const hasScore = m.score !== null && m.score !== undefined && m.score !== '';
-
-    if (isAbsent && isExempt) {
-      res.status(400).json({
-        error: `Student ID ${studentId} cannot be marked both absent and exempt.`,
-        code: 'INVALID_ASSESSMENT_STATUS'
-      });
-      return;
-    }
-
-    if (hasScore) {
-      const numScore = Number(m.score);
-      if (isNaN(numScore)) {
-        res.status(400).json({
-          error: `Score '${m.score}' for student ID ${studentId} is not a valid number.`,
-          code: 'INVALID_SCORE'
-        });
-        return;
-      }
-      if (numScore < 0.0 || numScore > 100.0) {
-        res.status(400).json({
-          error: `Score ${numScore} for student ID ${studentId} is out of bounds [0, 100].`,
-          code: 'SCORE_OUT_OF_BOUNDS'
-        });
-        return;
-      }
-      if (Math.round(numScore * 10) / 10 !== numScore) {
-        res.status(400).json({
-          error: `Score ${numScore} for student ID ${studentId} exceeds allowed 1-decimal precision. Silent rounding or truncation is strictly prohibited. Single-decimal precision required.`,
-          code: 'INVALID_SCORE_PRECISION'
-        });
-        return;
-      }
     }
   }
 
-  // 6. Pre-validate submission prerequisites if targetStatus === 'submitted'
-  if (targetStatus === 'submitted') {
-    const participatingStudents = db.prepare(`
-      SELECT s.id, s.admission_no, s.full_name, sse.enrollment_status
-      FROM student_subject_enrollments sse
-      JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
-      JOIN students s ON sse.student_id = s.id
-      WHERE sse.subject_id = ?
-        AND e.class_id = ?
-        AND e.status = 'enrolled'
-        AND sse.enrollment_status NOT IN ('dropped', 'transferred')
-      ORDER BY e.roll_number ASC, s.admission_no ASC
-    `).all(sId, cId) as any[];
-
-    if (participatingStudents.length === 0) {
-      res.status(400).json({
-        error: 'Cannot submit marks sheet: No active participating students enrolled for this subject in the class.',
-        code: 'EMPTY_ROSTER'
-      });
-      return;
-    }
-
-    const marksByStudent = new Map<number, any>();
-    for (const m of marks) {
-      const studentId = Number(m.student_id ?? m.studentId);
-      marksByStudent.set(studentId, m);
-    }
-
-    for (const stu of participatingStudents) {
-      if (stu.enrollment_status !== 'confirmed') {
-        res.status(422).json({
-          error: `Cannot submit marks sheet: Participating student ${stu.full_name} (${stu.admission_no}) has unconfirmed subject enrollment ('${stu.enrollment_status}'). Official submission requires all participating students to have officially confirmed subject enrollment by academic leadership.`,
-          code: 'UNCONFIRMED_ENROLLMENT'
-        });
-        return;
-      }
-
-      const incomingMark = marksByStudent.get(stu.id);
-      let isAssessed = false;
-      if (incomingMark) {
-        const isAbsent = Boolean(incomingMark.is_absent);
-        const isExempt = Boolean(incomingMark.is_exempt);
-        const hasScore = incomingMark.score !== null && incomingMark.score !== undefined && incomingMark.score !== '';
-        if (isAbsent || isExempt || hasScore) {
-          isAssessed = true;
-        }
-      } else if (sheet) {
-        const existingMark = db.prepare(`
-          SELECT assessment_status FROM marks WHERE examination_id = ? AND subject_id = ? AND student_id = ?
-        `).get(eId, sId, stu.id) as any;
-        if (existingMark && existingMark.assessment_status !== 'NOT_ASSESSED') {
-          isAssessed = true;
-        }
-      }
-
-      if (!isAssessed) {
-        res.status(400).json({
-          error: `Cannot submit marks sheet: All participating students must be assessed. Student ${stu.full_name} (${stu.admission_no}) is currently unassessed.`,
-          code: 'UNASSESSED_STUDENT'
-        });
-        return;
-      }
-    }
-  }
-
-  // All preconditions met! Now execute canonical draft save and optional submission.
   try {
-    let sheetId: number;
-    let effectiveBaseRev: number;
-
-    if (!sheet) {
-      const created = ensureMarksSheet(eId, cId, sId, user);
-      sheetId = created.id;
-      effectiveBaseRev = 1;
-    } else {
-      sheetId = sheet.id;
-      effectiveBaseRev = Number(baseRevision);
-    }
-
     const formattedMarks: MarkEntryInput[] = marks.map((m: any) => ({
       studentId: Number(m.student_id ?? m.studentId),
       score: (m.score === null || m.score === undefined || m.score === '') ? null : Number(m.score),
+      maxScore: m.max_score ? Number(m.max_score) : 100.0,
       assessmentStatus: (m.is_absent ? 'ABSENT' : (m.is_exempt ? 'EXEMPT' : (m.score !== null && m.score !== undefined && m.score !== '' ? 'PRESENT' : 'NOT_ASSESSED'))) as 'PRESENT' | 'ABSENT' | 'EXEMPT' | 'NOT_ASSESSED',
       remarks: m.remarks
     }));
 
-    const draftRes = saveDraftMarks({
-      sheetId,
-      baseRevision: effectiveBaseRev,
+    const result = saveOrSubmitLegacyMarksSheet({
+      examId: Number(examId),
+      classId: Number(classId),
+      subjectId: Number(subjectId),
       marks: formattedMarks,
+      targetStatus,
+      baseRevision: baseRevision !== undefined && baseRevision !== null ? Number(baseRevision) : undefined,
       user,
       ipAddress: req.ip
     });
 
-    let finalRevision = draftRes.newRevision;
+    logAudit(user.id, user.username, 'MARKS_SUBMIT', 'marks', `${examId}-${subjectId}-${classId}`, { examId, subjectId, count: marks.length }, req.ip);
 
-    if (targetStatus === 'submitted') {
-      const submitRes = submitMarksSheet({
-        sheetId,
-        baseRevision: draftRes.newRevision,
-        user,
-        ipAddress: req.ip
-      });
-      finalRevision = submitRes.newRevision;
-    }
-
-    logAudit(user.id, user.username, 'MARKS_SUBMIT', 'marks', `${eId}-${sId}-${cId}`, { examId: eId, subjectId: sId, count: marks.length }, req.ip);
-
-    res.json({
-      success: true,
-      message: `Marks sheet ${targetStatus === 'submitted' ? 'submitted' : 'saved'} successfully for ${marks.length} students.`,
-      sheetId,
-      revision: finalRevision,
-      status: targetStatus
-    });
+    res.json(result);
   } catch (err: any) {
     const status = err.statusCode || 400;
     res.status(status).json({ error: err.message, code: err.code });
@@ -469,7 +231,7 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
   // Only authorized academic leadership (Principal, VP Academic, Section Head, or Exam Coordinator)
   // may preview unreleased report cards with explicit watermarking.
   if (!isPublished) {
-    const isLeadership = user.role === 'admin' || hasAcademicStaffRole(
+    const isLeadership = hasAcademicStaffRole(
       user.id,
       ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
       student.academic_year_id || exam.academic_year_id,
@@ -478,7 +240,7 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
 
     if (!isLeadership) {
       res.status(403).json({
-        error: 'Access denied: Unpublished examination results are confidential. Ordinary class and subject teachers cannot view unreleased report cards.',
+        error: 'Access denied: Unpublished examination results are confidential. Ordinary class teachers, subject teachers, and unscoped administrators cannot view unreleased report cards. Access requires an active academic leadership appointment in-scope for this student\'s academic year and grade.',
         code: 'UNPUBLISHED_RESULTS_LOCKED'
       });
       return;
@@ -557,7 +319,9 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       attendancePercentage,
       status: hasAttendanceRecords ? 'Recorded' : 'Not Recorded'
     },
+    is_provisional: !isPublished,
     is_provisional_preview: !isPublished,
+    provisional_notice: !isPublished ? 'PROVISIONAL & UNPUBLISHED: This report card contains unverified/unpublished examination results intended solely for internal academic leadership review.' : null,
     confidentiality_watermark: !isPublished ? {
       is_confidential: true,
       watermark_text: 'UNPUBLISHED - CONFIDENTIAL LEADERSHIP PREVIEW ONLY',

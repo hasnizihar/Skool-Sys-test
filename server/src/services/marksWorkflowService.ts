@@ -26,6 +26,72 @@ function ensureRevisionsTable() {
   } catch {}
 }
 
+function recordRevisionSnapshot(
+  sheetId: number,
+  revision: number,
+  status: string,
+  userId: number,
+  examinationId: number,
+  classId: number,
+  subjectId: number
+) {
+  let rosterMarks = db.prepare(`
+    SELECT s.id as student_id, s.id as studentId,
+           s.admission_no as admission_no, s.admission_no as admissionNo,
+           s.full_name as full_name, s.full_name as fullName,
+           m.score,
+           COALESCE(m.max_score, 100.0) as max_score,
+           COALESCE(m.max_score, 100.0) as maxScore,
+           COALESCE(m.assessment_status, 'NOT_ASSESSED') as assessment_status,
+           COALESCE(m.assessment_status, 'NOT_ASSESSED') as assessmentStatus,
+           COALESCE(m.grade_letter, '-') as grade_letter,
+           COALESCE(m.grade_letter, '-') as gradeLetter,
+           COALESCE(m.is_absent, 0) as is_absent,
+           COALESCE(m.is_absent, 0) as isAbsent,
+           COALESCE(m.is_exempt, 0) as is_exempt,
+           COALESCE(m.is_exempt, 0) as isExempt,
+           m.remarks,
+           COALESCE(m.status, 'draft') as status,
+           COALESCE(m.status, 'draft') as markStatus,
+           m.updated_at as updated_at,
+           m.updated_at as updatedAt
+    FROM student_subject_enrollments sse
+    JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
+    JOIN students s ON sse.student_id = s.id
+    LEFT JOIN marks m ON m.student_id = s.id AND m.sheet_id = ?
+    WHERE sse.subject_id = ?
+      AND e.class_id = ?
+      AND e.status = 'enrolled'
+      AND sse.enrollment_status NOT IN ('dropped', 'transferred')
+    ORDER BY e.roll_number ASC, s.admission_no ASC
+  `).all(sheetId, subjectId, classId) as any[];
+
+  // Fallback / complement: if no participating students found (e.g. legacy sheets), query marks directly
+  if (!rosterMarks || rosterMarks.length === 0) {
+    rosterMarks = db.prepare(`
+      SELECT m.student_id, m.student_id as studentId,
+             s.admission_no, s.admission_no as admissionNo,
+             s.full_name, s.full_name as fullName,
+             m.score, m.max_score, m.max_score as maxScore,
+             m.assessment_status, m.assessment_status as assessmentStatus,
+             m.grade_letter, m.grade_letter as gradeLetter,
+             m.is_absent, m.is_absent as isAbsent,
+             m.is_exempt, m.is_exempt as isExempt,
+             m.remarks, m.status, m.status as markStatus,
+             m.updated_at, m.updated_at as updatedAt
+      FROM marks m
+      JOIN students s ON m.student_id = s.id
+      WHERE m.sheet_id = ?
+      ORDER BY m.student_id ASC
+    `).all(sheetId) as any[];
+  }
+
+  db.prepare(`
+    INSERT INTO marks_sheet_revisions (sheet_id, revision, status, saved_by_user_id, marks_payload_json, created_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `).run(sheetId, revision, status, userId, JSON.stringify(rosterMarks));
+}
+
 export interface MarkEntryInput {
   studentId: number;
   score?: number | null;
@@ -310,16 +376,22 @@ export function saveDraftMarks(params: {
       throw err;
     }
 
-    // 3. Permission check: Verified assigned subject teacher ONLY (P0-02 least privilege)
+    // 3. Permission check: Verified assigned subject teacher ONLY (P0-01, P0-02 least privilege)
     // Plain admins and review-only leadership CANNOT enter raw marks unless they are the assigned teacher.
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as any;
+    if (!activeUser || activeUser.is_active !== 1) {
+      const err = new Error('User account is deactivated or invalid.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'USER_DEACTIVATED';
+      throw err;
+    }
+
     const assignment = db.prepare(`
       SELECT teacher_id FROM teacher_assignments
       WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ? AND teacher_id = ?
     `).get(sheet.class_id, sheet.subject_id, sheet.academic_year_id, user.id);
 
-    const isAssignedTeacher = Boolean(assignment) || (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id && user.role === 'subject_teacher');
-
-    if (!isAssignedTeacher) {
+    if (!assignment) {
       const err = new Error('Access denied: Only the verified assigned subject teacher is authorized to enter or edit draft marks for this sheet.');
       (err as any).statusCode = 403;
       (err as any).code = 'UNASSIGNED_TEACHER';
@@ -366,12 +438,20 @@ export function saveDraftMarks(params: {
         throw err;
       }
 
-      // Check subject eligibility: Dropped or transferred students cannot receive marks
+      // Check subject eligibility: Student must have active positive subject enrollment (P0-02)
       const elig = isStudentEligibleForSubject(studentId, sheet.subject_id, sheet.academic_year_id);
-      if (elig.status === 'dropped' || elig.status === 'transferred') {
-        const err = new Error(`Student ID ${studentId} is not eligible for subject (status: '${elig.status}'). Dropped or transferred students cannot receive marks.`);
+      if (!elig.isEligibleForDraft) {
+        const err = new Error(`Student ID ${studentId} is not eligible for subject ID ${sheet.subject_id} (status: '${elig.status || 'not_enrolled'}'). Dropped, transferred, or non-enrolled students cannot receive marks.`);
         (err as any).statusCode = 400;
         (err as any).code = 'INELIGIBLE_SUBJECT_ENROLLMENT';
+        throw err;
+      }
+
+      // Validate remarks type (P1-04)
+      if (m.remarks !== null && m.remarks !== undefined && typeof m.remarks !== 'string') {
+        const err = new Error(`Invalid remarks for student ID ${studentId}: remarks must be a string or null.`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'INVALID_REMARKS_TYPE';
         throw err;
       }
 
@@ -494,11 +574,8 @@ export function saveDraftMarks(params: {
       );
     }
 
-    // 8. Record immutable snapshot in marks_sheet_revisions
-    db.prepare(`
-      INSERT INTO marks_sheet_revisions (sheet_id, revision, status, saved_by_user_id, marks_payload_json, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
-    `).run(sheetId, newRevision, sheet.status, user.id, JSON.stringify(validatedMarks));
+    // 8. Capture full immutable post-write sheet snapshot in marks_sheet_revisions (P1-03)
+    recordRevisionSnapshot(sheetId, newRevision, sheet.status, user.id, sheet.examination_id, sheet.class_id, sheet.subject_id);
 
     db.exec('COMMIT;');
     return {
@@ -541,15 +618,21 @@ export function submitMarksSheet(params: {
       throw err;
     }
 
-    // Permission check: Verified assigned subject teacher ONLY (P0-02 least privilege)
+    // Permission check: Verified assigned subject teacher ONLY (P0-01, P0-02 least privilege)
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as any;
+    if (!activeUser || activeUser.is_active !== 1) {
+      const err = new Error('User account is deactivated or invalid.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'USER_DEACTIVATED';
+      throw err;
+    }
+
     const assignment = db.prepare(`
       SELECT teacher_id FROM teacher_assignments
       WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ? AND teacher_id = ?
     `).get(sheet.class_id, sheet.subject_id, sheet.academic_year_id, user.id);
 
-    const isAssignedTeacher = Boolean(assignment) || (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id && user.role === 'subject_teacher');
-
-    if (!isAssignedTeacher) {
+    if (!assignment) {
       const err = new Error('Access denied: Only the verified assigned subject teacher can submit marks sheets for review.');
       (err as any).statusCode = 403;
       (err as any).code = 'UNASSIGNED_TEACHER';
@@ -638,6 +721,9 @@ export function submitMarksSheet(params: {
         action, actor_user_id, reason, ip_address, created_at
       ) VALUES (0, ?, ?, 0, ?, 'SUBMISSION', ?, ?, ?, datetime('now'))
     `).run(sheetId, sheet.examination_id, sheet.subject_id, user.id, notes || 'Sheet submitted for moderation', ipAddress);
+
+    // Capture full immutable post-write sheet snapshot in marks_sheet_revisions (P1-03)
+    recordRevisionSnapshot(sheetId, newRevision, 'submitted', user.id, sheet.examination_id, sheet.class_id, sheet.subject_id);
 
     db.exec('COMMIT;');
     return {
@@ -744,6 +830,9 @@ export function reviewMarksSheet(params: {
       user.id, targetStatus, remarks?.trim() || null, ipAddress
     );
 
+    // Capture full immutable post-write sheet snapshot in marks_sheet_revisions (P1-03)
+    recordRevisionSnapshot(sheetId, newRevision, targetStatus, user.id, sheet.examination_id, sheet.class_id, sheet.subject_id);
+
     db.exec('COMMIT;');
     return {
       success: true,
@@ -830,6 +919,9 @@ export function approveMarksSheet(params: {
         action, actor_user_id, previous_status, new_status, reason, ip_address, created_at
       ) VALUES (0, ?, ?, 0, ?, 'APPROVAL', ?, 'reviewed', 'approved', ?, ?, datetime('now'))
     `).run(sheetId, sheet.examination_id, sheet.subject_id, user.id, remarks?.trim() || 'Final approval granted', ipAddress);
+
+    // Capture full immutable post-write sheet snapshot in marks_sheet_revisions (P1-03)
+    recordRevisionSnapshot(sheetId, newRevision, 'approved', user.id, sheet.examination_id, sheet.class_id, sheet.subject_id);
 
     db.exec('COMMIT;');
     return {
@@ -940,4 +1032,382 @@ export function getMarksSheetRevisionSnapshot(sheetId: number, revision: number,
     ...rev,
     marks_payload: payload
   };
+}
+
+/**
+ * Atomically saves or submits a marks sheet via the legacy API endpoint.
+ * Enforces atomic creation + mark save (rollback cleans up new sheets on error),
+ * active teacher assignment validation, positive student eligibility, and full revision snapshots.
+ */
+export function saveOrSubmitLegacyMarksSheet(params: {
+  examId: number;
+  classId: number;
+  subjectId: number;
+  marks: MarkEntryInput[];
+  targetStatus: 'draft' | 'submitted';
+  baseRevision?: number;
+  user: AuthUser;
+  ipAddress?: string;
+}): {
+  success: boolean;
+  sheetId: number;
+  revision: number;
+  status: string;
+  message: string;
+} {
+  const { examId, classId, subjectId, marks, targetStatus, baseRevision, user, ipAddress = '127.0.0.1' } = params;
+
+  ensureRevisionsTable();
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    // 1. User verification
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as any;
+    if (!activeUser || activeUser.is_active !== 1) {
+      const err = new Error('User account is deactivated or invalid.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'USER_DEACTIVATED';
+      throw err;
+    }
+
+    // 2. Class and Exam verification
+    const classRow = db.prepare('SELECT id, academic_year_id FROM classes WHERE id = ?').get(classId) as any;
+    const examRow = db.prepare('SELECT id, academic_year_id FROM examinations WHERE id = ?').get(examId) as any;
+
+    if (!classRow || !examRow) {
+      const err = new Error('Class or Examination not found.');
+      (err as any).statusCode = 404;
+      throw err;
+    }
+
+    if (!classRow.academic_year_id || !examRow.academic_year_id) {
+      const err = new Error('Missing academic year for class or examination.');
+      (err as any).statusCode = 400;
+      (err as any).code = 'MISSING_ACADEMIC_YEAR';
+      throw err;
+    }
+
+    if (classRow.academic_year_id !== examRow.academic_year_id) {
+      const err = new Error(`Academic year mismatch: examination year (${examRow.academic_year_id}) does not match class year (${classRow.academic_year_id}).`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'ACADEMIC_YEAR_MISMATCH';
+      throw err;
+    }
+
+    const yearId = classRow.academic_year_id;
+
+    // 3. Subject offering verification
+    const classSubject = db.prepare('SELECT id FROM class_subjects WHERE class_id = ? AND subject_id = ?').get(classId, subjectId);
+    if (!classSubject) {
+      const err = new Error(`Subject ID ${subjectId} is not offered for class ID ${classId}.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'SUBJECT_NOT_OFFERED';
+      throw err;
+    }
+
+    // 4. Strict active teacher assignment check (P0-01) - NO fallback to sheet.teacher_id
+    const assignment = db.prepare(`
+      SELECT teacher_id FROM teacher_assignments
+      WHERE class_id = ? AND subject_id = ? AND assignment_type = 'subject_teacher' AND academic_year_id = ? AND teacher_id = ?
+    `).get(classId, subjectId, yearId, user.id);
+
+    if (!assignment) {
+      const err = new Error('Access denied: Only the verified assigned subject teacher is authorized to enter or submit marks.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'UNASSIGNED_TEACHER';
+      throw err;
+    }
+
+    // 5. Existing sheet or transactional creation
+    let sheet = db.prepare('SELECT * FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(examId, classId, subjectId) as any;
+
+    let sheetId: number;
+    let effectiveBaseRev: number;
+    let newRevision: number;
+
+    if (!sheet) {
+      // Create new sheet container INSIDE this transaction
+      const insertRes = db.prepare(`
+        INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, 'draft', datetime('now'), datetime('now'))
+      `).run(examId, classId, subjectId, yearId, user.id);
+
+      sheetId = Number(insertRes.lastInsertRowid);
+      effectiveBaseRev = 1;
+      newRevision = 2;
+    } else {
+      sheetId = sheet.id;
+
+      if (!['draft', 'returned'].includes(sheet.status)) {
+        const err = new Error(`Sheet is locked in status '${sheet.status}' and cannot be overwritten via legacy marks entry.`);
+        (err as any).statusCode = 403;
+        (err as any).code = 'SHEET_LOCKED';
+        throw err;
+      }
+
+      if (baseRevision === undefined || baseRevision === null) {
+        const err = new Error('baseRevision is required when updating an existing marks sheet.');
+        (err as any).statusCode = 400;
+        (err as any).code = 'MISSING_BASE_REVISION';
+        throw err;
+      }
+
+      effectiveBaseRev = Number(baseRevision);
+      if (sheet.revision !== effectiveBaseRev) {
+        const err = new Error(`Concurrent modification detected. Sheet revision is ${sheet.revision}, but your request supplied baseRevision ${effectiveBaseRev}. Please reload the latest sheet before saving.`);
+        (err as any).statusCode = 409;
+        (err as any).code = 'STALE_REVISION';
+        (err as any).currentRevision = sheet.revision;
+        (err as any).baseRevision = effectiveBaseRev;
+        throw err;
+      }
+
+      newRevision = sheet.revision + 1;
+    }
+
+    // 6. Pre-validate student membership, positive subject eligibility, remarks type, and scores
+    const validatedMarks: Array<{
+      studentId: number;
+      score: number | null;
+      maxScore: number;
+      assessmentStatus: string;
+      gradeLetter: string;
+      remarks?: string;
+    }> = [];
+
+    for (const m of marks) {
+      const studentId = Number(m.studentId);
+      if (!studentId || isNaN(studentId)) {
+        const err = new Error('Each mark must contain a valid student_id.');
+        (err as any).statusCode = 400;
+        (err as any).code = 'INVALID_STUDENT_ID';
+        throw err;
+      }
+
+      // Check student enrolled in class
+      const enrollment = db.prepare(`
+        SELECT id FROM enrollments WHERE student_id = ? AND class_id = ? AND academic_year_id = ? AND status = 'enrolled'
+      `).get(studentId, classId, yearId);
+
+      if (!enrollment) {
+        const err = new Error(`Student ID ${studentId} is not actively enrolled in class ${classId}.`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'CROSS_CLASS_STUDENT';
+        throw err;
+      }
+
+      // Check positive subject eligibility (P0-02)
+      const elig = isStudentEligibleForSubject(studentId, subjectId, yearId);
+      if (!elig.isEligibleForDraft) {
+        const err = new Error(`Student ID ${studentId} is not eligible for subject ID ${subjectId} (status: '${elig.status || 'not_enrolled'}'). Dropped, transferred, or non-enrolled students cannot receive marks.`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'INELIGIBLE_SUBJECT_ENROLLMENT';
+        throw err;
+      }
+
+      // Validate remarks type (P1-04)
+      if (m.remarks !== null && m.remarks !== undefined && typeof m.remarks !== 'string') {
+        const err = new Error(`Invalid remarks for student ID ${studentId}: remarks must be a string or null.`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'INVALID_REMARKS_TYPE';
+        throw err;
+      }
+
+      // Score precision, bounds, and absent/exempt validation
+      let assessmentStatus = m.assessmentStatus || 'PRESENT';
+      let score: number | null = null;
+      const maxScore = m.maxScore !== undefined && m.maxScore !== null ? Number(m.maxScore) : 100.0;
+
+      if (['ABSENT', 'MEDICAL', 'EXEMPT', 'NOT_ASSESSED'].includes(assessmentStatus)) {
+        if (m.score !== null && m.score !== undefined && m.score !== ('' as any)) {
+          const err = new Error(`Student ID ${studentId} is marked '${assessmentStatus}' but has a numeric score provided (${m.score}). Numeric scores are strictly forbidden when non-present.`);
+          (err as any).statusCode = 400;
+          throw err;
+        }
+        score = null;
+      } else if (m.score === null || m.score === undefined || m.score === ('' as any)) {
+        assessmentStatus = 'NOT_ASSESSED';
+        score = null;
+      } else {
+        const numScore = Number(m.score);
+        if (isNaN(numScore)) {
+          const err = new Error(`Score '${m.score}' for student ID ${studentId} is not a valid number.`);
+          (err as any).statusCode = 400;
+          (err as any).code = 'INVALID_SCORE';
+          throw err;
+        }
+        if (numScore < 0.0 || numScore > maxScore) {
+          const err = new Error(`Score ${numScore} for student ID ${studentId} is out of bounds [0, ${maxScore}].`);
+          (err as any).statusCode = 400;
+          (err as any).code = 'SCORE_OUT_OF_BOUNDS';
+          throw err;
+        }
+        if (Math.round(numScore * 10) / 10 !== numScore) {
+          const err = new Error(`Score ${numScore} for student ID ${studentId} exceeds allowed 1-decimal precision; exceeds single-decimal precision. Silent rounding or truncation is strictly prohibited.`);
+          (err as any).statusCode = 400;
+          (err as any).code = 'INVALID_SCORE_PRECISION';
+          throw err;
+        }
+        assessmentStatus = 'PRESENT';
+        score = numScore;
+      }
+
+      const gradeLetter = calcGradeLetter(score, assessmentStatus, maxScore);
+      validatedMarks.push({
+        studentId,
+        score,
+        maxScore,
+        assessmentStatus,
+        gradeLetter,
+        remarks: m.remarks
+      });
+    }
+
+    // 7. Pre-validate submission prerequisites if targetStatus === 'submitted'
+    if (targetStatus === 'submitted') {
+      const participatingStudents = db.prepare(`
+        SELECT s.id, s.admission_no, s.full_name, sse.enrollment_status
+        FROM student_subject_enrollments sse
+        JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
+        JOIN students s ON sse.student_id = s.id
+        WHERE sse.subject_id = ?
+          AND e.class_id = ?
+          AND e.status = 'enrolled'
+          AND sse.enrollment_status NOT IN ('dropped', 'transferred')
+        ORDER BY e.roll_number ASC, s.admission_no ASC
+      `).all(subjectId, classId) as any[];
+
+      if (participatingStudents.length === 0) {
+        const err = new Error('Cannot submit marks sheet: No active participating students enrolled for this subject in the class.');
+        (err as any).statusCode = 400;
+        (err as any).code = 'EMPTY_ROSTER';
+        throw err;
+      }
+
+      const marksByStudent = new Map<number, any>();
+      for (const vm of validatedMarks) {
+        marksByStudent.set(vm.studentId, vm);
+      }
+
+      for (const stu of participatingStudents) {
+        if (stu.enrollment_status !== 'confirmed') {
+          const err = new Error(`Cannot submit marks sheet: Participating student ${stu.full_name} (${stu.admission_no}) has unconfirmed subject enrollment ('${stu.enrollment_status}'). Official submission requires all participating students to have officially confirmed subject enrollment by academic leadership.`);
+          (err as any).statusCode = 422;
+          (err as any).code = 'UNCONFIRMED_ENROLLMENT';
+          throw err;
+        }
+
+        const incomingMark = marksByStudent.get(stu.id);
+        let isAssessed = false;
+        if (incomingMark && incomingMark.assessmentStatus !== 'NOT_ASSESSED') {
+          isAssessed = true;
+        } else if (sheet) {
+          const existingMark = db.prepare(`
+            SELECT assessment_status FROM marks WHERE examination_id = ? AND subject_id = ? AND student_id = ?
+          `).get(examId, subjectId, stu.id) as any;
+          if (existingMark && existingMark.assessment_status !== 'NOT_ASSESSED') {
+            isAssessed = true;
+          }
+        }
+
+        if (!isAssessed) {
+          const err = new Error(`Cannot submit marks sheet: All participating students must be assessed. Student ${stu.full_name} (${stu.admission_no}) is currently unassessed.`);
+          (err as any).statusCode = 400;
+          (err as any).code = 'UNASSESSED_STUDENT';
+          throw err;
+        }
+      }
+    }
+
+    // 8. Conditional CAS UPDATE on marks_sheets
+    const sheetUpdateRes = db.prepare(`
+      UPDATE marks_sheets SET
+        revision = ?,
+        status = ?,
+        submitted_at = ${targetStatus === 'submitted' ? "datetime('now')" : 'submitted_at'},
+        updated_at = datetime('now')
+      WHERE id = ? AND revision = ?
+    `).run(newRevision, targetStatus, sheetId, effectiveBaseRev);
+
+    if (sheetUpdateRes.changes !== 1) {
+      const err = new Error('Concurrent modification detected during sheet revision update.');
+      (err as any).statusCode = 409;
+      (err as any).code = 'STALE_REVISION';
+      throw err;
+    }
+
+    // 9. Upsert marks and record audit
+    const upsertStmt = db.prepare(`
+      INSERT INTO marks (
+        sheet_id, examination_id, class_id, subject_id, student_id,
+        max_score, score, assessment_status, grade_letter, status, remarks, entered_by_user_id, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(examination_id, subject_id, student_id) DO UPDATE SET
+        sheet_id = excluded.sheet_id,
+        max_score = excluded.max_score,
+        score = excluded.score,
+        assessment_status = excluded.assessment_status,
+        grade_letter = excluded.grade_letter,
+        status = excluded.status,
+        remarks = excluded.remarks,
+        entered_by_user_id = excluded.entered_by_user_id,
+        updated_at = datetime('now')
+    `);
+
+    const auditStmt = db.prepare(`
+      INSERT INTO marks_audit_history (
+        mark_id, sheet_id, examination_id, student_id, subject_id,
+        action, actor_user_id, previous_score, new_score, previous_status, new_status, ip_address, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+
+    for (const vm of validatedMarks) {
+      const prevMark = db.prepare(`
+        SELECT id, score, assessment_status FROM marks
+        WHERE examination_id = ? AND subject_id = ? AND student_id = ?
+      `).get(examId, subjectId, vm.studentId) as any;
+
+      upsertStmt.run(
+        sheetId, examId, classId, subjectId, vm.studentId,
+        vm.maxScore, vm.score, vm.assessmentStatus, vm.gradeLetter, targetStatus, vm.remarks || null, user.id
+      );
+
+      const markRow = db.prepare(`
+        SELECT id FROM marks WHERE examination_id = ? AND subject_id = ? AND student_id = ?
+      `).get(examId, subjectId, vm.studentId) as any;
+
+      auditStmt.run(
+        markRow.id, sheetId, examId, vm.studentId, subjectId,
+        prevMark ? 'DRAFT_SAVE' : 'INITIAL_ENTRY',
+        user.id,
+        prevMark?.score ?? null, vm.score,
+        prevMark?.assessment_status ?? null, vm.assessmentStatus,
+        ipAddress
+      );
+    }
+
+    if (targetStatus === 'submitted') {
+      db.prepare("UPDATE marks SET status = 'submitted', updated_at = datetime('now') WHERE sheet_id = ?").run(sheetId);
+      db.prepare(`
+        INSERT INTO marks_audit_history (
+          mark_id, sheet_id, examination_id, student_id, subject_id,
+          action, actor_user_id, reason, ip_address, created_at
+        ) VALUES (0, ?, ?, 0, ?, 'SUBMISSION', ?, 'Sheet submitted for moderation', ?, datetime('now'))
+      `).run(sheetId, examId, subjectId, user.id, ipAddress);
+    }
+
+    // 10. Record full snapshot of all marks on the sheet in marks_sheet_revisions (P1-03)
+    recordRevisionSnapshot(sheetId, newRevision, targetStatus, user.id, examId, classId, subjectId);
+
+    db.exec('COMMIT;');
+    return {
+      success: true,
+      message: `Marks sheet ${targetStatus === 'submitted' ? 'submitted' : 'saved'} successfully for ${marks.length} students.`,
+      sheetId,
+      revision: newRevision,
+      status: targetStatus
+    };
+  } catch (err) {
+    db.exec('ROLLBACK;');
+    throw err;
+  }
 }

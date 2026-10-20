@@ -258,6 +258,33 @@ export function setupIsolatedTestDb(): TestFixtureData {
     VALUES (?, ?, ?, ?, 'enrolled')
   `).run(stuBId, classBId, yearId, 2);
 
+  // Subject Enrollments (PR-005 synthetic test compatibility)
+  testDb.exec(`
+    CREATE TABLE IF NOT EXISTS student_subject_enrollments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+      enrollment_status TEXT NOT NULL DEFAULT 'confirmed' CHECK(enrollment_status IN (
+        'confirmed',
+        'provisional_unverified',
+        'dropped',
+        'transferred'
+      )),
+      enrollment_category TEXT NOT NULL DEFAULT 'core_compulsory',
+      created_at TEXT DEFAULT (datetime('now')),
+      verified_by_user_id INTEGER REFERENCES users(id),
+      verified_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(student_id, subject_id, academic_year_id)
+    );
+  `);
+
+  testDb.prepare(`
+    INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at)
+    VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'))
+  `).run(stuAId, subjectId, classAId, yearId, adminId);
+
   testDb.prepare(`
     INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published)
     VALUES ('Term 1 Test Exam', 1, ?, '2026-03-01', '2026-03-15', 1)
