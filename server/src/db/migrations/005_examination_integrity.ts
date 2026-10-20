@@ -232,6 +232,17 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
         updated_at TEXT DEFAULT (datetime('now')),
         UNIQUE(examination_id, class_id, subject_id)
       );
+
+      CREATE TABLE IF NOT EXISTS marks_sheet_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sheet_id INTEGER NOT NULL REFERENCES marks_sheets(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        status TEXT NOT NULL,
+        saved_by_user_id INTEGER REFERENCES users(id),
+        marks_payload_json TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(sheet_id, revision)
+      );
     `);
 
     // Step G: Create quarantined_legacy_marks table

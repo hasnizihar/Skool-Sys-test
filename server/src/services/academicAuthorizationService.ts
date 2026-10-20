@@ -218,11 +218,14 @@ export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed:
     };
   }
 
-  // 2. Anti-Self-Review: Entrant / Modifier Check
+  // 2. Anti-Self-Review: Entrant / Modifier Check (Lifetime Author History)
   const entrantCheck = db.prepare(`
-    SELECT COUNT(*) as cnt FROM marks
-    WHERE sheet_id = ? AND entered_by_user_id = ?
-  `).get(sheetId, user.id) as { cnt: number };
+    SELECT COUNT(*) as cnt FROM (
+      SELECT entered_by_user_id as user_id FROM marks WHERE sheet_id = ? AND entered_by_user_id = ?
+      UNION
+      SELECT actor_user_id as user_id FROM marks_audit_history WHERE sheet_id = ? AND actor_user_id = ? AND action IN ('INITIAL_ENTRY', 'DRAFT_SAVE', 'SUBMISSION')
+    )
+  `).get(sheetId, user.id, sheetId, user.id) as { cnt: number };
 
   if (entrantCheck.cnt > 0) {
     return {
@@ -332,11 +335,14 @@ export function canApproveMarksSheet(user: AuthUser, sheetId: number): { allowed
     };
   }
 
-  // 2. Anti-Self-Approval: Entrant / Modifier Check
+  // 2. Anti-Self-Approval: Entrant / Modifier Check (Lifetime Author History)
   const entrantCheck = db.prepare(`
-    SELECT COUNT(*) as cnt FROM marks
-    WHERE sheet_id = ? AND entered_by_user_id = ?
-  `).get(sheetId, user.id) as { cnt: number };
+    SELECT COUNT(*) as cnt FROM (
+      SELECT entered_by_user_id as user_id FROM marks WHERE sheet_id = ? AND entered_by_user_id = ?
+      UNION
+      SELECT actor_user_id as user_id FROM marks_audit_history WHERE sheet_id = ? AND actor_user_id = ? AND action IN ('INITIAL_ENTRY', 'DRAFT_SAVE', 'SUBMISSION')
+    )
+  `).get(sheetId, user.id, sheetId, user.id) as { cnt: number };
 
   if (entrantCheck.cnt > 0) {
     return {

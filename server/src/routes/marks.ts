@@ -2,6 +2,16 @@ import { Router } from 'express';
 import { db } from '../db/database.js';
 import { requireAuth, getUserAssignments, canManageMarks, canViewMarksSheet, canAccessClass } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
+import { isStudentEligibleForSubject } from '../services/studentEnrollmentService.js';
+import {
+  ensureMarksSheet,
+  getMarksSheetDetails,
+  saveDraftMarks,
+  submitMarksSheet,
+  reviewMarksSheet,
+  approveMarksSheet,
+  getMarksSheetHistory
+} from '../services/marksWorkflowService.js';
 
 const router = Router();
 
@@ -35,17 +45,32 @@ router.get('/sheet', requireAuth, (req, res) => {
     return;
   }
 
-  const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(eId);
-  const classInfo = db.prepare('SELECT * FROM classes WHERE id = ?').get(cId);
-  const subject = db.prepare('SELECT * FROM subjects WHERE id = ?').get(sId);
+  const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(eId) as any;
+  const classInfo = db.prepare('SELECT * FROM classes WHERE id = ?').get(cId) as any;
+  const subject = db.prepare('SELECT * FROM subjects WHERE id = ?').get(sId) as any;
 
   if (!exam || !classInfo || !subject) {
     res.status(404).json({ error: 'Exam, Class, or Subject not found.' });
     return;
   }
 
+  // Unpublished examination results confidentiality
+  if (exam.is_published !== 1 && exam.status !== 'published') {
+    if (!canViewMarksSheet(req.user!, cId, sId) && req.user!.role !== 'admin') {
+      res.status(403).json({ error: 'Access denied. Unpublished examination results are confidential.' });
+      return;
+    }
+  }
+
+  // Fetch sheet container metadata
+  const sheet = db.prepare(`
+    SELECT * FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+  `).get(eId, cId, sId) as any;
+
+  const yearId = classInfo.academic_year_id || exam.academic_year_id;
+
   // Enrolled students with current marks
-  const roster = db.prepare(`
+  const rawRoster = db.prepare(`
     SELECT s.id as student_id, s.admission_no, s.full_name, s.calling_name,
            e.roll_number,
            m.id as mark_id, m.score, m.is_absent, m.is_exempt, m.max_score, m.grade_letter, m.status as mark_status, m.updated_at
@@ -55,6 +80,18 @@ router.get('/sheet', requireAuth, (req, res) => {
     WHERE e.class_id = ? AND e.status = 'enrolled'
     ORDER BY e.roll_number ASC, s.admission_no ASC
   `).all(eId, sId, cId, cId) as any[];
+
+  // Enhance roster with student-specific subject eligibility tags
+  const roster = rawRoster.map(r => {
+    const elig = isStudentEligibleForSubject(r.student_id, sId, yearId);
+    return {
+      ...r,
+      is_eligible_for_draft: elig.isEligibleForDraft,
+      is_officially_confirmed: elig.isOfficiallyConfirmed,
+      enrollment_status: elig.status || 'not_enrolled',
+      enrollment_category: elig.category || null
+    };
+  });
 
   // Statistics
   let validScores: number[] = [];
@@ -85,6 +122,7 @@ router.get('/sheet', requireAuth, (req, res) => {
     exam,
     class: classInfo,
     subject,
+    sheet: sheet || null,
     roster,
     stats: {
       totalStudents: roster.length,
@@ -111,7 +149,7 @@ router.post('/sheet', requireAuth, (req, res) => {
   }
 
   // Security gate: Client cannot inject privileged workflow statuses via legacy endpoint
-  const targetStatus = status || 'submitted';
+  const targetStatus = status || 'draft';
   if (!['draft', 'submitted'].includes(targetStatus)) {
     res.status(400).json({
       error: `Invalid status '${targetStatus}': legacy marks entry may only set 'draft' or 'submitted'. Privileged workflow statuses require formal moderation.`
@@ -152,13 +190,27 @@ router.post('/sheet', requireAuth, (req, res) => {
   const yearId = classRow.academic_year_id;
 
   // Check if sheet exists and whether it is locked against direct legacy writes
-  let sheet = db.prepare('SELECT id, status FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(eId, cId, sId) as { id: number; status: string } | undefined;
+  let sheet = db.prepare('SELECT id, status, revision FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(eId, cId, sId) as { id: number; status: string; revision: number } | undefined;
 
-  if (sheet && !['draft', 'submitted'].includes(sheet.status)) {
+  if (sheet && sheet.status !== 'draft') {
     res.status(403).json({
       error: `Sheet is locked in status '${sheet.status}' and cannot be overwritten via legacy marks entry.`
     });
     return;
+  }
+
+  // CAS Concurrency check if baseRevision is provided
+  if (req.body.baseRevision !== undefined && sheet) {
+    const baseRev = Number(req.body.baseRevision);
+    if (sheet.revision !== baseRev) {
+      res.status(409).json({
+        error: `Concurrent modification detected. Sheet revision is ${sheet.revision}, but baseRevision was ${baseRev}. Please reload the latest sheet before saving.`,
+        code: 'STALE_REVISION',
+        currentRevision: sheet.revision,
+        baseRevision: baseRev
+      });
+      return;
+    }
   }
 
   // Pre-validate all marks inputs to prevent partial writes and avoid silent clamping or truncation
@@ -232,17 +284,34 @@ router.post('/sheet', requireAuth, (req, res) => {
     });
   }
 
+  // Gate 3 guard: If targetStatus === 'submitted', verify official confirmation of all students
+  if (targetStatus === 'submitted') {
+    for (const m of marks) {
+      const studentId = Number(m.student_id);
+      const elig = isStudentEligibleForSubject(studentId, sId, yearId);
+      if (!elig.isOfficiallyConfirmed) {
+        res.status(422).json({
+          error: `Cannot submit marks sheet: student ID ${studentId} has unconfirmed subject enrollment ('${elig.status}'). Official submission requires all students to have officially confirmed subject enrollment by academic leadership.`,
+          code: 'UNCONFIRMED_ENROLLMENT'
+        });
+        return;
+      }
+    }
+  }
+
   // Atomically write sheet and marks
   db.exec('BEGIN IMMEDIATE TRANSACTION;');
   try {
+    const nextRevision = sheet ? sheet.revision + 1 : 1;
     if (!sheet) {
       const result = db.prepare(`
-        INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, status)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+        VALUES (?, ?, ?, ?, ?, 1, ?)
       `).run(eId, cId, sId, yearId, user.id, targetStatus);
-      sheet = { id: Number(result.lastInsertRowid), status: targetStatus };
+      sheet = { id: Number(result.lastInsertRowid), status: targetStatus, revision: 1 };
     } else {
-      db.prepare("UPDATE marks_sheets SET status = ?, updated_at = datetime('now') WHERE id = ?").run(targetStatus, sheet.id);
+      db.prepare("UPDATE marks_sheets SET status = ?, revision = ?, updated_at = datetime('now') WHERE id = ?").run(targetStatus, nextRevision, sheet.id);
+      sheet.revision = nextRevision;
     }
 
     const upsert = db.prepare(`
@@ -258,7 +327,19 @@ router.post('/sheet', requireAuth, (req, res) => {
         updated_at = datetime('now')
     `);
 
+    const auditStmt = db.prepare(`
+      INSERT INTO marks_audit_history (
+        mark_id, sheet_id, examination_id, student_id, subject_id,
+        action, actor_user_id, previous_score, new_score, previous_status, new_status, ip_address, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+
     for (const vm of validatedMarks) {
+      const prevMark = db.prepare(`
+        SELECT id, score, assessment_status FROM marks
+        WHERE examination_id = ? AND subject_id = ? AND student_id = ?
+      `).get(eId, sId, vm.studentId) as any;
+
       upsert.run(
         sheet.id,
         eId, cId, sId, vm.studentId,
@@ -267,6 +348,25 @@ router.post('/sheet', requireAuth, (req, res) => {
         vm.gradeLetter,
         targetStatus,
         user.id
+      );
+
+      const markRow = db.prepare(`
+        SELECT id FROM marks WHERE examination_id = ? AND subject_id = ? AND student_id = ?
+      `).get(eId, sId, vm.studentId) as any;
+
+      auditStmt.run(
+        markRow?.id || 0,
+        sheet.id,
+        eId,
+        vm.studentId,
+        sId,
+        targetStatus === 'submitted' ? 'SUBMISSION' : 'DRAFT_SAVE',
+        user.id,
+        prevMark?.score ?? null,
+        vm.score,
+        prevMark?.assessment_status ?? null,
+        vm.assessmentStatus,
+        req.ip || '127.0.0.1'
       );
     }
 
@@ -282,7 +382,10 @@ router.post('/sheet', requireAuth, (req, res) => {
 
   res.json({
     success: true,
-    message: `Marks sheet saved successfully for ${marks.length} students.`
+    message: `Marks sheet saved successfully for ${marks.length} students.`,
+    sheetId: sheet.id,
+    revision: sheet.revision,
+    status: targetStatus
   });
 });
 
@@ -317,6 +420,14 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
   if (!exam) {
     res.status(404).json({ error: 'Examination not found.' });
     return;
+  }
+
+  // Unpublished examination results confidentiality
+  if (exam.is_published !== 1 && exam.status !== 'published') {
+    if (req.user!.role !== 'admin' && !canAccessClass(req.user!, student.class_id)) {
+      res.status(403).json({ error: 'Access denied. Unpublished examination results are confidential.' });
+      return;
+    }
   }
 
   // Get marks for all subjects assigned to this class
@@ -394,6 +505,116 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
         : 100
     }
   });
+});
+
+// PR-005 Marks Workflow: Retrieve Sheet Details & Roster
+router.get('/sheets/:id', requireAuth, (req, res) => {
+  try {
+    const sheetId = Number(req.params.id);
+    if (!sheetId || isNaN(sheetId)) {
+      res.status(400).json({ error: 'Valid marks sheet ID is required.' });
+      return;
+    }
+    const data = getMarksSheetDetails(sheetId, req.user!);
+    res.json(data);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Marks Workflow: Atomic Draft Save with baseRevision CAS Concurrency
+router.post('/sheets/:id/save-draft', requireAuth, (req, res) => {
+  try {
+    const sheetId = Number(req.params.id);
+    const { baseRevision, marks } = req.body;
+    const result = saveDraftMarks({
+      sheetId,
+      baseRevision: Number(baseRevision),
+      marks,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({
+      error: err.message,
+      code: err.code,
+      currentRevision: err.currentRevision,
+      baseRevision: err.baseRevision
+    });
+  }
+});
+
+// PR-005 Marks Workflow: Submit Marks Sheet (Enforces Official Confirmation)
+router.post('/sheets/:id/submit', requireAuth, (req, res) => {
+  try {
+    const sheetId = Number(req.params.id);
+    const { baseRevision, notes } = req.body;
+    const result = submitMarksSheet({
+      sheetId,
+      baseRevision: Number(baseRevision),
+      notes,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Marks Workflow: Review / Endorse or Return Sheet (Enforces SoD Anti-Self-Review)
+router.post('/sheets/:id/review', requireAuth, (req, res) => {
+  try {
+    const sheetId = Number(req.params.id);
+    const { baseRevision, decision, remarks } = req.body;
+    const result = reviewMarksSheet({
+      sheetId,
+      baseRevision: Number(baseRevision),
+      decision,
+      remarks,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Marks Workflow: Approve Sheet (Enforces Independent Approver SoD)
+router.post('/sheets/:id/approve', requireAuth, (req, res) => {
+  try {
+    const sheetId = Number(req.params.id);
+    const { baseRevision, remarks } = req.body;
+    const result = approveMarksSheet({
+      sheetId,
+      baseRevision: Number(baseRevision),
+      remarks,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Marks Workflow: Audit History & Lifetime Revisions
+router.get('/sheets/:id/history', requireAuth, (req, res) => {
+  try {
+    const sheetId = Number(req.params.id);
+    const history = getMarksSheetHistory(sheetId, req.user!);
+    res.json(history);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
 });
 
 export default router;
