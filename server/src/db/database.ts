@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { runMigration004 } from './migrations/004_attendance_integrity.js';
 import { runMigration005 } from './migrations/005_examination_integrity.js';
+import { runMigration006 } from './migrations/006_examination_publication_policy.js';
 import { createSafeDatabaseBackup, generateTimestampedBackupPath } from './backupUtils.js';
 
 export function getDbPath(): string {
@@ -317,4 +318,46 @@ export function initDatabase() {
       throw new Error(`Migration 005 failed: ${migErr.message}. Server startup halted.`);
     }
   }
+
+  // Safe migration 006: Examination publication governance, versioned policies, and post-publication corrections
+  const vRow6 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
+  const ver6 = Number(vRow6?.user_version || 0);
+
+  const pubTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'examination_publications';"
+  ).get() as { cnt: number };
+  const hasPubTable = Number(pubTableCheck?.cnt || 0) > 0;
+
+  const needsMigration006 = ver6 < 6 || !hasPubTable;
+
+  if (needsMigration006) {
+    let backupPath: string | null = null;
+    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
+      try {
+        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
+        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
+        createSafeDatabaseBackup(db, backupPath);
+        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 006!');
+        console.error(backupErr.message);
+        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
+      }
+    }
+
+    try {
+      const result = runMigration006(db);
+      if (result.applied) {
+        console.log(`[Database Migration] Migration 006 applied successfully (Schema V${result.version}).`);
+      }
+    } catch (migErr: any) {
+      console.error('\n❌ FATAL: Migration 006 failed during server startup!');
+      console.error(migErr.message);
+      if (backupPath) {
+        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
+      }
+      throw new Error(`Migration 006 failed: ${migErr.message}. Server startup halted.`);
+    }
+  }
 }
+

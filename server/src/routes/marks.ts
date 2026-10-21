@@ -17,6 +17,14 @@ import {
   MarkEntryInput,
   saveOrSubmitLegacyMarksSheet
 } from '../services/marksWorkflowService.js';
+import { publishExamination } from '../services/examinationPublicationService.js';
+import { requestMarkCorrection, reviewMarkCorrection } from '../services/marksCorrectionService.js';
+import {
+  createAssessmentPolicyProfile,
+  approveAssessmentPolicyProfile,
+  getAssessmentPolicyProfile,
+  calculateClassResults
+} from '../services/assessmentPolicyService.js';
 
 const router = Router();
 
@@ -320,6 +328,50 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
     ? Math.round(((attendance.present_days + attendance.late_days) / attendance.total_school_days) * 100)
     : null;
 
+  // Gate 4: Official Rank & Post-Publication Corrections Provenance
+  let officialRank: number | null = null;
+  let policyMetadata: any = null;
+  let approvedCorrections: any[] = [];
+  let isReissued = false;
+
+  if (isPublished) {
+    if (exam.assessment_policy_id) {
+      try {
+        const pol = getAssessmentPolicyProfile(exam.assessment_policy_id);
+        policyMetadata = {
+          id: pol.id,
+          policy_code: pol.policy_code,
+          title: pol.title,
+          version: pol.version,
+          is_approved_by_school: pol.is_approved_by_school
+        };
+      } catch {}
+    }
+
+    try {
+      const classCalc = calculateClassResults(examId, student.class_id, policyMetadata);
+      const stuResult = classCalc.students.find(s => s.studentId === studentId);
+      if (stuResult && stuResult.rank !== null && stuResult.rank !== undefined) {
+        officialRank = stuResult.rank;
+      }
+    } catch {}
+
+    approvedCorrections = db.prepare(`
+      SELECT mc.id, mc.subject_id, s.name as subject_name, s.code as subject_code,
+             mc.expected_previous_score, mc.requested_score as corrected_score,
+             mc.expected_previous_status, mc.requested_status as corrected_status,
+             mc.correction_category, mc.detailed_justification, mc.reviewed_at,
+             u.full_name as approved_by_name
+      FROM marks_corrections mc
+      JOIN subjects s ON mc.subject_id = s.id
+      LEFT JOIN users u ON mc.reviewed_by_user_id = u.id
+      WHERE mc.examination_id = ? AND mc.student_id = ? AND mc.status = 'approved'
+      ORDER BY mc.id ASC
+    `).all(examId, studentId) as any[];
+
+    isReissued = approvedCorrections.length > 0;
+  }
+
   res.json({
     student,
     exam,
@@ -328,8 +380,8 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       totalScore,
       gradedSubjectCount: gradedCount,
       average,
-      rank: null,
-      classRankNotice: 'Official class rank calculation is deferred to Gate 4 publication governance.'
+      rank: isPublished ? officialRank : null,
+      classRankNotice: isPublished ? (officialRank ? 'Official Class Rank' : null) : 'Official class rank calculation is deferred to Gate 4 publication governance.'
     },
     attendance: {
       totalSchoolDays: attendance?.total_school_days || 0,
@@ -339,6 +391,7 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       attendancePercentage,
       status: hasAttendanceRecords ? 'Recorded' : 'Not Recorded'
     },
+    is_published: isPublished,
     is_provisional: !isPublished,
     is_provisional_preview: !isPublished,
     provisional_notice: !isPublished ? 'PROVISIONAL & UNPUBLISHED: This report card contains unverified/unpublished examination results intended solely for internal academic leadership review.' : null,
@@ -348,7 +401,10 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       previewed_by_user_id: user.id,
       previewed_by_name: user.full_name || user.username,
       previewed_at: new Date().toISOString()
-    } : null
+    } : null,
+    is_reissued: isReissued,
+    corrections_history: approvedCorrections,
+    policy: policyMetadata
   });
 });
 
@@ -479,5 +535,268 @@ router.get('/sheets/:id/revisions/:revision', requireAuth, (req, res) => {
   }
 });
 
+// PR-005 Gate 4B: Official Examination-Wide Publication
+router.post('/examinations/:id/publish', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const { policyProfileId, expectedStatus } = req.body || {};
+    const result = publishExamination({
+      examinationId,
+      policyProfileId: policyProfileId ? Number(policyProfileId) : undefined,
+      expectedStatus,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Gate 4B: Retrieve Publication Summary & Audit Snapshot
+router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(examinationId) as any;
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    const isPublished = exam.is_published === 1 || exam.status === 'published';
+
+    // Confidentiality gate for unpublished examinations (G3S-AUD-02)
+    if (!isPublished) {
+      const isLeadership = hasAcademicStaffRole(
+        req.user!.id,
+        ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
+        exam.academic_year_id,
+        undefined
+      );
+      if (!isLeadership) {
+        res.status(403).json({
+          error: 'Access denied: Unpublished examination publication details are confidential.',
+          code: 'UNPUBLISHED_RESULTS_LOCKED'
+        });
+        return;
+      }
+    }
+
+    const publication = db.prepare(`
+      SELECT ep.*, u.username as published_by_username, u.full_name as published_by_name,
+             app.policy_code, app.title as policy_title
+      FROM examination_publications ep
+      JOIN users u ON ep.published_by_user_id = u.id
+      JOIN assessment_policy_profiles app ON ep.policy_profile_id = app.id
+      WHERE ep.examination_id = ?
+      ORDER BY ep.publication_version DESC
+      LIMIT 1
+    `).get(examinationId) as any;
+
+    res.json({
+      examination: exam,
+      is_published: isPublished,
+      publication: publication || null
+    });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Gate 4A: Assessment Policies Management
+router.get('/policies', requireAuth, (req, res) => {
+  try {
+    const { academic_year_id, grade_band } = req.query;
+    let query = 'SELECT * FROM assessment_policy_profiles WHERE 1=1';
+    const params: any[] = [];
+    if (academic_year_id) { query += ' AND academic_year_id = ?'; params.push(Number(academic_year_id)); }
+    if (grade_band) { query += ' AND grade_band = ?'; params.push(String(grade_band)); }
+    query += ' ORDER BY version DESC, id DESC';
+    const policies = db.prepare(query).all(...params).map((p: any) => ({
+      ...p,
+      isProvisional: p.is_approved_by_school !== 1,
+      approvalStatus: p.is_approved_by_school === 1 ? 'approved' : 'provisional'
+    }));
+    res.json({ policies });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/policies/:id', requireAuth, (req, res) => {
+  try {
+    const policy = getAssessmentPolicyProfile(Number(req.params.id));
+    res.json({ policy });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+router.post('/policies', requireAuth, (req, res) => {
+  try {
+    const {
+      academicYearId,
+      gradeBand,
+      policyCode,
+      title,
+      gradingScale,
+      absenceRules,
+      rankingRules,
+      subjectWeights,
+      correctionWindowDays,
+      effectiveFrom,
+      effectiveTo
+    } = req.body;
+
+    const result = createAssessmentPolicyProfile({
+      academicYearId: Number(academicYearId),
+      gradeBand,
+      policyCode,
+      title,
+      gradingScale,
+      absenceRules,
+      rankingRules,
+      subjectWeights,
+      correctionWindowDays: correctionWindowDays ? Number(correctionWindowDays) : 21,
+      effectiveFrom,
+      effectiveTo,
+      user: req.user!
+    });
+    res.status(201).json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+router.post('/policies/:id/approve', requireAuth, (req, res) => {
+  try {
+    const result = approveAssessmentPolicyProfile(Number(req.params.id), req.user!);
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Gate 4C: Audited Post-Publication Mark Corrections
+router.post('/corrections', requireAuth, (req, res) => {
+  try {
+    const {
+      markId,
+      sheetId,
+      studentId,
+      subjectId,
+      examinationId,
+      expectedPreviousScore,
+      expectedPreviousStatus,
+      requestedScore,
+      requestedStatus,
+      correctionCategory,
+      detailedJustification,
+      evidenceAttachmentRef
+    } = req.body;
+
+    const result = requestMarkCorrection({
+      markId: markId ? Number(markId) : undefined,
+      sheetId: sheetId ? Number(sheetId) : undefined,
+      studentId: studentId ? Number(studentId) : undefined,
+      subjectId: subjectId ? Number(subjectId) : undefined,
+      examinationId: examinationId ? Number(examinationId) : undefined,
+      expectedPreviousScore: (expectedPreviousScore === null || expectedPreviousScore === undefined) ? null : Number(expectedPreviousScore),
+      expectedPreviousStatus,
+      requestedScore: (requestedScore === null || requestedScore === undefined) ? null : Number(requestedScore),
+      requestedStatus,
+      correctionCategory,
+      detailedJustification,
+      evidenceAttachmentRef,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+
+    res.status(201).json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+router.get('/corrections', requireAuth, (req, res) => {
+  try {
+    const { examinationId, sheetId, status } = req.query;
+    let query = `
+      SELECT mc.*, s.admission_no, s.full_name as student_name, sub.name as subject_name, sub.code as subject_code,
+             u_req.username as requested_by_username, u_req.full_name as requested_by_name,
+             u_rev.username as reviewed_by_username, u_rev.full_name as reviewed_by_name
+      FROM marks_corrections mc
+      JOIN students s ON mc.student_id = s.id
+      JOIN subjects sub ON mc.subject_id = sub.id
+      JOIN users u_req ON mc.requested_by_user_id = u_req.id
+      LEFT JOIN users u_rev ON mc.reviewed_by_user_id = u_rev.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    if (examinationId) { query += ' AND mc.examination_id = ?'; params.push(Number(examinationId)); }
+    if (sheetId) { query += ' AND mc.sheet_id = ?'; params.push(Number(sheetId)); }
+    if (status) { query += ' AND mc.status = ?'; params.push(String(status)); }
+    query += ' ORDER BY mc.id DESC';
+    const corrections = db.prepare(query).all(...params);
+    res.json({ corrections });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/corrections/:id', requireAuth, (req, res) => {
+  try {
+    const correctionId = Number(req.params.id);
+    const correction = db.prepare(`
+      SELECT mc.*, s.admission_no, s.full_name as student_name, sub.name as subject_name, sub.code as subject_code,
+             u_req.username as requested_by_username, u_req.full_name as requested_by_name,
+             u_rev.username as reviewed_by_username, u_rev.full_name as reviewed_by_name
+      FROM marks_corrections mc
+      JOIN students s ON mc.student_id = s.id
+      JOIN subjects sub ON mc.subject_id = sub.id
+      JOIN users u_req ON mc.requested_by_user_id = u_req.id
+      LEFT JOIN users u_rev ON mc.reviewed_by_user_id = u_rev.id
+      WHERE mc.id = ?
+    `).get(correctionId);
+
+    if (!correction) {
+      res.status(404).json({ error: 'Correction record not found.' });
+      return;
+    }
+    res.json({ correction });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/corrections/:id/review', requireAuth, (req, res) => {
+  try {
+    const correctionId = Number(req.params.id);
+    const { decision, reviewComments } = req.body;
+    if (!['approve', 'reject'].includes(decision)) {
+      res.status(400).json({ error: "Decision must be 'approve' or 'reject'." });
+      return;
+    }
+    const result = reviewMarkCorrection({
+      correctionId,
+      decision,
+      reviewComments,
+      user: req.user!,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
 export default router;
+
 

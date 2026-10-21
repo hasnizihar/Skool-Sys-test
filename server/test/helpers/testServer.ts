@@ -31,7 +31,15 @@ export async function startTestServer(): Promise<TestServerInstance> {
 
   const request = async (path: string, options?: RequestInit): Promise<Response> => {
     const url = `${baseUrl}${path.startsWith('/') ? path : '/' + path}`;
-    return fetch(url, options);
+    const opts: RequestInit = { ...options };
+    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof Uint8Array)) {
+      opts.headers = {
+        'Content-Type': 'application/json',
+        ...opts.headers
+      };
+      opts.body = JSON.stringify(opts.body);
+    }
+    return fetch(url, opts);
   };
 
   const close = async (): Promise<void> => {

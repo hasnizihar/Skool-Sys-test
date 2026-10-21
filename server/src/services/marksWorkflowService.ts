@@ -1117,11 +1117,19 @@ export function saveOrSubmitLegacyMarksSheet(params: {
 
     // 2. Class and Exam verification
     const classRow = db.prepare('SELECT id, academic_year_id FROM classes WHERE id = ?').get(classId) as any;
-    const examRow = db.prepare('SELECT id, academic_year_id FROM examinations WHERE id = ?').get(examId) as any;
+    const examRow = db.prepare('SELECT id, academic_year_id, is_published, status FROM examinations WHERE id = ?').get(examId) as any;
 
     if (!classRow || !examRow) {
       const err = new Error('Class or Examination not found.');
       (err as any).statusCode = 404;
+      throw err;
+    }
+
+    const pubRecord = db.prepare('SELECT id FROM examination_publications WHERE examination_id = ?').get(examId);
+    if (pubRecord || (examRow.publication_version && examRow.publication_version > 0)) {
+      const err = new Error('Examination has already been officially published. Normal mark editing is prohibited; changes require an audited post-publication correction.');
+      (err as any).statusCode = 409;
+      (err as any).code = 'EXAMINATION_ALREADY_PUBLISHED';
       throw err;
     }
 
