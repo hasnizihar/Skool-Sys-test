@@ -1444,6 +1444,275 @@ describe('PR-005 Gate 3B: Marks Workflow, Revision Control, CAS Concurrency & Le
     assert.ok(typeof principalReport.provisional_notice === 'string');
     assert.ok(principalReport.provisional_notice.includes('PROVISIONAL & UNPUBLISHED'));
   });
+
+  // =========================================================================
+  // Gate 3T: Finite Security and Submission-Invariant Closeout Tests
+  // =========================================================================
+
+  // Test 22: EXAM-G3T-01 Final-State Submission Invariant (G3S-AUD-01)
+  test('EXAM-G3T-01: Final-State Submission Invariant - Legacy submission replacing assessed mark with NOT_ASSESSED rolls back with 400 UNASSESSED_STUDENT with zero DB changes', async () => {
+    // 22.1 Setup an existing draft sheet where student 1 is already assessed with 85.0 (Revision 1)
+    const newSubjRes = db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('HIST_G3T_8', 'History', 'Core', '6-9')").run();
+    const subjHistId = Number(newSubjRes.lastInsertRowid);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class8AId, subjHistId);
+    db.prepare("INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id) VALUES (?, ?, ?, 'subject_teacher', ?)").run(
+      teacherKamalUserId, class8AId, subjHistId, year2026Id
+    );
+
+    // Confirm student 1 enrollment in History
+    db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at, created_at)
+      VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'), datetime('now'))
+    `).run(student1Id, subjHistId, class8AId, year2026Id, principalPereraUserId);
+
+    // Initial valid save to draft -> Revision 1, student 1 score = 85.0, status = 'PRESENT'
+    const initSave = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjHistId,
+        marks: [{ student_id: student1Id, score: 85.0, assessmentStatus: 'PRESENT' }]
+      })
+    });
+    assert.equal(initSave.status, 200);
+    const histSheet = db.prepare('SELECT id, revision, status FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(exam2026Term1Id, class8AId, subjHistId) as any;
+    assert.equal(histSheet.revision, 2);
+    assert.equal(histSheet.status, 'draft');
+
+    const markBefore = db.prepare('SELECT score, assessment_status FROM marks WHERE sheet_id = ? AND student_id = ?').get(histSheet.id, student1Id) as any;
+    assert.equal(markBefore.score, 85.0);
+    assert.equal(markBefore.assessment_status, 'PRESENT');
+
+    // 22.2 Attempt to submit via legacy POST with student 1 set to NOT_ASSESSED and score null
+    // This MUST NOT fall back to the existing assessed mark; it MUST reject with 400 UNASSESSED_STUDENT
+    const rejectSubmitRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjHistId,
+        baseRevision: 2,
+        status: 'submitted',
+        marks: [{ student_id: student1Id, score: null, assessmentStatus: 'NOT_ASSESSED' }]
+      })
+    });
+
+    assert.equal(rejectSubmitRes.status, 400);
+    const rejectBody = await rejectSubmitRes.json() as any;
+    assert.equal(rejectBody.code, 'UNASSESSED_STUDENT');
+    assert.match(rejectBody.error, /All participating students must be assessed/i);
+
+    // Verify ZERO mutations: sheet status remains 'draft', revision remains 2, mark in DB is still 85.0 / PRESENT
+    const sheetAfter = db.prepare('SELECT revision, status FROM marks_sheets WHERE id = ?').get(histSheet.id) as any;
+    assert.equal(sheetAfter.revision, 2);
+    assert.equal(sheetAfter.status, 'draft');
+
+    const markAfter = db.prepare('SELECT score, assessment_status FROM marks WHERE sheet_id = ? AND student_id = ?').get(histSheet.id, student1Id) as any;
+    assert.equal(markAfter.score, 85.0);
+    assert.equal(markAfter.assessment_status, 'PRESENT');
+
+    // 22.3 Test on brand new sheet: submitting immediately with one unassessed participant -> rolls back sheet completely
+    const newSubj2 = Number(db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('GEO_G3T_8', 'Geography', 'Core', '6-9')").run().lastInsertRowid);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class8AId, newSubj2);
+    db.prepare("INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id) VALUES (?, ?, ?, 'subject_teacher', ?)").run(
+      teacherKamalUserId, class8AId, newSubj2, year2026Id
+    );
+    db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at, created_at)
+      VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'), datetime('now'))
+    `).run(student1Id, newSubj2, class8AId, year2026Id, principalPereraUserId);
+
+    const failNewSubmit = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: newSubj2,
+        status: 'submitted',
+        marks: [{ student_id: student1Id, score: null, assessmentStatus: 'NOT_ASSESSED' }]
+      })
+    });
+    assert.equal(failNewSubmit.status, 400);
+    assert.equal((await failNewSubmit.json() as any).code, 'UNASSESSED_STUDENT');
+
+    // Verify sheet container was completely rolled back and does not exist in DB
+    const geoSheet = db.prepare('SELECT id FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(exam2026Term1Id, class8AId, newSubj2);
+    assert.equal(geoSheet, undefined, 'Marks sheet container MUST be rolled back when initial submission is unassessed');
+
+    // 22.4 Stale revision conflict check on submitted status -> 409 STALE_REVISION with zero writes
+    const staleSubmitRes = await testServer.request('/api/marks/sheet', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        examId: exam2026Term1Id,
+        classId: class8AId,
+        subjectId: subjHistId,
+        baseRevision: 99,
+        status: 'submitted',
+        marks: [{ student_id: student1Id, score: 90.0, assessmentStatus: 'PRESENT' }]
+      })
+    });
+    assert.equal(staleSubmitRes.status, 409);
+    assert.equal((await staleSubmitRes.json() as any).code, 'STALE_REVISION');
+  });
+
+  // Test 23: EXAM-G3T-02 Unpublished Reads and Base Admin Access (G3S-AUD-02)
+  test('EXAM-G3T-02: Unpublished Reads Confidentiality - Base admin & unrelated users denied 403 on all confidential surfaces; scoped leadership & assigned teacher permitted', async () => {
+    // Create a sheet container for examUnpublishedId
+    const unpubSheetRes = db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+      VALUES (?, ?, ?, ?, ?, 1, 'draft')
+    `).run(examUnpublishedId, class8AId, subjectMathId, year2026Id, teacherKamalUserId);
+    const unpubSheetId = Number(unpubSheetRes.lastInsertRowid);
+
+    // Seed a revision record
+    db.prepare(`
+      INSERT INTO marks_sheet_revisions (sheet_id, revision, status, saved_by_user_id, marks_payload_json)
+      VALUES (?, 1, 'draft', ?, '[]')
+    `).run(unpubSheetId, teacherKamalUserId);
+
+    // 23.1 Base admin attempts to read unpublished sheet details -> 403 UNPUBLISHED_RESULTS_LOCKED
+    const adminDetailsRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminDetailsRes.status, 403);
+    assert.equal((await adminDetailsRes.json() as any).code, 'UNPUBLISHED_RESULTS_LOCKED');
+
+    // 23.2 Base admin attempts to read unpublished sheet history -> 403 UNPUBLISHED_RESULTS_LOCKED
+    const adminHistoryRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}/history`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminHistoryRes.status, 403);
+    assert.equal((await adminHistoryRes.json() as any).code, 'UNPUBLISHED_RESULTS_LOCKED');
+
+    // 23.3 Base admin attempts to read unpublished sheet revision snapshot -> 403 UNPUBLISHED_RESULTS_LOCKED
+    const adminSnapRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}/revisions/1`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminSnapRes.status, 403);
+    assert.equal((await adminSnapRes.json() as any).code, 'UNPUBLISHED_RESULTS_LOCKED');
+
+    // 23.4 Base admin attempts to read unpublished sheet via legacy GET /api/marks/sheet -> 403 UNPUBLISHED_RESULTS_LOCKED
+    const adminLegacyRes = await testServer.request(`/api/marks/sheet?examId=${examUnpublishedId}&classId=${class8AId}&subjectId=${subjectMathId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminLegacyRes.status, 403);
+    assert.equal((await adminLegacyRes.json() as any).code, 'UNPUBLISHED_RESULTS_LOCKED');
+
+    // 23.5 Unrelated teacher (teacherSunethra) attempts to read unpublished sheet -> 403
+    const unauthDetailsRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}`, {
+      headers: { Authorization: `Bearer ${teacherSunethraToken}` }
+    });
+    assert.equal(unauthDetailsRes.status, 403);
+
+    // 23.6 Scoped Section Head (sectionHeadNimali) reads unpublished sheet details, history, snapshots -> 200 OK
+    const shDetailsRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}`, {
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}` }
+    });
+    assert.equal(shDetailsRes.status, 200);
+
+    const shHistRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}/history`, {
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}` }
+    });
+    assert.equal(shHistRes.status, 200);
+
+    const shSnapRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}/revisions/1`, {
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}` }
+    });
+    assert.equal(shSnapRes.status, 200);
+
+    const shLegacyRes = await testServer.request(`/api/marks/sheet?examId=${examUnpublishedId}&classId=${class8AId}&subjectId=${subjectMathId}`, {
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}` }
+    });
+    assert.equal(shLegacyRes.status, 200);
+
+    // 23.7 Assigned teacher (teacherKamal) accesses own unpublished draft sheet and legacy GET /sheet -> 200 OK
+    const kamalDetailsRes = await testServer.request(`/api/marks/sheets/${unpubSheetId}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(kamalDetailsRes.status, 200);
+
+    const kamalLegacyRes = await testServer.request(`/api/marks/sheet?examId=${examUnpublishedId}&classId=${class8AId}&subjectId=${subjectMathId}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(kamalLegacyRes.status, 200);
+
+    // 23.8 Published data policy: Base admin CAN read published marks sheets (sheetMath8AId) -> 200 OK
+    const adminPubDetailsRes = await testServer.request(`/api/marks/sheets/${sheetMath8AId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminPubDetailsRes.status, 200);
+
+    const adminPubLegacyRes = await testServer.request(`/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class8AId}&subjectId=${subjectMathId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminPubLegacyRes.status, 200);
+  });
+
+  // Test 24: EXAM-G3T-03 Revoked Teacher Read Access Loss (G3S-AUD-03)
+  test('EXAM-G3T-03: Revoked Subject Teacher Immediately Loses Read Access to Sheet Details, History, and Snapshots', async () => {
+    // Create new subject and sheet where teacherKamal is initially assigned
+    const subjCivic = Number(db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('CIVIC_G3T_8', 'Civic Education', 'Core', '6-9')").run().lastInsertRowid);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class8AId, subjCivic);
+    const taRes = db.prepare("INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id) VALUES (?, ?, ?, 'subject_teacher', ?)").run(
+      teacherKamalUserId, class8AId, subjCivic, year2026Id
+    );
+    const taId = Number(taRes.lastInsertRowid);
+
+    const civicSheetRes = db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+      VALUES (?, ?, ?, ?, ?, 1, 'draft')
+    `).run(examUnpublishedId, class8AId, subjCivic, year2026Id, teacherKamalUserId);
+    const civicSheetId = Number(civicSheetRes.lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO marks_sheet_revisions (sheet_id, revision, status, saved_by_user_id, marks_payload_json)
+      VALUES (?, 1, 'draft', ?, '[]')
+    `).run(civicSheetId, teacherKamalUserId);
+
+    // 24.1 Prior to revocation: teacherKamal can read sheet details (200 OK)
+    const preRevokeRes = await testServer.request(`/api/marks/sheets/${civicSheetId}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(preRevokeRes.status, 200);
+
+    // 24.2 Revoke/delete teacherKamal's assignment from teacher_assignments
+    db.prepare('DELETE FROM teacher_assignments WHERE id = ?').run(taId);
+
+    // Historical teacher_id on marks_sheets remains teacherKamalUserId
+    const sheetDb = db.prepare('SELECT teacher_id FROM marks_sheets WHERE id = ?').get(civicSheetId) as any;
+    assert.equal(sheetDb.teacher_id, teacherKamalUserId, 'Historical teacher_id must be preserved for institutional attribution');
+
+    // 24.3 After revocation: teacherKamal MUST immediately lose access across all read surfaces (403)
+    const postRevokeDetails = await testServer.request(`/api/marks/sheets/${civicSheetId}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(postRevokeDetails.status, 403);
+
+    const postRevokeHistory = await testServer.request(`/api/marks/sheets/${civicSheetId}/history`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(postRevokeHistory.status, 403);
+
+    const postRevokeSnapshot = await testServer.request(`/api/marks/sheets/${civicSheetId}/revisions/1`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(postRevokeSnapshot.status, 403);
+
+    const postRevokeLegacy = await testServer.request(`/api/marks/sheet?examId=${examUnpublishedId}&classId=${class8AId}&subjectId=${subjCivic}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(postRevokeLegacy.status, 403);
+
+    // Restore assignment for cleanup
+    db.prepare("INSERT INTO teacher_assignments (id, teacher_id, class_id, subject_id, assignment_type, academic_year_id) VALUES (?, ?, ?, ?, 'subject_teacher', ?)").run(
+      taId, teacherKamalUserId, class8AId, subjCivic, year2026Id
+    );
+  });
 });
 
 

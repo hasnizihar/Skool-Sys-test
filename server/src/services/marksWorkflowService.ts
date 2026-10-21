@@ -232,19 +232,25 @@ export function getMarksSheetDetails(sheetId: number, user: AuthUser): any {
     throw err;
   }
 
-  // Permission check: Assigned teacher, class teacher, scoped leadership, or admin
+  const isPublished = (sheet.is_published === 1 || sheet.exam_status === 'published');
   const viewAuth = canViewMarksSheet(user, sheetId);
-  if (!viewAuth.allowed && user.role !== 'admin') {
-    const err = new Error(viewAuth.reason || 'Access denied: You do not have permission to view this marks sheet.');
-    (err as any).statusCode = 403;
-    throw err;
-  }
 
-  // Confidentiality gate: Unpublished marks cannot be viewed by unauthorized staff
-  if (sheet.is_published !== 1 && sheet.exam_status !== 'published') {
-    if (!viewAuth.allowed && user.role !== 'admin') {
-      const err = new Error('Access denied: Unpublished examination marks are confidential.');
+  if (!isPublished) {
+    // UNPUBLISHED: Strict confidentiality (G3S-AUD-02)
+    // Only the actively assigned subject teacher OR scoped academic leadership can view.
+    // Unscoped base admin and unauthorized staff cannot view unreleased marks sheets.
+    if (!viewAuth.allowed) {
+      const err = new Error(viewAuth.reason || 'Access denied: Unpublished examination marks are confidential. Unscoped administrators and unauthorized staff cannot view unreleased marks sheets.');
       (err as any).statusCode = 403;
+      (err as any).code = 'UNPUBLISHED_RESULTS_LOCKED';
+      throw err;
+    }
+  } else {
+    // PUBLISHED: Standard published access (admin, assigned teacher, or scoped leadership)
+    if (!viewAuth.allowed && user.role !== 'admin') {
+      const err = new Error(viewAuth.reason || 'Access denied: You do not have permission to view this marks sheet.');
+      (err as any).statusCode = 403;
+      (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
       throw err;
     }
   }
@@ -940,18 +946,38 @@ export function approveMarksSheet(params: {
  * Retrieves the complete audit history and revision snapshots for a marks sheet.
  */
 export function getMarksSheetHistory(sheetId: number, user: AuthUser): any {
-  const sheet = db.prepare('SELECT id, academic_year_id FROM marks_sheets WHERE id = ?').get(sheetId);
+  const sheet = db.prepare(`
+    SELECT ms.id, ms.academic_year_id, ms.examination_id, e.is_published, e.status as exam_status
+    FROM marks_sheets ms
+    JOIN examinations e ON ms.examination_id = e.id
+    WHERE ms.id = ?
+  `).get(sheetId) as any;
+
   if (!sheet) {
     const err = new Error('Marks sheet not found.');
     (err as any).statusCode = 404;
     throw err;
   }
 
+  const isPublished = (sheet.is_published === 1 || sheet.exam_status === 'published');
   const viewAuth = canViewMarksSheet(user, sheetId);
-  if (!viewAuth.allowed && user.role !== 'admin') {
-    const err = new Error('Access denied: You do not have permission to view history for this sheet.');
-    (err as any).statusCode = 403;
-    throw err;
+
+  if (!isPublished) {
+    // UNPUBLISHED: Strict confidentiality (G3S-AUD-02)
+    if (!viewAuth.allowed) {
+      const err = new Error(viewAuth.reason || 'Access denied: Unpublished examination marks history is confidential. Unscoped administrators and unauthorized staff cannot view history.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'UNPUBLISHED_RESULTS_LOCKED';
+      throw err;
+    }
+  } else {
+    // PUBLISHED: Standard published access
+    if (!viewAuth.allowed && user.role !== 'admin') {
+      const err = new Error('Access denied: You do not have permission to view history for this sheet.');
+      (err as any).statusCode = 403;
+      (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
+      throw err;
+    }
   }
 
   ensureRevisionsTable();
@@ -993,18 +1019,38 @@ export function getMarksSheetHistory(sheetId: number, user: AuthUser): any {
  * Retrieves a single immutable point-in-time snapshot with full marks payload.
  */
 export function getMarksSheetRevisionSnapshot(sheetId: number, revision: number, user: AuthUser): any {
-  const sheet = db.prepare('SELECT id FROM marks_sheets WHERE id = ?').get(sheetId);
+  const sheet = db.prepare(`
+    SELECT ms.id, ms.academic_year_id, ms.examination_id, e.is_published, e.status as exam_status
+    FROM marks_sheets ms
+    JOIN examinations e ON ms.examination_id = e.id
+    WHERE ms.id = ?
+  `).get(sheetId) as any;
+
   if (!sheet) {
     const err = new Error('Marks sheet not found.');
     (err as any).statusCode = 404;
     throw err;
   }
 
+  const isPublished = (sheet.is_published === 1 || sheet.exam_status === 'published');
   const viewAuth = canViewMarksSheet(user, sheetId);
-  if (!viewAuth.allowed && user.role !== 'admin') {
-    const err = new Error('Access denied: You do not have permission to view revision snapshots for this marks sheet.');
-    (err as any).statusCode = 403;
-    throw err;
+
+  if (!isPublished) {
+    // UNPUBLISHED: Strict confidentiality (G3S-AUD-02)
+    if (!viewAuth.allowed) {
+      const err = new Error(viewAuth.reason || 'Access denied: Unpublished examination revision snapshots are confidential. Unscoped administrators and unauthorized staff cannot view revision snapshots.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'UNPUBLISHED_RESULTS_LOCKED';
+      throw err;
+    }
+  } else {
+    // PUBLISHED: Standard published access
+    if (!viewAuth.allowed && user.role !== 'admin') {
+      const err = new Error('Access denied: You do not have permission to view revision snapshots for this marks sheet.');
+      (err as any).statusCode = 403;
+      (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
+      throw err;
+    }
   }
 
   ensureRevisionsTable();
@@ -1297,19 +1343,21 @@ export function saveOrSubmitLegacyMarksSheet(params: {
         }
 
         const incomingMark = marksByStudent.get(stu.id);
-        let isAssessed = false;
-        if (incomingMark && incomingMark.assessmentStatus !== 'NOT_ASSESSED') {
-          isAssessed = true;
+        let effectiveStatus: string;
+        if (incomingMark) {
+          // G3S-AUD-01: Incoming mark explicitly overrides any existing database mark,
+          // INCLUDING if the incoming mark specifies NOT_ASSESSED!
+          effectiveStatus = incomingMark.assessmentStatus;
         } else if (sheet) {
           const existingMark = db.prepare(`
             SELECT assessment_status FROM marks WHERE examination_id = ? AND subject_id = ? AND student_id = ?
           `).get(examId, subjectId, stu.id) as any;
-          if (existingMark && existingMark.assessment_status !== 'NOT_ASSESSED') {
-            isAssessed = true;
-          }
+          effectiveStatus = existingMark?.assessment_status || 'NOT_ASSESSED';
+        } else {
+          effectiveStatus = 'NOT_ASSESSED';
         }
 
-        if (!isAssessed) {
+        if (!effectiveStatus || effectiveStatus === 'NOT_ASSESSED') {
           const err = new Error(`Cannot submit marks sheet: All participating students must be assessed. Student ${stu.full_name} (${stu.admission_no}) is currently unassessed.`);
           (err as any).statusCode = 400;
           (err as any).code = 'UNASSESSED_STUDENT';
@@ -1385,7 +1433,30 @@ export function saveOrSubmitLegacyMarksSheet(params: {
       );
     }
 
+    // 9.5 Post-write submission invariant check (G3S-AUD-01)
     if (targetStatus === 'submitted') {
+      const unassessedParticipant = db.prepare(`
+        SELECT s.id, s.admission_no, s.full_name, m.assessment_status
+        FROM student_subject_enrollments sse
+        JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
+        JOIN students s ON sse.student_id = s.id
+        LEFT JOIN marks m ON m.sheet_id = ? AND m.student_id = s.id
+        WHERE sse.subject_id = ?
+          AND e.class_id = ?
+          AND e.status = 'enrolled'
+          AND sse.enrollment_status NOT IN ('dropped', 'transferred')
+          AND (m.id IS NULL OR m.assessment_status = 'NOT_ASSESSED' OR m.assessment_status IS NULL)
+        ORDER BY e.roll_number ASC, s.admission_no ASC
+        LIMIT 1
+      `).get(sheetId, subjectId, classId) as any;
+
+      if (unassessedParticipant) {
+        const err = new Error(`Cannot submit marks sheet: All participating students must be assessed. Student ${unassessedParticipant.full_name} (${unassessedParticipant.admission_no}) is currently unassessed.`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'UNASSESSED_STUDENT';
+        throw err;
+      }
+
       db.prepare("UPDATE marks SET status = 'submitted', updated_at = datetime('now') WHERE sheet_id = ?").run(sheetId);
       db.prepare(`
         INSERT INTO marks_audit_history (

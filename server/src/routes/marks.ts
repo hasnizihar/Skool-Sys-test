@@ -33,12 +33,6 @@ router.get('/sheet', requireAuth, (req, res) => {
   const cId = Number(classId);
   const sId = Number(subjectId);
 
-  // Record-level permission check: must be admin or assigned to class/subject
-  if (!canViewMarksSheet(req.user!, cId, sId)) {
-    res.status(403).json({ error: 'Access denied. You are not assigned to view marks for this class or subject.' });
-    return;
-  }
-
   const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(eId) as any;
   const classInfo = db.prepare('SELECT * FROM classes WHERE id = ?').get(cId) as any;
   const subject = db.prepare('SELECT * FROM subjects WHERE id = ?').get(sId) as any;
@@ -48,10 +42,38 @@ router.get('/sheet', requireAuth, (req, res) => {
     return;
   }
 
-  // Unpublished examination results confidentiality
-  if (exam.is_published !== 1 && exam.status !== 'published') {
-    if (!canViewMarksSheet(req.user!, cId, sId) && req.user!.role !== 'admin') {
-      res.status(403).json({ error: 'Access denied. Unpublished examination results are confidential.' });
+  const isPublished = exam.is_published === 1 || exam.status === 'published';
+  const yearId = classInfo.academic_year_id || exam.academic_year_id;
+
+  // Active teacher assignment check (G3S-AUD-03)
+  const activeAssignment = db.prepare(`
+    SELECT id FROM teacher_assignments
+    WHERE class_id = ? AND subject_id = ? AND academic_year_id = ? AND teacher_id = ? AND assignment_type = 'subject_teacher'
+  `).get(cId, sId, yearId, req.user!.id);
+
+  // Active leadership check (G3S-AUD-02)
+  const isLeadership = hasAcademicStaffRole(
+    req.user!.id,
+    ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
+    yearId,
+    Number(classInfo.grade)
+  );
+
+  if (!isPublished) {
+    // UNPUBLISHED: Confidentiality gate (G3S-AUD-02 & G3S-AUD-03)
+    // Only actively assigned subject teacher OR scoped academic leadership can view.
+    // Unscoped admin and unauthorized/revoked users MUST be rejected with 403!
+    if (!activeAssignment && !isLeadership) {
+      res.status(403).json({
+        error: 'Access denied: Unpublished examination marks are confidential. Unscoped administrators and unauthorized staff cannot view unreleased marks sheets.',
+        code: 'UNPUBLISHED_RESULTS_LOCKED'
+      });
+      return;
+    }
+  } else {
+    // PUBLISHED: Standard published access (admin, assigned teacher, or scoped leadership)
+    if (req.user!.role !== 'admin' && !canViewMarksSheet(req.user!, cId, sId) && !isLeadership) {
+      res.status(403).json({ error: 'Access denied. You are not assigned to view marks for this class or subject.' });
       return;
     }
   }
@@ -60,8 +82,6 @@ router.get('/sheet', requireAuth, (req, res) => {
   const sheet = db.prepare(`
     SELECT * FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?
   `).get(eId, cId, sId) as any;
-
-  const yearId = classInfo.academic_year_id || exam.academic_year_id;
 
   // Enrolled students with current marks
   const rawRoster = db.prepare(`

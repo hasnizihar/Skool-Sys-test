@@ -209,6 +209,12 @@ export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed:
     return { allowed: false, reason: 'Marks sheet not found.', code: 'SHEET_NOT_FOUND' };
   }
 
+  // Active user check
+  const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+  if (!activeUser || activeUser.is_active !== 1) {
+    return { allowed: false, reason: 'User account is deactivated or invalid.', code: 'USER_DEACTIVATED' };
+  }
+
   // 1. Anti-Self-Review: Assigned Teacher Check
   if (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id) {
     return {
@@ -255,28 +261,47 @@ export function canReviewMarksSheet(user: AuthUser, sheetId: number): { allowed:
  * Institutional Permission Check: Read-Only Inspection / Viewing of Marks Sheet
  * 
  * Permitted if:
- * 1. Assigned teacher for this sheet, OR
- * 2. Active academic leadership appointment (Principal, Vice Principal Academic, Section Head, Exam Coordinator)
+ * 1. Active user account, AND
+ * 2. Active, currently assigned subject teacher for this class, subject, and academic year
+ *    (must NEVER rely only on historical marks_sheets.teacher_id), OR
+ * 3. Active academic leadership appointment (Principal, Vice Principal Academic, Section Head, Exam Coordinator)
  *    covering the academic year and class grade.
  */
-export function canViewMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string } {
+export function canViewMarksSheet(user: AuthUser, sheetId: number): { allowed: boolean; reason?: string; code?: string } {
   const sheet = db.prepare(`
-    SELECT ms.id, ms.class_id, ms.academic_year_id, ms.teacher_id, c.grade
+    SELECT ms.id, ms.class_id, ms.subject_id, ms.academic_year_id, ms.teacher_id, c.grade
     FROM marks_sheets ms
     JOIN classes c ON ms.class_id = c.id
     WHERE ms.id = ?
-  `).get(sheetId) as { id: number; class_id: number; academic_year_id: number; teacher_id: number | null; grade: number } | undefined;
+  `).get(sheetId) as { id: number; class_id: number; subject_id: number; academic_year_id: number; teacher_id: number | null; grade: number } | undefined;
 
   if (!sheet) {
-    return { allowed: false, reason: 'Marks sheet not found.' };
+    return { allowed: false, reason: 'Marks sheet not found.', code: 'SHEET_NOT_FOUND' };
   }
 
-  // Assigned teacher can always view their own sheet
-  if (sheet.teacher_id !== null && Number(sheet.teacher_id) === user.id) {
+  // 1. Active user check
+  const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+  if (!activeUser || activeUser.is_active !== 1) {
+    return {
+      allowed: false,
+      reason: 'User account is deactivated or invalid.',
+      code: 'USER_DEACTIVATED'
+    };
+  }
+
+  // 2. Active, currently assigned subject teacher check (G3S-AUD-03)
+  // MUST NEVER rely only on historical marks_sheets.teacher_id!
+  // Resolve a live, active, class/subject/year-matched teacher_assignments record:
+  const activeAssignment = db.prepare(`
+    SELECT id FROM teacher_assignments
+    WHERE class_id = ? AND subject_id = ? AND academic_year_id = ? AND teacher_id = ? AND assignment_type = 'subject_teacher'
+  `).get(sheet.class_id, sheet.subject_id, sheet.academic_year_id, user.id);
+
+  if (activeAssignment) {
     return { allowed: true };
   }
 
-  // Authorized leadership can view sheets in their scope
+  // 3. Authorized academic leadership appointment check
   const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
   const eligible = activeAuths.some(a =>
     ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role) &&
@@ -287,7 +312,8 @@ export function canViewMarksSheet(user: AuthUser, sheetId: number): { allowed: b
 
   return {
     allowed: false,
-    reason: 'UNAUTHORIZED: User does not have permission to view this marks sheet.'
+    reason: 'UNAUTHORIZED: User does not have active permission to view this marks sheet.',
+    code: 'INSUFFICIENT_AUTHORIZATION'
   };
 }
 
@@ -324,6 +350,12 @@ export function canApproveMarksSheet(user: AuthUser, sheetId: number): { allowed
 
   if (!sheet) {
     return { allowed: false, reason: 'Marks sheet not found.', code: 'SHEET_NOT_FOUND' };
+  }
+
+  // Active user check
+  const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+  if (!activeUser || activeUser.is_active !== 1) {
+    return { allowed: false, reason: 'User account is deactivated or invalid.', code: 'USER_DEACTIVATED' };
   }
 
   // 1. Anti-Self-Approval: Assigned Teacher Check

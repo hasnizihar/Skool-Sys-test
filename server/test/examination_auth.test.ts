@@ -1141,6 +1141,24 @@ describe('PR-005 Gate 2R: Academic Staff Authorization, Segregation of Duties & 
     const unauthView = canViewMarksSheet(teacher2User, sheetJuniorId);
     assert.equal(unauthView.allowed, false);
     assert.match(unauthView.reason || '', /UNAUTHORIZED/i);
+
+    // 4. Revoked Teacher (G3S-AUD-03): sheet.teacher_id is still teacherUserId, but assignment is removed from teacher_assignments
+    db.prepare('DELETE FROM teacher_assignments WHERE teacher_id = ? AND class_id = ? AND subject_id = ?').run(teacherUserId, classJuniorId, subjectMathId);
+    const revokedView = canViewMarksSheet(teacherUser, sheetJuniorId);
+    assert.equal(revokedView.allowed, false);
+    assert.match(revokedView.reason || '', /UNAUTHORIZED/i);
+
+    // Restore teacher assignment for subsequent tests
+    db.prepare('INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id) VALUES (?, ?, ?, ?, ?)').run(
+      teacherUserId, classJuniorId, subjectMathId, 'subject_teacher', year2026Id
+    );
+
+    // 5. Deactivated teacher account
+    db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(teacherUserId);
+    const deactView = canViewMarksSheet(teacherUser, sheetJuniorId);
+    assert.equal(deactView.allowed, false);
+    assert.equal(deactView.code, 'USER_DEACTIVATED');
+    db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run(teacherUserId);
   });
 
   // 22. Gate 3A: Enrolment State Machine & Transition Invariants via HTTP API
