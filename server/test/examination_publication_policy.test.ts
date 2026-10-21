@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import jwt from 'jsonwebtoken';
 import { db } from '../src/db/database.js';
 import { startTestServer, TestServerInstance } from './helpers/testServer.js';
+import { runMigration006 } from '../src/db/migrations/006_examination_publication_policy.js';
 import {
   grantAcademicAuthorization,
   revokeAcademicAuthorization
@@ -145,7 +147,7 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
         { grade: 'S', minPercentage: 35.0, label: 'Ordinary Pass' },
         { grade: 'F', minPercentage: 0.0, label: 'Fail' }
       ],
-      user: { id: adminUserId, username: 'g4_admin', role: 'admin' } as any
+      user: { id: principalPereraUserId, username: 'g4_perera', role: 'admin' } as any
     });
     approveAssessmentPolicyProfile(corePolicyRes.policy.id, { id: principalPereraUserId, username: 'g4_perera', role: 'admin' } as any);
     approvedPolicyId = corePolicyRes.policy.id;
@@ -340,7 +342,10 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
       gradeBand: 'junior_6_9',
       policyCode: 'POL-UNAPPROVED-TEST',
       title: 'Unapproved Provisional Policy',
-      gradingScale: [{ grade: 'A', minPercentage: 75 }],
+      gradingScale: [
+        { grade: 'A', minPercentage: 75.0, label: 'Distinction' },
+        { grade: 'F', minPercentage: 0.0, label: 'Fail' }
+      ],
       user: { id: teacherKamalUserId, username: 'g4_kamal', role: 'subject_teacher' } as any
     });
     assert.equal(unapprovedPol.policy.is_approved_by_school, 0);
@@ -672,4 +677,601 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
     assert.equal(rep.performance.average, 77.5);
     assert.equal(rep.performance.rank, 3);
   });
+
+  // =========================================================================
+  // GATE 4R MASTER VERIFICATION SUITE (G4R-01 through G4R-08)
+  // =========================================================================
+
+  test('G4R-01a: Missing student subject enrolment prevents publication with zero writes', async () => {
+    // 1. Create a dedicated examination for G4R-01
+    const examG4R1Id = Number(db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
+      VALUES ('G4R-01 Missing Enrolment Exam', 2, ?, '2026-06-01', '2026-06-15', 0, 'scheduled', 'junior_6_9')
+    `).run(year2026Id).lastInsertRowid);
+
+    // 2. Create sheet
+    const sheetG4R1Id = Number(db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examG4R1Id, class8AId, subjectMathId, year2026Id, teacherKamalUserId, principalPereraUserId).lastInsertRowid);
+
+    // 3. Create student 4 who is enrolled in class 8A, but has NO record in student_subject_enrollments for Math
+    const stu4Id = Number(db.prepare(`
+      INSERT INTO students (admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone, status)
+      VALUES ('ADM-G4R-04', 'Missing Subject Enrolment Student', 'Missing', '2012-01-01', 'Male', 'Guardian', 'Father', '0770000000', 'Active')
+    `).run().lastInsertRowid);
+    db.prepare("INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status) VALUES (?, ?, ?, 4, 'enrolled')")
+      .run(stu4Id, class8AId, year2026Id);
+
+    // 4. Insert marks for students, including student 4 who lacks confirmed subject enrollment
+    const markInsert = db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 80.0, 100.0, 'PRESENT', 'A', 'submitted', ?)
+    `);
+    markInsert.run(sheetG4R1Id, examG4R1Id, class8AId, subjectMathId, stu4Id, teacherKamalUserId);
+
+    // 5. Attempt publication -> MUST fail with 400 UNVERIFIED_ENROLLMENTS
+    const pubRes = await testServer.request(`/api/marks/examinations/${examG4R1Id}/publish`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${principalPereraToken}` },
+      body: { policyProfileId: approvedPolicyId }
+    });
+
+    assert.equal(pubRes.status, 400);
+    const body = await pubRes.json() as any;
+    assert.equal(body.code, 'UNVERIFIED_ENROLLMENTS');
+
+    // 6. Assert ZERO database writes: examination unpublished, no snapshot recorded
+    const examCheck = db.prepare('SELECT is_published, status FROM examinations WHERE id = ?').get(examG4R1Id) as any;
+    assert.equal(examCheck.is_published, 0);
+    assert.equal(examCheck.status, 'scheduled');
+
+    const pubCount = db.prepare('SELECT COUNT(*) as cnt FROM examination_publications WHERE examination_id = ?').get(examG4R1Id) as any;
+    assert.equal(pubCount.cnt, 0);
+
+    const sheetCheck = db.prepare('SELECT status FROM marks_sheets WHERE id = ?').get(sheetG4R1Id) as any;
+    assert.equal(sheetCheck.status, 'approved');
+  });
+
+  test('G4R-01b: Legitimate elective participation permits correct publication without counting unrelated classmates as missing', async () => {
+    // Two elective subjects: Tamil and Sinhala
+    const subTamilId = Number(db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('G4R-TAMIL', 'Tamil Language', 'Elective', '8')").run().lastInsertRowid);
+    const subSinhalaId = Number(db.prepare("INSERT INTO subjects (code, name, category, grade_level) VALUES ('G4R-SINHALA', 'Sinhala Language', 'Elective', '8')").run().lastInsertRowid);
+
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class8AId, subTamilId);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class8AId, subSinhalaId);
+
+    // Elective enrollments: Student 1 confirmed for Tamil; Student 2 confirmed for Sinhala
+    const sseStmt = db.prepare(`
+      INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at)
+      VALUES (?, ?, ?, ?, 'confirmed', 'language_specific', ?, datetime('now'))
+    `);
+    sseStmt.run(student1Id, subTamilId, class8AId, year2026Id, principalPereraUserId);
+    sseStmt.run(student2Id, subSinhalaId, class8AId, year2026Id, principalPereraUserId);
+
+    // Dedicated exam for electives
+    const examElectiveId = Number(db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
+      VALUES ('G4R-01b Elective Exam', 3, ?, '2026-09-01', '2026-09-15', 0, 'scheduled', 'junior_6_9')
+    `).run(year2026Id).lastInsertRowid);
+
+    const sheetTamilId = Number(db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examElectiveId, class8AId, subTamilId, year2026Id, teacherKamalUserId, principalPereraUserId).lastInsertRowid);
+
+    const sheetSinhalaId = Number(db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examElectiveId, class8AId, subSinhalaId, year2026Id, teacherSunethraUserId, principalPereraUserId).lastInsertRowid);
+
+    // Student 1 has mark in Tamil only; Student 2 has mark in Sinhala only
+    db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 88.0, 100.0, 'PRESENT', 'A', 'submitted', ?)
+    `).run(sheetTamilId, examElectiveId, class8AId, subTamilId, student1Id, teacherKamalUserId);
+
+    db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 92.0, 100.0, 'PRESENT', 'A', 'submitted', ?)
+    `).run(sheetSinhalaId, examElectiveId, class8AId, subSinhalaId, student2Id, teacherSunethraUserId);
+
+    // Publication MUST SUCCEED: Student 1 taking Tamil is not penalized for not taking Sinhala, and vice versa!
+    const pubRes = await testServer.request(`/api/marks/examinations/${examElectiveId}/publish`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${principalPereraToken}` },
+      body: { policyProfileId: approvedPolicyId }
+    });
+
+    assert.equal(pubRes.status, 200);
+    const body = await pubRes.json() as any;
+    assert.equal(body.success, true);
+    assert.equal(body.publicationVersion, 1);
+  });
+
+  test('G4R-02: Unrelated teacher and unscoped admin denied on correction request (zero database changes)', async () => {
+    // student1 Math mark from examTerm1Id (sheetMathId, taught by teacherKamal)
+    const stu1MathMark = db.prepare('SELECT * FROM marks WHERE examination_id = ? AND student_id = ? AND subject_id = ?').get(examTerm1Id, student1Id, subjectMathId) as any;
+    assert.ok(stu1MathMark);
+
+    const initialCorrectionsCount = Number((db.prepare('SELECT COUNT(*) as cnt FROM marks_corrections').get() as any).cnt);
+
+    // 1. Teacher Sunethra (Science teacher) requests correction on Kamal's Math mark -> 403 Forbidden
+    const unassignedTeacherRes = await testServer.request('/api/marks/corrections', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherSunethraToken}` },
+      body: {
+        markId: stu1MathMark.id,
+        expectedPreviousScore: stu1MathMark.score,
+        expectedPreviousStatus: 'PRESENT',
+        requestedScore: 95.0,
+        requestedStatus: 'PRESENT',
+        correctionCategory: 'clerical_addition',
+        detailedJustification: 'Unrelated teacher attempting unauthorized correction'
+      }
+    });
+    assert.equal(unassignedTeacherRes.status, 403);
+    assert.equal((await unassignedTeacherRes.json() as any).code, 'INSUFFICIENT_AUTHORIZATION');
+
+    // 2. Base Admin without academic appointment requests correction -> 403 Forbidden
+    const unscopedAdminRes = await testServer.request('/api/marks/corrections', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        markId: stu1MathMark.id,
+        expectedPreviousScore: stu1MathMark.score,
+        expectedPreviousStatus: 'PRESENT',
+        requestedScore: 95.0,
+        requestedStatus: 'PRESENT',
+        correctionCategory: 'clerical_addition',
+        detailedJustification: 'Unscoped admin attempting unauthorized correction'
+      }
+    });
+    assert.equal(unscopedAdminRes.status, 403);
+    assert.equal((await unscopedAdminRes.json() as any).code, 'INSUFFICIENT_AUTHORIZATION');
+
+    // Verify ZERO rows added to marks_corrections
+    const finalCorrectionsCount = Number((db.prepare('SELECT COUNT(*) as cnt FROM marks_corrections').get() as any).cnt);
+    assert.equal(finalCorrectionsCount, initialCorrectionsCount);
+  });
+
+  test('G4R-03: Secure correction history APIs: Unscoped admin and out-of-scope teacher denied; in-scope lists scoped', async () => {
+    // 1. Unscoped base admin calling GET /api/marks/corrections -> 403 Forbidden
+    const adminListRes = await testServer.request('/api/marks/corrections', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminListRes.status, 403);
+    assert.equal((await adminListRes.json() as any).code, 'INSUFFICIENT_AUTHORIZATION');
+
+    // 2. Unscoped base admin calling GET /api/marks/corrections/:id -> 403 Forbidden
+    const adminDetailRes = await testServer.request(`/api/marks/corrections/${correction1Id}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(adminDetailRes.status, 403);
+    assert.equal((await adminDetailRes.json() as any).code, 'INSUFFICIENT_AUTHORIZATION');
+
+    // 3. Out-of-scope teacher (teacherSunethra, only assigned to Science) calling GET /api/marks/corrections/:id on Math correction -> 403 Forbidden
+    const teacherSunethraDetailRes = await testServer.request(`/api/marks/corrections/${correction1Id}`, {
+      headers: { Authorization: `Bearer ${teacherSunethraToken}` }
+    });
+    assert.equal(teacherSunethraDetailRes.status, 403);
+    assert.equal((await teacherSunethraDetailRes.json() as any).code, 'INSUFFICIENT_AUTHORIZATION');
+
+    // 4. In-scope assigned teacher Kamal (Math teacher) calling GET /api/marks/corrections/:id -> 200 OK
+    const teacherKamalDetailRes = await testServer.request(`/api/marks/corrections/${correction1Id}`, {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(teacherKamalDetailRes.status, 200);
+    const detailBody = await teacherKamalDetailRes.json() as any;
+    assert.equal(detailBody.correction.id, correction1Id);
+    assert.equal(detailBody.correction.subject_id, subjectMathId);
+
+    // 5. In-scope assigned teacher Kamal calling GET /api/marks/corrections -> 200 OK, scoped to Math
+    const teacherKamalListRes = await testServer.request('/api/marks/corrections', {
+      headers: { Authorization: `Bearer ${teacherKamalToken}` }
+    });
+    assert.equal(teacherKamalListRes.status, 200);
+    const listBody = await teacherKamalListRes.json() as any;
+    assert.ok(Array.isArray(listBody.corrections));
+    for (const item of listBody.corrections) {
+      assert.equal(item.subject_id, subjectMathId);
+    }
+  });
+
+  test('G4R-04: Prevent historical self-approval: Historical marks entrant/modifier cannot approve their own correction', async () => {
+    // 1. Mark originally entered/modified by Principal Perera
+    const stu2MathMark = db.prepare('SELECT id, score FROM marks WHERE examination_id = ? AND student_id = ? AND subject_id = ?').get(examTerm1Id, student2Id, subjectMathId) as any;
+    assert.ok(stu2MathMark);
+    const markId = stu2MathMark.id;
+
+    // Simulate historical entrant/modifier: Principal Perera entered/modified this mark
+    db.prepare('UPDATE marks SET entered_by_user_id = ? WHERE id = ?').run(principalPereraUserId, markId);
+    db.prepare(`
+      INSERT INTO marks_audit_history (mark_id, sheet_id, examination_id, student_id, subject_id, action, actor_user_id, previous_score, new_score, created_at)
+      VALUES (?, ?, ?, ?, ?, 'DRAFT_SAVE', ?, NULL, 90.0, datetime('now'))
+    `).run(markId, sheetMathId, examTerm1Id, student2Id, subjectMathId, principalPereraUserId);
+
+    // 2. Teacher Kamal requests a correction for this mark
+    const corrRes = requestMarkCorrection({
+      markId,
+      expectedPreviousScore: 90.0,
+      expectedPreviousStatus: 'PRESENT',
+      requestedScore: 95.0,
+      requestedStatus: 'PRESENT',
+      correctionCategory: 'clerical_addition',
+      detailedJustification: 'Script re-evaluation by subject head',
+      user: { id: teacherKamalUserId, username: 'g4_kamal', role: 'subject_teacher' } as any
+    });
+    assert.equal(corrRes.success, true);
+    const correctionId = corrRes.correctionId;
+
+    // 3. Principal Perera (who historically entered this mark) attempts to approve -> MUST be rejected with 403 SELF_APPROVAL_ENTRANT!
+    const selfApproveRes = await testServer.request(`/api/marks/corrections/${correctionId}/review`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${principalPereraToken}` },
+      body: { decision: 'approve', reviewComments: 'Principal attempting self-approval of mark he entered' }
+    });
+
+    assert.equal(selfApproveRes.status, 403);
+    const body = await selfApproveRes.json() as any;
+    assert.equal(body.code, 'SELF_APPROVAL_ENTRANT');
+
+    // Verify ZERO mutations occurred on the mark
+    const markCheck = db.prepare('SELECT score, status FROM marks WHERE id = ?').get(markId) as any;
+    assert.equal(markCheck.score, 90.0);
+
+    // 4. Independent Vice Principal Academic (who did not enter/modify the mark) approves -> SUCCEEDS
+    const vpApproveRes = await testServer.request(`/api/marks/corrections/${correctionId}/review`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${vpAcademicToken}` },
+      body: { decision: 'approve', reviewComments: 'Independent VP Academic approval verified' }
+    });
+    assert.equal(vpApproveRes.status, 200);
+    const vpBody = await vpApproveRes.json() as any;
+    assert.equal(vpBody.status, 'approved');
+  });
+
+  test('G4R-05: Mandatory Arithmetic Test: Mathematics weight 10, Science weight 1 orders Student A > Student B; equal weights orders B > A', () => {
+    // Dedicated class for arithmetic verification
+    const classArithId = Number(db.prepare("INSERT INTO classes (grade, name, room_number, academic_year_id) VALUES (8, '8-ARITH', '102', ?)").run(year2026Id).lastInsertRowid);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(classArithId, subjectMathId);
+    db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(classArithId, subjectSciId);
+
+    // Two students: Student A and Student B
+    const stuAId = Number(db.prepare("INSERT INTO students (admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone, status) VALUES ('ADM-ARITH-A', 'Student A', 'A', '2012-01-01', 'Male', 'P', 'F', '0770000000', 'Active')").run().lastInsertRowid);
+    const stuBId = Number(db.prepare("INSERT INTO students (admission_no, full_name, calling_name, dob, gender, guardian_name, guardian_relation, guardian_phone, status) VALUES ('ADM-ARITH-B', 'Student B', 'B', '2012-01-01', 'Male', 'P', 'F', '0770000000', 'Active')").run().lastInsertRowid);
+
+    db.prepare("INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status) VALUES (?, ?, ?, 1, 'enrolled')").run(stuAId, classArithId, year2026Id);
+    db.prepare("INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status) VALUES (?, ?, ?, 2, 'enrolled')").run(stuBId, classArithId, year2026Id);
+
+    // Confirmed subject enrollments
+    const sseStmt = db.prepare("INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at) VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'))");
+    sseStmt.run(stuAId, subjectMathId, classArithId, year2026Id, principalPereraUserId);
+    sseStmt.run(stuAId, subjectSciId, classArithId, year2026Id, principalPereraUserId);
+    sseStmt.run(stuBId, subjectMathId, classArithId, year2026Id, principalPereraUserId);
+    sseStmt.run(stuBId, subjectSciId, classArithId, year2026Id, principalPereraUserId);
+
+    const examArithId = Number(db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
+      VALUES ('G4R-05 Arithmetic Exam', 1, ?, '2026-03-01', '2026-03-15', 1, 'published', 'junior_6_9')
+    `).run(year2026Id).lastInsertRowid);
+
+    // Mark entries:
+    // Student A: Mathematics 85, Science 10
+    // Student B: Mathematics 60, Science 90
+    const markInsert = db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (1, ?, ?, ?, ?, ?, 100.0, 'PRESENT', 'A', 'published', ?)
+    `);
+    markInsert.run(examArithId, classArithId, subjectMathId, stuAId, 85.0, teacherKamalUserId);
+    markInsert.run(examArithId, classArithId, subjectSciId, stuAId, 10.0, teacherSunethraUserId);
+
+    markInsert.run(examArithId, classArithId, subjectMathId, stuBId, 60.0, teacherKamalUserId);
+    markInsert.run(examArithId, classArithId, subjectSciId, stuBId, 90.0, teacherSunethraUserId);
+
+    // Case 1: Mathematics weight 10, Science weight 1
+    // Student A: (85*10 + 10*1) / 11 = 860 / 11 = 78.18%
+    // Student B: (60*10 + 90*1) / 11 = 690 / 11 = 62.73%
+    // Expectation: Student A ranks 1, Student B ranks 2 (Student A ranks above Student B!)
+    const weightedPolicy = {
+      id: approvedPolicyId,
+      policy_code: 'POL-WEIGHTED-10-1',
+      title: 'Weighted 10:1 Policy',
+      version: 1,
+      is_approved_by_school: 1,
+      gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'F', minPercentage: 0.0 }],
+      subject_weights_json: JSON.stringify({
+        'G4-MATH': 10,
+        'G4-SCI': 1
+      })
+    } as any;
+
+    const calcWeighted = calculateClassResults(examArithId, classArithId, weightedPolicy);
+    const resAWeighted = calcWeighted.students.find(s => s.studentId === stuAId);
+    const resBWeighted = calcWeighted.students.find(s => s.studentId === stuBId);
+
+    assert.ok(resAWeighted);
+    assert.ok(resBWeighted);
+    assert.equal(resAWeighted.averagePercentage, 78.18);
+    assert.equal(resBWeighted.averagePercentage, 62.73);
+    assert.equal(resAWeighted.rank, 1, 'Student A must rank 1 under Math 10 : Science 1 weights');
+    assert.equal(resBWeighted.rank, 2, 'Student B must rank 2 under Math 10 : Science 1 weights');
+
+    // Case 2: Equal weights (Mathematics weight 1, Science weight 1)
+    // Student A: (85 + 10) / 2 = 47.5%
+    // Student B: (60 + 90) / 2 = 75.0%
+    // Expectation: Student B ranks 1, Student A ranks 2 (Student B ranks above Student A!)
+    const equalPolicy = {
+      id: approvedPolicyId,
+      policy_code: 'POL-EQUAL-1-1',
+      title: 'Equal 1:1 Policy',
+      version: 1,
+      is_approved_by_school: 1,
+      gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'F', minPercentage: 0.0 }],
+      subject_weights_json: JSON.stringify({
+        'G4-MATH': 1,
+        'G4-SCI': 1
+      })
+    } as any;
+
+    const calcEqual = calculateClassResults(examArithId, classArithId, equalPolicy);
+    const resAEqual = calcEqual.students.find(s => s.studentId === stuAId);
+    const resBEqual = calcEqual.students.find(s => s.studentId === stuBId);
+
+    assert.ok(resAEqual);
+    assert.ok(resBEqual);
+    assert.equal(resAEqual.averagePercentage, 47.5);
+    assert.equal(resBEqual.averagePercentage, 75.0);
+    assert.equal(resBEqual.rank, 1, 'Student B must rank 1 under equal weights');
+    assert.equal(resAEqual.rank, 2, 'Student A must rank 2 under equal weights');
+  });
+
+  test('G4R-06: Enforce post-publication correction deadline window against publication timestamp', async () => {
+    // 1. Create policy with strict 14-day correction window
+    const windowPolicyRes = createAssessmentPolicyProfile({
+      academicYearId: year2026Id,
+      gradeBand: 'junior_6_9',
+      policyCode: 'POL-G4R-WINDOW-14',
+      title: '14-Day Window Policy',
+      correctionWindowDays: 14,
+      gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'F', minPercentage: 0.0 }],
+      user: { id: principalPereraUserId, username: 'g4_perera', role: 'admin' } as any
+    });
+    approveAssessmentPolicyProfile(windowPolicyRes.policy.id, { id: principalPereraUserId, username: 'g4_perera', role: 'admin' } as any);
+
+    // 2. Create published exam published 30 days ago (expired)
+    const examExpiredId = Number(db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band, assessment_policy_id, published_at, published_by_user_id)
+      VALUES ('Expired Window Exam', 1, ?, '2026-01-01', '2026-01-15', 1, 'published', 'junior_6_9', ?, datetime('now', '-30 days'), ?)
+    `).run(year2026Id, windowPolicyRes.policy.id, principalPereraUserId).lastInsertRowid);
+
+    const sheetExpiredId = Number(db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+      VALUES (?, ?, ?, ?, ?, 1, 'published')
+    `).run(examExpiredId, class8AId, subjectMathId, year2026Id, teacherKamalUserId).lastInsertRowid);
+
+    const markExpiredId = Number(db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 70.0, 100.0, 'PRESENT', 'B', 'published', ?)
+    `).run(sheetExpiredId, examExpiredId, class8AId, subjectMathId, student1Id, teacherKamalUserId).lastInsertRowid);
+
+    // 3. Request correction for expired exam -> MUST fail with 400 CORRECTION_WINDOW_EXPIRED
+    const expiredRes = await testServer.request('/api/marks/corrections', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}` },
+      body: {
+        markId: markExpiredId,
+        expectedPreviousScore: 70.0,
+        expectedPreviousStatus: 'PRESENT',
+        requestedScore: 80.0,
+        requestedStatus: 'PRESENT',
+        correctionCategory: 'clerical_addition',
+        detailedJustification: 'Attempted correction on expired window exam'
+      }
+    });
+
+    assert.equal(expiredRes.status, 400);
+    const body = await expiredRes.json() as any;
+    assert.equal(body.code, 'CORRECTION_WINDOW_EXPIRED');
+
+    // Verify zero database changes
+    const corrCount = db.prepare('SELECT COUNT(*) as cnt FROM marks_corrections WHERE mark_id = ?').get(markExpiredId) as any;
+    assert.equal(corrCount.cnt, 0);
+
+    // 4. In-window publication: Published 5 days ago (within 14-day window) -> SUCCEEDS
+    const examValidWindowId = Number(db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band, assessment_policy_id, published_at, published_by_user_id)
+      VALUES ('Valid Window Exam', 1, ?, '2026-01-01', '2026-01-15', 1, 'published', 'junior_6_9', ?, datetime('now', '-5 days'), ?)
+    `).run(year2026Id, windowPolicyRes.policy.id, principalPereraUserId).lastInsertRowid);
+
+    const sheetValidId = Number(db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status)
+      VALUES (?, ?, ?, ?, ?, 1, 'published')
+    `).run(examValidWindowId, class8AId, subjectMathId, year2026Id, teacherKamalUserId).lastInsertRowid);
+
+    const markValidId = Number(db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 70.0, 100.0, 'PRESENT', 'B', 'published', ?)
+    `).run(sheetValidId, examValidWindowId, class8AId, subjectMathId, student1Id, teacherKamalUserId).lastInsertRowid);
+
+    const inWindowRes = await testServer.request('/api/marks/corrections', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherKamalToken}` },
+      body: {
+        markId: markValidId,
+        expectedPreviousScore: 70.0,
+        expectedPreviousStatus: 'PRESENT',
+        requestedScore: 80.0,
+        requestedStatus: 'PRESENT',
+        correctionCategory: 'clerical_addition',
+        detailedJustification: 'In-window clerical correction'
+      }
+    });
+
+    assert.equal(inWindowRes.status, 201);
+    const inWindowBody = await inWindowRes.json() as any;
+    assert.equal(inWindowBody.status, 'pending');
+  });
+
+  test('G4R-07: Publication transactional safety: Revoked authorization immediately fails closed with zero database writes', async () => {
+    // 1. Create a publication-ready examination
+    const examRevokeId = Number(db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
+      VALUES ('G4R-07 Revoke Safety Exam', 1, ?, '2026-02-01', '2026-02-15', 0, 'scheduled', 'junior_6_9')
+    `).run(year2026Id).lastInsertRowid);
+
+    const sheetRevokeId = Number(db.prepare(`
+      INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examRevokeId, class8AId, subjectMathId, year2026Id, teacherKamalUserId, principalPereraUserId).lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, status, entered_by_user_id)
+      VALUES (?, ?, ?, ?, ?, 80.0, 100.0, 'PRESENT', 'A', 'submitted', ?)
+    `).run(sheetRevokeId, examRevokeId, class8AId, subjectMathId, student1Id, teacherKamalUserId);
+
+    // 2. Create a temporary principal user who will have their appointment revoked
+    const tempUserStmt = db.prepare('INSERT INTO users (username, email, password_hash, full_name, role, is_active, token_version) VALUES (?, ?, ?, ?, ?, 1, 1)');
+    const tempPrincipalId = Number(tempUserStmt.run('g4r_revoked_principal', 'revoked_p@kcc.test', 'hash', 'Revoked Principal', 'admin').lastInsertRowid);
+    const tempToken = jwt.sign({ id: tempPrincipalId, username: 'g4r_revoked_principal', role: 'admin', tokenVersion: 1 }, process.env.JWT_SECRET!);
+
+    const authRes = grantAcademicAuthorization({
+      userId: tempPrincipalId,
+      academicYearId: year2026Id,
+      authRole: 'principal',
+      gradeBand: 'all',
+      grantedByUserId: adminUserId
+    });
+
+    // Revoke the authorization immediately prior to publication attempt
+    revokeAcademicAuthorization({
+      authorizationId: authRes.id,
+      revokedByUserId: adminUserId,
+      reason: 'Administrative suspension'
+    });
+
+    // Attempt publication -> MUST fail with 403 INSUFFICIENT_AUTHORIZATION
+    const pubRes = await testServer.request(`/api/marks/examinations/${examRevokeId}/publish`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tempToken}` },
+      body: { policyProfileId: approvedPolicyId }
+    });
+
+    assert.equal(pubRes.status, 403);
+    const body = await pubRes.json() as any;
+    assert.equal(body.code, 'INSUFFICIENT_AUTHORIZATION');
+
+    // Assert zero database writes
+    const examCheck = db.prepare('SELECT is_published, status FROM examinations WHERE id = ?').get(examRevokeId) as any;
+    assert.equal(examCheck.is_published, 0);
+    assert.equal(examCheck.status, 'scheduled');
+  });
+
+  test('G4R-08a: Assessment policy validation rejects malformed, out-of-range or contradictory inputs (400)', () => {
+    const validUser = { id: principalPereraUserId, username: 'g4_perera', role: 'admin' } as any;
+
+    // 1. Empty grading scale
+    assert.throws(
+      () => createAssessmentPolicyProfile({
+        academicYearId: year2026Id,
+        gradeBand: 'junior_6_9',
+        policyCode: 'POL-ERR-1',
+        title: 'Empty Scale',
+        gradingScale: [],
+        user: validUser
+      }),
+      (err: any) => err.code === 'INVALID_POLICY_CONFIGURATION'
+    );
+
+    // 2. Negative subject weight
+    assert.throws(
+      () => createAssessmentPolicyProfile({
+        academicYearId: year2026Id,
+        gradeBand: 'junior_6_9',
+        policyCode: 'POL-ERR-2',
+        title: 'Negative Weight',
+        gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'F', minPercentage: 0.0 }],
+        subjectWeights: { 'MATH': -5.0 },
+        user: validUser
+      }),
+      (err: any) => err.code === 'INVALID_POLICY_CONFIGURATION'
+    );
+
+    // 3. Inverted date range (effectiveFrom > effectiveTo)
+    assert.throws(
+      () => createAssessmentPolicyProfile({
+        academicYearId: year2026Id,
+        gradeBand: 'junior_6_9',
+        policyCode: 'POL-ERR-3',
+        title: 'Inverted Dates',
+        gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'F', minPercentage: 0.0 }],
+        effectiveFrom: '2026-12-31',
+        effectiveTo: '2026-01-01',
+        user: validUser
+      }),
+      (err: any) => err.code === 'INVALID_POLICY_CONFIGURATION'
+    );
+
+    // 4. Correction window out of bounds (> 365)
+    assert.throws(
+      () => createAssessmentPolicyProfile({
+        academicYearId: year2026Id,
+        gradeBand: 'junior_6_9',
+        policyCode: 'POL-ERR-4',
+        title: 'Huge Window',
+        gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'F', minPercentage: 0.0 }],
+        correctionWindowDays: 500,
+        user: validUser
+      }),
+      (err: any) => err.code === 'INVALID_POLICY_CONFIGURATION'
+    );
+
+    // 5. Missing lowest 0% band
+    assert.throws(
+      () => createAssessmentPolicyProfile({
+        academicYearId: year2026Id,
+        gradeBand: 'junior_6_9',
+        policyCode: 'POL-ERR-5',
+        title: 'Missing Zero Band',
+        gradingScale: [{ grade: 'A', minPercentage: 75.0 }, { grade: 'C', minPercentage: 50.0 }],
+        user: validUser
+      }),
+      (err: any) => err.code === 'INVALID_POLICY_CONFIGURATION'
+    );
+  });
+
+  test('G4R-08b: Migration 006 idempotent execution and synthetic failure-injection rollback safety', () => {
+    // 1. Idempotency test: Run migration 006 against current database (already at schema v6)
+    const repeatResult = runMigration006(db);
+    assert.equal(repeatResult.applied, false, 'Repeat execution must return applied: false');
+    assert.equal(repeatResult.version, 6, 'Schema version remains 6');
+
+    // 2. Synthetic failure injection test:
+    // Create an isolated in-memory SQLite database
+    const synthDb = new DatabaseSync(':memory:');
+    try {
+      synthDb.exec('PRAGMA foreign_keys = OFF;');
+      // Setup prerequisite tables for schema V5, with assessment_policy_profiles created as a VIEW
+      // In SQLite, executing ALTER TABLE ADD COLUMN on a VIEW triggers an instant transactional error.
+      synthDb.exec(`
+        CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT);
+        CREATE VIEW assessment_policy_profiles AS SELECT 1 as id, 'POL' as policy_code;
+        CREATE TABLE examinations (id INTEGER PRIMARY KEY, name TEXT);
+        PRAGMA user_version = 5;
+      `);
+
+      // Attempt migration -> must throw and cleanly roll back
+      assert.throws(
+        () => runMigration006(synthDb),
+        /Migration 006 transactional failure/
+      );
+
+      // Verify that user_version is rolled back and remains 5
+      const versionAfter = (synthDb.prepare('PRAGMA user_version;').get() as any).user_version;
+      assert.equal(versionAfter, 5, 'Schema user_version must remain 5 after transactional rollback');
+    } finally {
+      synthDb.close();
+    }
+  });
 });
+

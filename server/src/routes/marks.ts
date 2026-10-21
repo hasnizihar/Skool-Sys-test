@@ -3,7 +3,7 @@ import { db } from '../db/database.js';
 import { requireAuth, getUserAssignments, canManageMarks, canViewMarksSheet, canAccessClass } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 import { isStudentEligibleForSubject } from '../services/studentEnrollmentService.js';
-import { hasAcademicStaffRole } from '../services/academicAuthorizationService.js';
+import { hasAcademicStaffRole, getActiveStaffAuthorizations, doesBandCoverGrade } from '../services/academicAuthorizationService.js';
 import {
   ensureMarksSheet,
   getMarksSheetDetails,
@@ -318,7 +318,7 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
     }
   });
 
-  const average = gradedCount > 0 ? Math.round((totalScore / gradedCount) * 10) / 10 : 0;
+  let average: number | null = gradedCount > 0 ? Math.round((totalScore / gradedCount) * 10) / 10 : 0;
 
   // MANDATORY Gate 3R Fix P0-04:
   // 1. Truthful attendance reporting: No fake 100% attendance. If 0 days, return null and 'Not Recorded'.
@@ -335,24 +335,33 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
   let isReissued = false;
 
   if (isPublished) {
+    let resolvedPol: any = undefined;
     if (exam.assessment_policy_id) {
       try {
         const pol = getAssessmentPolicyProfile(exam.assessment_policy_id);
+        resolvedPol = pol;
         policyMetadata = {
           id: pol.id,
           policy_code: pol.policy_code,
           title: pol.title,
           version: pol.version,
-          is_approved_by_school: pol.is_approved_by_school
+          is_approved_by_school: pol.is_approved_by_school,
+          subject_weights: pol.subject_weights,
+          ranking_rules: pol.ranking_rules
         };
       } catch {}
     }
 
     try {
-      const classCalc = calculateClassResults(examId, student.class_id, policyMetadata);
+      const classCalc = calculateClassResults(examId, student.class_id, resolvedPol);
       const stuResult = classCalc.students.find(s => s.studentId === studentId);
-      if (stuResult && stuResult.rank !== null && stuResult.rank !== undefined) {
-        officialRank = stuResult.rank;
+      if (stuResult) {
+        totalScore = stuResult.totalScore;
+        gradedCount = stuResult.gradedSubjectsCount;
+        average = stuResult.averagePercentage;
+        if (stuResult.rank !== null && stuResult.rank !== undefined) {
+          officialRank = stuResult.rank;
+        }
       }
     } catch {}
 
@@ -726,12 +735,40 @@ router.post('/corrections', requireAuth, (req, res) => {
 
 router.get('/corrections', requireAuth, (req, res) => {
   try {
+    // G4R-03: Live active account check
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(req.user!.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      res.status(403).json({ error: 'User account is deactivated or invalid.', code: 'USER_DEACTIVATED' });
+      return;
+    }
+
+    // Scoped permissions: leadership authorizations and teacher assignments
+    const activeAuths = getActiveStaffAuthorizations(req.user!.id);
+    const leadershipAuths = activeAuths.filter(a =>
+      ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role)
+    );
+
+    const hasTeacherAssignments = db.prepare(`
+      SELECT 1 FROM teacher_assignments WHERE teacher_id = ? AND assignment_type = 'subject_teacher' LIMIT 1
+    `).get(req.user!.id);
+
+    // Reject out-of-scope teachers and unscoped administrators
+    if (leadershipAuths.length === 0 && !hasTeacherAssignments) {
+      res.status(403).json({
+        error: 'Access denied: Viewing correction records requires an active subject teaching assignment or scoped academic leadership authorization.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
     const { examinationId, sheetId, status } = req.query;
     let query = `
       SELECT mc.*, s.admission_no, s.full_name as student_name, sub.name as subject_name, sub.code as subject_code,
              u_req.username as requested_by_username, u_req.full_name as requested_by_name,
              u_rev.username as reviewed_by_username, u_rev.full_name as reviewed_by_name
       FROM marks_corrections mc
+      JOIN marks_sheets ms ON mc.sheet_id = ms.id
+      JOIN classes c ON ms.class_id = c.id
       JOIN students s ON mc.student_id = s.id
       JOIN subjects sub ON mc.subject_id = sub.id
       JOIN users u_req ON mc.requested_by_user_id = u_req.id
@@ -739,10 +776,43 @@ router.get('/corrections', requireAuth, (req, res) => {
       WHERE 1=1
     `;
     const params: any[] = [];
+
+    // SQL-level scoping conditions
+    const scopeClauses: string[] = [];
+    for (const auth of leadershipAuths) {
+      if (auth.grade_band === 'all') {
+        scopeClauses.push('(ms.academic_year_id = ?)');
+        params.push(auth.academic_year_id);
+      } else if (auth.grade_band === 'junior_6_9') {
+        scopeClauses.push('(ms.academic_year_id = ? AND c.grade BETWEEN 6 AND 9)');
+        params.push(auth.academic_year_id);
+      } else if (auth.grade_band === 'ol_10_11') {
+        scopeClauses.push('(ms.academic_year_id = ? AND c.grade BETWEEN 10 AND 11)');
+        params.push(auth.academic_year_id);
+      } else if (auth.grade_band === 'al_12_13') {
+        scopeClauses.push('(ms.academic_year_id = ? AND c.grade BETWEEN 12 AND 13)');
+        params.push(auth.academic_year_id);
+      }
+    }
+
+    if (hasTeacherAssignments) {
+      scopeClauses.push(`EXISTS (
+        SELECT 1 FROM teacher_assignments ta
+        WHERE ta.teacher_id = ? AND ta.class_id = ms.class_id AND ta.subject_id = mc.subject_id
+          AND ta.academic_year_id = ms.academic_year_id AND ta.assignment_type = 'subject_teacher'
+      )`);
+      params.push(req.user!.id);
+    }
+
+    if (scopeClauses.length > 0) {
+      query += ` AND (${scopeClauses.join(' OR ')})`;
+    }
+
     if (examinationId) { query += ' AND mc.examination_id = ?'; params.push(Number(examinationId)); }
     if (sheetId) { query += ' AND mc.sheet_id = ?'; params.push(Number(sheetId)); }
     if (status) { query += ' AND mc.status = ?'; params.push(String(status)); }
     query += ' ORDER BY mc.id DESC';
+
     const corrections = db.prepare(query).all(...params);
     res.json({ corrections });
   } catch (err: any) {
@@ -752,23 +822,54 @@ router.get('/corrections', requireAuth, (req, res) => {
 
 router.get('/corrections/:id', requireAuth, (req, res) => {
   try {
+    // G4R-03: Live active account check
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(req.user!.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      res.status(403).json({ error: 'User account is deactivated or invalid.', code: 'USER_DEACTIVATED' });
+      return;
+    }
+
     const correctionId = Number(req.params.id);
     const correction = db.prepare(`
-      SELECT mc.*, s.admission_no, s.full_name as student_name, sub.name as subject_name, sub.code as subject_code,
+      SELECT mc.*, ms.class_id, ms.academic_year_id, c.grade,
+             s.admission_no, s.full_name as student_name, sub.name as subject_name, sub.code as subject_code,
              u_req.username as requested_by_username, u_req.full_name as requested_by_name,
              u_rev.username as reviewed_by_username, u_rev.full_name as reviewed_by_name
       FROM marks_corrections mc
+      JOIN marks_sheets ms ON mc.sheet_id = ms.id
+      JOIN classes c ON ms.class_id = c.id
       JOIN students s ON mc.student_id = s.id
       JOIN subjects sub ON mc.subject_id = sub.id
       JOIN users u_req ON mc.requested_by_user_id = u_req.id
       LEFT JOIN users u_rev ON mc.reviewed_by_user_id = u_rev.id
       WHERE mc.id = ?
-    `).get(correctionId);
+    `).get(correctionId) as any;
 
     if (!correction) {
       res.status(404).json({ error: 'Correction record not found.' });
       return;
     }
+
+    // Scoped authorization check
+    const activeAuths = getActiveStaffAuthorizations(req.user!.id, correction.academic_year_id);
+    const isAuthorizedLeadership = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role) &&
+      (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, correction.grade))
+    );
+
+    const isAssignedTeacher = db.prepare(`
+      SELECT 1 FROM teacher_assignments
+      WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
+    `).get(req.user!.id, correction.class_id, correction.subject_id, correction.academic_year_id);
+
+    if (!isAuthorizedLeadership && !isAssignedTeacher) {
+      res.status(403).json({
+        error: 'Access denied: You are not authorized to view this correction record.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
     res.json({ correction });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -117,7 +117,65 @@ export function requestMarkCorrection(params: RequestMarkCorrectionParams): {
     throw err;
   }
 
-  // 4. Validate Correction Category & Justification
+  // 4. Role & Scope Authorization Check (G4R-02)
+  // Allowed: Active assigned subject teacher for this class, subject, and academic year
+  // OR active scoped academic leadership (Principal, VP Academic, Section Head) covering this grade band
+  const classRow = db.prepare('SELECT grade, academic_year_id FROM classes WHERE id = ?').get(sheet.class_id) as any;
+  const isAssignedTeacher = db.prepare(`
+    SELECT id FROM teacher_assignments
+    WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
+  `).get(user.id, sheet.class_id, sheet.subject_id, sheet.academic_year_id);
+
+  const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
+  const isAuthorizedLeadership = activeAuths.some(a =>
+    ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+    (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, classRow?.grade))
+  );
+
+  if (!isAssignedTeacher && !isAuthorizedLeadership) {
+    const err = new Error(
+      'Access denied: Requesting a mark correction requires an active teaching assignment for this class and subject, or an authorized academic leadership appointment.'
+    );
+    (err as any).statusCode = 403;
+    (err as any).code = 'INSUFFICIENT_AUTHORIZATION';
+    throw err;
+  }
+
+  // 5. Post-Publication Correction Window Enforcement (G4R-06)
+  const publication = db.prepare(`
+    SELECT published_at FROM examination_publications
+    WHERE examination_id = ?
+    ORDER BY publication_version DESC
+    LIMIT 1
+  `).get(exam.id) as { published_at: string } | undefined;
+
+  let windowDays = 21;
+  if (exam.assessment_policy_id) {
+    try {
+      const pol = getAssessmentPolicyProfile(exam.assessment_policy_id);
+      if (pol?.correction_window_days) {
+        windowDays = pol.correction_window_days;
+      }
+    } catch {}
+  }
+
+  const publishedAtStr = publication?.published_at || exam.published_at;
+  if (publishedAtStr) {
+    const publishedTime = new Date(publishedAtStr).getTime();
+    const deadlineTime = publishedTime + (windowDays * 24 * 60 * 60 * 1000);
+    const nowTime = Date.now();
+
+    if (nowTime > deadlineTime) {
+      const err = new Error(
+        `Correction request declined: The correction window for this examination closed on ${new Date(deadlineTime).toISOString()} (${windowDays} days post-publication). Expired requests are locked against modification.`
+      );
+      (err as any).statusCode = 400;
+      (err as any).code = 'CORRECTION_WINDOW_EXPIRED';
+      throw err;
+    }
+  }
+
+  // 6. Validate Correction Category & Justification
   const allowedCategories: CorrectionCategory[] = [
     'clerical_addition',
     'missed_question',
@@ -139,7 +197,7 @@ export function requestMarkCorrection(params: RequestMarkCorrectionParams): {
     throw err;
   }
 
-  // 5. Validate Requested Score & Status
+  // 7. Validate Requested Score & Status
   if (!['PRESENT', 'ABSENT', 'MEDICAL', 'EXEMPT'].includes(requestedStatus)) {
     const err = new Error(`Invalid assessment status '${requestedStatus}'.`);
     (err as any).statusCode = 400;
@@ -170,66 +228,74 @@ export function requestMarkCorrection(params: RequestMarkCorrectionParams): {
     }
   }
 
-  // 6. Optimistic Concurrency Control (CAS): Expected previous score/status validation
-  const currentScore = mark.score !== null ? Number(mark.score) : null;
-  const currentStatus = mark.assessment_status;
+  // 8. Transactional CAS Validation & Insertion
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    const lockedMark = db.prepare('SELECT * FROM marks WHERE id = ?').get(mark.id) as any;
+    const currentScore = lockedMark.score !== null ? Number(lockedMark.score) : null;
+    const currentStatus = lockedMark.assessment_status;
 
-  const scoreMatches = (expectedPreviousScore === null && currentScore === null) ||
-    (expectedPreviousScore !== null && currentScore !== null && Math.abs(expectedPreviousScore - currentScore) < 0.001);
+    const scoreMatches = (expectedPreviousScore === null && currentScore === null) ||
+      (expectedPreviousScore !== null && currentScore !== null && Math.abs(expectedPreviousScore - currentScore) < 0.001);
 
-  if (!scoreMatches || expectedPreviousStatus !== currentStatus) {
-    const err = new Error(
-      `Stale record detected: Expected previous state [score: ${expectedPreviousScore}, status: '${expectedPreviousStatus}'] does not match current database state [score: ${currentScore}, status: '${currentStatus}'].`
+    if (!scoreMatches || expectedPreviousStatus !== currentStatus) {
+      const err = new Error(
+        `Stale record detected: Expected previous state [score: ${expectedPreviousScore}, status: '${expectedPreviousStatus}'] does not match current database state [score: ${currentScore}, status: '${currentStatus}'].`
+      );
+      (err as any).statusCode = 409;
+      (err as any).code = 'STALE_MARK_STATE';
+      throw err;
+    }
+
+    // Check for Pending Duplicate Correction under write lock
+    const pendingExisting = db.prepare(`
+      SELECT id FROM marks_corrections
+      WHERE mark_id = ? AND status = 'pending'
+    `).get(mark.id);
+
+    if (pendingExisting) {
+      const err = new Error('A correction request is already pending review for this mark record.');
+      (err as any).statusCode = 409;
+      (err as any).code = 'DUPLICATE_PENDING_CORRECTION';
+      throw err;
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO marks_corrections (
+        mark_id, sheet_id, examination_id, student_id, subject_id,
+        requested_by_user_id, expected_previous_score, expected_previous_status,
+        requested_score, requested_status, correction_category,
+        detailed_justification, evidence_attachment_ref, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+    `);
+
+    const result = stmt.run(
+      mark.id,
+      mark.sheet_id,
+      mark.examination_id,
+      mark.student_id,
+      mark.subject_id,
+      user.id,
+      expectedPreviousScore ?? null,
+      expectedPreviousStatus,
+      requestedScore ?? null,
+      requestedStatus,
+      correctionCategory,
+      detailedJustification.trim(),
+      evidenceAttachmentRef?.trim() || null
     );
-    (err as any).statusCode = 409;
-    (err as any).code = 'STALE_MARK_STATE';
+
+    db.exec('COMMIT;');
+
+    return {
+      success: true,
+      correctionId: Number(result.lastInsertRowid),
+      status: 'pending'
+    };
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch {}
     throw err;
   }
-
-  // 7. Check for Pending Duplicate Correction
-  const pendingExisting = db.prepare(`
-    SELECT id FROM marks_corrections
-    WHERE mark_id = ? AND status = 'pending'
-  `).get(mark.id);
-
-  if (pendingExisting) {
-    const err = new Error('A correction request is already pending review for this mark record.');
-    (err as any).statusCode = 409;
-    (err as any).code = 'DUPLICATE_PENDING_CORRECTION';
-    throw err;
-  }
-
-  // 8. Insert Correction Request (leaves mark table untouched)
-  const stmt = db.prepare(`
-    INSERT INTO marks_corrections (
-      mark_id, sheet_id, examination_id, student_id, subject_id,
-      requested_by_user_id, expected_previous_score, expected_previous_status,
-      requested_score, requested_status, correction_category,
-      detailed_justification, evidence_attachment_ref, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
-  `);
-
-  const result = stmt.run(
-    mark.id,
-    mark.sheet_id,
-    mark.examination_id,
-    mark.student_id,
-    mark.subject_id,
-    user.id,
-    expectedPreviousScore ?? null,
-    expectedPreviousStatus,
-    requestedScore ?? null,
-    requestedStatus,
-    correctionCategory,
-    detailedJustification.trim(),
-    evidenceAttachmentRef?.trim() || null
-  );
-
-  return {
-    success: true,
-    correctionId: Number(result.lastInsertRowid),
-    status: 'pending'
-  };
 }
 
 /**
@@ -239,7 +305,7 @@ export function requestMarkCorrection(params: RequestMarkCorrectionParams): {
  * 1. Final approval restricted to active Principal or Vice Principal Academic.
  * 2. Institutional Segregation of Duties (Anti-Self-Approval):
  *    - Requester cannot approve (SELF_APPROVAL_REQUESTER).
- *    - Mark entrant cannot approve (SELF_APPROVAL_ENTRANT).
+ *    - Historical mark author / modifier cannot approve (SELF_APPROVAL_ENTRANT).
  *    - Assigned subject teacher cannot approve (SELF_APPROVAL_TEACHER).
  * 3. Atomic application: updates mark, recalculates grade, increments sheet revision,
  *    records post-write revision snapshot, and logs comprehensive marks_audit_history.
@@ -324,16 +390,33 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
     throw err;
   }
 
-  // 5.2 Mark entrant / modifier cannot approve
-  if (mark.entered_by_user_id === user.id) {
-    const err = new Error('Institutional Segregation Violation: The user who originally entered this mark cannot approve its correction.');
+  // 5.2 Historical Mark Entrant / Modifier Check (Lifetime Author History) - G4R-04
+  const historicalAuthorCheck = db.prepare(`
+    SELECT COUNT(*) as cnt FROM (
+      SELECT entered_by_user_id as user_id FROM marks WHERE id = ? AND entered_by_user_id = ?
+      UNION
+      SELECT actor_user_id as user_id FROM marks_audit_history WHERE mark_id = ? AND actor_user_id = ?
+      UNION
+      SELECT requested_by_user_id as user_id FROM marks_corrections WHERE mark_id = ? AND requested_by_user_id = ?
+    )
+  `).get(mark.id, user.id, mark.id, user.id, mark.id, user.id) as { cnt: number };
+
+  if (historicalAuthorCheck.cnt > 0) {
+    const err = new Error(
+      'Institutional Segregation Violation: The user who previously entered, drafted, requested, or modified this mark cannot approve its correction.'
+    );
     (err as any).statusCode = 403;
     (err as any).code = 'SELF_APPROVAL_ENTRANT';
     throw err;
   }
 
   // 5.3 Assigned subject teacher cannot approve
-  if (sheet.teacher_id === user.id) {
+  const isAssignedTeacher = db.prepare(`
+    SELECT id FROM teacher_assignments
+    WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
+  `).get(user.id, sheet.class_id, sheet.subject_id, sheet.academic_year_id);
+
+  if (sheet.teacher_id === user.id || isAssignedTeacher) {
     const err = new Error('Institutional Segregation Violation: The assigned subject teacher cannot approve corrections for their own class.');
     (err as any).statusCode = 403;
     (err as any).code = 'SELF_APPROVAL_TEACHER';

@@ -183,6 +183,36 @@ export function createAssessmentPolicyProfile(params: {
     throw err;
   }
 
+  // Active user check
+  const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+  if (!activeUser || activeUser.is_active !== 1) {
+    const err = new Error('User account is deactivated or invalid.');
+    (err as any).statusCode = 403;
+    (err as any).code = 'USER_DEACTIVATED';
+    throw err;
+  }
+
+  // Scoped academic authorization check:
+  // Requires either active academic leadership appointment or teaching assignment in the specified academic year
+  const activeAuths = getActiveStaffAuthorizations(user.id, academicYearId);
+  const hasLeadershipAuth = activeAuths.some(a =>
+    ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+    (a.grade_band === 'all' || a.grade_band === gradeBand)
+  );
+
+  const isAssignedTeacherInYear = db.prepare(`
+    SELECT COUNT(*) as cnt FROM teacher_assignments WHERE teacher_id = ? AND academic_year_id = ?
+  `).get(user.id, academicYearId) as { cnt: number };
+
+  if (!hasLeadershipAuth && Number(isAssignedTeacherInYear?.cnt || 0) === 0) {
+    const err = new Error(
+      'Access denied: Creating assessment policy profiles requires an active academic appointment or teaching assignment in the specified academic year.'
+    );
+    (err as any).statusCode = 403;
+    (err as any).code = 'INSUFFICIENT_AUTHORIZATION';
+    throw err;
+  }
+
   if (!['junior_6_9', 'ol_10_11', 'al_12_13'].includes(gradeBand)) {
     const err = new Error(`Invalid grade band '${gradeBand}'. Must be junior_6_9, ol_10_11, or al_12_13.`);
     (err as any).statusCode = 400;
@@ -190,11 +220,99 @@ export function createAssessmentPolicyProfile(params: {
     throw err;
   }
 
+  // G4R-08: Validate policy configuration inputs
   if (!Array.isArray(gradingScale) || gradingScale.length === 0) {
     const err = new Error('Grading scale must be a non-empty array of threshold bands.');
     (err as any).statusCode = 400;
-    (err as any).code = 'INVALID_GRADING_SCALE';
+    (err as any).code = 'INVALID_POLICY_CONFIGURATION';
     throw err;
+  }
+
+  const seenGrades = new Set<string>();
+  const seenPercentages = new Set<number>();
+  let hasZeroMin = false;
+
+  for (const item of gradingScale) {
+    if (!item.grade || typeof item.grade !== 'string' || !item.grade.trim()) {
+      const err = new Error('Every grading scale item must define a non-empty grade letter/code.');
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    const g = item.grade.trim();
+    if (seenGrades.has(g)) {
+      const err = new Error(`Duplicate grade '${g}' found in grading scale.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    seenGrades.add(g);
+
+    if (typeof item.minPercentage !== 'number' || !isFinite(item.minPercentage) || item.minPercentage < 0 || item.minPercentage > 100) {
+      const err = new Error(`Grading scale item '${g}' has invalid minPercentage '${item.minPercentage}'. Must be between 0 and 100.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+
+    if (seenPercentages.has(item.minPercentage)) {
+      const err = new Error(`Duplicate minPercentage '${item.minPercentage}' found in grading scale.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    seenPercentages.add(item.minPercentage);
+
+    if (item.minPercentage === 0) {
+      hasZeroMin = true;
+    }
+  }
+
+  if (!hasZeroMin) {
+    const err = new Error('Grading scale must define a lowest band with minPercentage = 0.');
+    (err as any).statusCode = 400;
+    (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+    throw err;
+  }
+
+  // Validate subject weights if provided
+  if (subjectWeights && typeof subjectWeights === 'object') {
+    for (const [key, val] of Object.entries(subjectWeights)) {
+      if (typeof val !== 'number' || !isFinite(val) || val <= 0) {
+        const err = new Error(`Subject weight for '${key}' must be a finite positive number. Received: ${val}`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+        throw err;
+      }
+    }
+  }
+
+  // Validate correction window days
+  if (correctionWindowDays !== undefined && correctionWindowDays !== null) {
+    if (!Number.isInteger(correctionWindowDays) || correctionWindowDays < 1 || correctionWindowDays > 365) {
+      const err = new Error(`Correction window days must be an integer between 1 and 365. Received: ${correctionWindowDays}`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+  }
+
+  // Validate effective dates
+  if (effectiveFrom && effectiveTo) {
+    const fromTime = new Date(effectiveFrom).getTime();
+    const toTime = new Date(effectiveTo).getTime();
+    if (isNaN(fromTime) || isNaN(toTime)) {
+      const err = new Error('effectiveFrom and effectiveTo must be valid date strings.');
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    if (fromTime > toTime) {
+      const err = new Error(`effectiveFrom (${effectiveFrom}) cannot be later than effectiveTo (${effectiveTo}).`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
   }
 
   // Determine version number
@@ -325,7 +443,9 @@ export function calculateSubjectGrade(
   let scale: GradingScaleItem[] = PROVISIONAL_DEFAULT_GRADING_SCALE;
   if (policy?.grading_scale_json) {
     try {
-      scale = JSON.parse(policy.grading_scale_json);
+      scale = typeof policy.grading_scale_json === 'string'
+        ? JSON.parse(policy.grading_scale_json)
+        : policy.grading_scale_json;
     } catch {}
   }
 
@@ -389,7 +509,25 @@ export function calculateClassResults(
     throw new Error(`Class ${classId} not found.`);
   }
 
-  // 1. Get confirmed and provisional enrolments for this class
+  // 1. Resolve policy profile if not explicitly passed
+  let policy = policyProfile;
+  if (!policy) {
+    const exam = db.prepare('SELECT assessment_policy_id, academic_year_id FROM examinations WHERE id = ?').get(examinationId) as any;
+    if (exam?.assessment_policy_id) {
+      try { policy = getAssessmentPolicyProfile(exam.assessment_policy_id); } catch {}
+    }
+  }
+
+  let subjectWeights: Record<string, number> = {};
+  if (policy?.subject_weights_json) {
+    try {
+      subjectWeights = typeof policy.subject_weights_json === 'string'
+        ? JSON.parse(policy.subject_weights_json)
+        : policy.subject_weights_json;
+    } catch {}
+  }
+
+  // 2. Get confirmed and active enrollments for this class
   const enrollments = db.prepare(`
     SELECT s.id as student_id, s.admission_no, s.full_name, e.roll_number
     FROM enrollments e
@@ -398,13 +536,26 @@ export function calculateClassResults(
     ORDER BY e.roll_number ASC, s.admission_no ASC
   `).all(classId) as any[];
 
-  // 2. Get all class subjects
-  const classSubjects = db.prepare(`
-    SELECT subject_id FROM class_subjects WHERE class_id = ?
-  `).all(classId) as { subject_id: number }[];
-  const subjectIds = classSubjects.map(cs => cs.subject_id);
+  // 3. Get all examined class subjects with code for this examination
+  let classSubjects = db.prepare(`
+    SELECT DISTINCT ms.subject_id, s.code as subject_code, s.name as subject_name
+    FROM marks_sheets ms
+    JOIN subjects s ON ms.subject_id = s.id
+    WHERE ms.examination_id = ? AND ms.class_id = ?
+  `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
 
-  // 3. Check for any unverified student subject enrollments in this class
+  if (classSubjects.length === 0) {
+    classSubjects = db.prepare(`
+      SELECT cs.subject_id, s.code as subject_code, s.name as subject_name
+      FROM class_subjects cs
+      JOIN subjects s ON cs.subject_id = s.id
+      WHERE cs.class_id = ?
+    `).all(classId) as { subject_id: number; subject_code: string; subject_name: string }[];
+  }
+  const subjectIds = classSubjects.map(cs => cs.subject_id);
+  const subjectCodeMap = new Map<number, string>(classSubjects.map(cs => [cs.subject_id, cs.subject_code]));
+
+  // 4. Check for any unverified student subject enrollments in this class
   const unverifiedCheck = db.prepare(`
     SELECT COUNT(*) as cnt
     FROM student_subject_enrollments sse
@@ -412,9 +563,26 @@ export function calculateClassResults(
     WHERE e.class_id = ? AND e.status = 'enrolled' AND sse.enrollment_status = 'provisional_unverified'
   `).get(classId) as { cnt: number };
 
-  const unverifiedCount = Number(unverifiedCheck?.cnt || 0);
+  let unverifiedCount = Number(unverifiedCheck?.cnt || 0);
 
-  // 4. Gather marks for all students in this class for this exam
+  // G4R-01: Positive confirmed enrollment verification across ALL marks in this exam/class
+  // If ANY mark exists for a student who lacks a confirmed enrollment in that subject, flag as unverified!
+  const unconfirmedMarkCheck = db.prepare(`
+    SELECT COUNT(*) as cnt
+    FROM marks m
+    WHERE m.examination_id = ? AND m.class_id = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM student_subject_enrollments sse
+        WHERE sse.student_id = m.student_id
+          AND sse.subject_id = m.subject_id
+          AND sse.academic_year_id = ?
+          AND sse.enrollment_status = 'confirmed'
+      )
+  `).get(examinationId, classId, classInfo.academic_year_id) as { cnt: number };
+
+  unverifiedCount += Number(unconfirmedMarkCheck?.cnt || 0);
+
+  // 5. Gather marks for all students in this class for this exam
   const studentResults: any[] = [];
   let unassessedCount = 0;
 
@@ -429,7 +597,8 @@ export function calculateClassResults(
     studentMarks.forEach(m => { markMap[m.subject_id] = m; });
 
     let totalScore = 0;
-    let validPercentageSum = 0;
+    let weightedPercentageSum = 0;
+    let totalWeight = 0;
     let gradedCount = 0;
     let passedCount = 0;
     let absentCount = 0;
@@ -439,16 +608,23 @@ export function calculateClassResults(
     const subjectGrades: Record<number, any> = {};
 
     for (const subId of subjectIds) {
-      // Check if student is actively enrolled in this subject
+      // Positive confirmed check: Check if student is actively and positively confirmed for this subject
       const subEnrollment = db.prepare(`
         SELECT enrollment_status FROM student_subject_enrollments
         WHERE student_id = ? AND subject_id = ? AND academic_year_id = ?
       `).get(stu.student_id, subId, classInfo.academic_year_id) as { enrollment_status: string } | undefined;
 
-      if (subEnrollment && (subEnrollment.enrollment_status === 'dropped' || subEnrollment.enrollment_status === 'transferred')) {
-        continue; // Student does not take this subject
+      // If no confirmed enrollment or dropped/transferred, this student does NOT participate in this subject
+      // (e.g. taking alternative elective such as Tamil instead of Sinhala)
+      if (!subEnrollment || subEnrollment.enrollment_status !== 'confirmed') {
+        // If an illegal mark exists despite lack of confirmed enrollment:
+        if (markMap[subId]) {
+          unverifiedCount++;
+        }
+        continue; // Excluded correctly without penalizing as unassessed
       }
 
+      // Student is confirmed participating in this subject!
       const m = markMap[subId];
       if (!m || m.assessment_status === 'NOT_ASSESSED') {
         unassessedCount++;
@@ -462,7 +638,19 @@ export function calculateClassResults(
         continue;
       }
 
-      const gradeRes = calculateSubjectGrade(m.score, m.max_score || 100.0, m.assessment_status, policyProfile);
+      // Determine subject weight
+      const subCode = subjectCodeMap.get(subId) || '';
+      let weight = 1.0;
+      if (subjectWeights[String(subId)] !== undefined) {
+        weight = Number(subjectWeights[String(subId)]);
+      } else if (subCode && subjectWeights[subCode] !== undefined) {
+        weight = Number(subjectWeights[subCode]);
+      }
+      if (!isFinite(weight) || weight <= 0) {
+        weight = 1.0;
+      }
+
+      const gradeRes = calculateSubjectGrade(m.score, m.max_score || 100.0, m.assessment_status, policy);
       subjectGrades[subId] = {
         score: m.score,
         maxScore: m.max_score || 100.0,
@@ -473,11 +661,14 @@ export function calculateClassResults(
 
       if (m.assessment_status === 'PRESENT' && gradeRes.normalizedPercentage !== null) {
         totalScore += Number(m.score);
-        validPercentageSum += gradeRes.normalizedPercentage;
+        weightedPercentageSum += (gradeRes.normalizedPercentage * weight);
+        totalWeight += weight;
         gradedCount++;
         if (gradeRes.normalizedPercentage >= 35.0) passedCount++;
       } else if (m.assessment_status === 'ABSENT') {
         absentCount++;
+        // Absent treated as 0% under default rules
+        totalWeight += weight;
       } else if (m.assessment_status === 'EXEMPT') {
         exemptCount++;
       } else if (m.assessment_status === 'MEDICAL') {
@@ -485,7 +676,7 @@ export function calculateClassResults(
       }
     }
 
-    const averagePercentage = gradedCount > 0 ? Math.round((validPercentageSum / gradedCount) * 10) / 10 : null;
+    const averagePercentage = totalWeight > 0 ? Math.round((weightedPercentageSum / totalWeight) * 100) / 100 : null;
 
     studentResults.push({
       studentId: stu.student_id,
@@ -504,17 +695,23 @@ export function calculateClassResults(
     });
   }
 
-  // 5. Compute deterministic competition ranking ("1224" method)
-  // Rankable students must have at least 1 graded subject
-  const eligibleForRank = studentResults.filter(s => s.gradedSubjectsCount > 0 && s.averagePercentage !== null);
-  eligibleForRank.sort((a, b) => (b.totalScore - a.totalScore) || ((b.averagePercentage || 0) - (a.averagePercentage || 0)));
+  // 6. Compute deterministic standard competition ranking ("1224" method)
+  // Rankable students must have at least 1 graded or assessed subject
+  const eligibleForRank = studentResults.filter(s => (s.gradedSubjectsCount > 0 || s.absentCount > 0) && s.averagePercentage !== null);
+  // Sort primarily by policy-weighted averagePercentage descending, secondarily by totalScore descending, tertiary by roll number
+  eligibleForRank.sort((a, b) => {
+    const diff = (b.averagePercentage ?? -1) - (a.averagePercentage ?? -1);
+    if (Math.abs(diff) > 0.0001) return diff;
+    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+    return (a.rollNumber || 9999) - (b.rollNumber || 9999);
+  });
 
-  let currentRank = 1;
   for (let i = 0; i < eligibleForRank.length; i++) {
     if (i > 0) {
       const prev = eligibleForRank[i - 1];
       const curr = eligibleForRank[i];
-      if (curr.totalScore === prev.totalScore && curr.averagePercentage === prev.averagePercentage) {
+      if (Math.abs((curr.averagePercentage ?? 0) - (prev.averagePercentage ?? 0)) < 0.0001 &&
+          Math.abs(curr.totalScore - prev.totalScore) < 0.0001) {
         // Tie: identical rank
         curr.rank = prev.rank;
       } else {
