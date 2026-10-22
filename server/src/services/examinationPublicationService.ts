@@ -98,35 +98,89 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       throw err;
     }
 
-    // 5. Policy Profile Resolution & School Approval Verification
-    // Invariant: Decline official results when policy is unapproved or provisional.
+    // 5. Policy Profile Resolution & School Approval Verification (G4S-06)
+    // Validate selected policies against academic year, grade band, and effective dates.
+    // Do not silently select a policy outside its authorized effective period.
+    // Define explicit behavior when the examination date or official academic term is unverified.
+    // Fail closed where the applicable approved policy cannot be established.
+    let examDate: string | null = exam.start_date || exam.end_date || null;
+    if (!examDate && exam.term_id) {
+      const term = db.prepare('SELECT start_date, is_verified FROM academic_terms WHERE id = ?').get(exam.term_id) as any;
+      if (term && term.is_verified === 1 && term.start_date) {
+        examDate = term.start_date;
+      }
+    }
+
     let resolvedPolicy: any;
-    if (policyProfileId) {
-      resolvedPolicy = getAssessmentPolicyProfile(policyProfileId);
+    const targetPolicyId = policyProfileId || exam.assessment_policy_id;
+    if (targetPolicyId) {
+      resolvedPolicy = getAssessmentPolicyProfile(targetPolicyId);
       if (resolvedPolicy.academic_year_id !== exam.academic_year_id) {
         const err = new Error(`Policy profile academic year (${resolvedPolicy.academic_year_id}) does not match examination academic year (${exam.academic_year_id}).`);
         (err as any).statusCode = 400;
         (err as any).code = 'POLICY_YEAR_MISMATCH';
         throw err;
       }
+
+      if (resolvedPolicy.grade_band !== 'all' && examGradeBand !== 'all' && resolvedPolicy.grade_band !== examGradeBand) {
+        const err = new Error(`Policy profile grade band (${resolvedPolicy.grade_band}) does not match examination grade band (${examGradeBand}).`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'POLICY_GRADE_BAND_MISMATCH';
+        throw err;
+      }
+
+      if (examDate) {
+        if (resolvedPolicy.effective_from && resolvedPolicy.effective_from > examDate) {
+          const err = new Error(
+            `Publication declined: Assessment policy '${resolvedPolicy.policy_code}' is not yet effective for examination date ${examDate} (effective from ${resolvedPolicy.effective_from}).`
+          );
+          (err as any).statusCode = 400;
+          (err as any).code = 'POLICY_NOT_YET_EFFECTIVE';
+          throw err;
+        }
+        if (resolvedPolicy.effective_to && resolvedPolicy.effective_to < examDate) {
+          const err = new Error(
+            `Publication declined: Assessment policy '${resolvedPolicy.policy_code}' has expired for examination date ${examDate} (effective to ${resolvedPolicy.effective_to}).`
+          );
+          (err as any).statusCode = 400;
+          (err as any).code = 'POLICY_EXPIRED';
+          throw err;
+        }
+      } else if (resolvedPolicy.effective_from || resolvedPolicy.effective_to) {
+        const err = new Error(
+          `Publication declined: Cannot verify effective date applicability of assessment policy '${resolvedPolicy.policy_code}' because examination date and official term period are unverified.`
+        );
+        (err as any).statusCode = 400;
+        (err as any).code = 'UNVERIFIED_EXAM_PERIOD';
+        throw err;
+      }
     } else {
-      // Look up approved policy for exam's academic year and grade band
-      const approvedPolicyRow = db.prepare(`
-        SELECT id FROM assessment_policy_profiles
+      // Look up approved policies for exam's academic year and grade band
+      const candidatePolicies = db.prepare(`
+        SELECT * FROM assessment_policy_profiles
         WHERE academic_year_id = ? AND (grade_band = ? OR grade_band = 'all' OR ? = 'all') AND is_approved_by_school = 1
         ORDER BY version DESC, id DESC
-        LIMIT 1
-      `).get(exam.academic_year_id, examGradeBand, examGradeBand) as { id: number } | undefined;
+      `).all(exam.academic_year_id, examGradeBand, examGradeBand) as any[];
 
-      if (!approvedPolicyRow) {
+      const validCandidates = candidatePolicies.filter(p => {
+        if (examDate) {
+          if (p.effective_from && p.effective_from > examDate) return false;
+          if (p.effective_to && p.effective_to < examDate) return false;
+          return true;
+        } else {
+          return !p.effective_from && !p.effective_to;
+        }
+      });
+
+      if (validCandidates.length === 0) {
         const err = new Error(
-          'Publication declined: No school-approved assessment policy exists for this examination. Provisional policies require formal school sign-off before official publication.'
+          'Publication declined: No applicable school-approved assessment policy exists for this examination within its effective period. Provisional or expired policies require formal school sign-off before official publication.'
         );
         (err as any).statusCode = 400;
         (err as any).code = 'UNAPPROVED_POLICY';
         throw err;
       }
-      resolvedPolicy = getAssessmentPolicyProfile(approvedPolicyRow.id);
+      resolvedPolicy = getAssessmentPolicyProfile(validCandidates[0].id);
     }
 
     if (resolvedPolicy.is_approved_by_school !== 1) {
@@ -153,7 +207,16 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       throw err;
     }
 
-    // 7. Marks Sheets Verification
+    // 7. Marks Sheets & Examination Schedule Verification (G4S-01 Finding B)
+    // Check if an explicit examination-wide class/subject schedule exists
+    const scheduledItems = db.prepare(`
+      SELECT es.class_id, es.subject_id, es.is_required, c.name as class_name, s.name as subject_name
+      FROM examination_schedules es
+      JOIN classes c ON es.class_id = c.id
+      JOIN subjects s ON es.subject_id = s.id
+      WHERE es.examination_id = ?
+    `).all(examinationId) as any[];
+
     // Find all applicable marks sheets for this examination
     const sheets = db.prepare(`
       SELECT ms.*, c.name as class_name, c.grade as class_grade, s.name as subject_name, s.code as subject_code
@@ -162,6 +225,22 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       JOIN subjects s ON ms.subject_id = s.id
       WHERE ms.examination_id = ?
     `).all(examinationId) as any[];
+
+    // If explicit schedule is defined, assert that all required scheduled sheets exist and are approved
+    if (scheduledItems.length > 0) {
+      const missingRequired = scheduledItems.filter(req =>
+        req.is_required === 1 && !sheets.some(s => s.class_id === req.class_id && s.subject_id === req.subject_id)
+      );
+      if (missingRequired.length > 0) {
+        const missingSummary = missingRequired.map(m => `${m.class_name} - ${m.subject_name}`).join(', ');
+        const err = new Error(
+          `Publication declined: Missing required examination marks sheets: ${missingSummary}. All scheduled examination sheets must be submitted and approved.`
+        );
+        (err as any).statusCode = 400;
+        (err as any).code = 'MISSING_REQUIRED_SHEETS';
+        throw err;
+      }
+    }
 
     if (sheets.length === 0) {
       const err = new Error('Publication declined: No marks sheets found for this examination.');
@@ -256,7 +335,7 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
     const nextPubVersion = (exam.publication_version || 0) + 1;
     const publishedAt = new Date().toISOString();
 
-    // Compile comprehensive immutable publication snapshot
+    // Compile comprehensive immutable publication snapshot (G4S-04)
     const publicationSnapshot = {
       examinationId,
       examinationName: exam.name,
@@ -271,7 +350,9 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
         title: resolvedPolicy.title,
         version: resolvedPolicy.version,
         gradingScale: resolvedPolicy.gradingScale,
-        rankingRules: resolvedPolicy.rankingRules
+        absenceRules: resolvedPolicy.absenceRules,
+        rankingRules: resolvedPolicy.rankingRules,
+        subjectWeights: resolvedPolicy.subjectWeights
       },
       classes: classCalculationResults,
       sheetSnapshots: sheets.map(s => ({
@@ -356,7 +437,7 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       ) VALUES (?, ?, 'EXAMINATION_PUBLISH', 'examinations', ?, ?, ?, datetime('now'))
     `).run(
       user.id,
-      user.username,
+      user.username || (db.prepare('SELECT username FROM users WHERE id = ?').get(user.id) as any)?.username || 'system',
       String(examinationId),
       JSON.stringify({
         publicationVersion: nextPubVersion,

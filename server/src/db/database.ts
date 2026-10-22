@@ -205,11 +205,22 @@ export function initDatabase() {
       timestamp TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS examination_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      examination_id INTEGER NOT NULL REFERENCES examinations(id) ON DELETE CASCADE,
+      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+      is_required INTEGER NOT NULL DEFAULT 1 CHECK(is_required IN (0, 1)),
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(examination_id, class_id, subject_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_students_admission ON students(admission_no);
     CREATE INDEX IF NOT EXISTS idx_enrollments_class ON enrollments(class_id, academic_year_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_sessions(date, class_id);
     CREATE INDEX IF NOT EXISTS idx_marks_exam_subject ON marks(examination_id, subject_id, class_id);
     CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_exam_schedules ON examination_schedules(examination_id, class_id);
   `;
 
   db.exec(schema);

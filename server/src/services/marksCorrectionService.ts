@@ -72,14 +72,17 @@ export function requestMarkCorrection(params: RequestMarkCorrectionParams): {
     user
   } = params;
 
-  // 1. Live Active User Check
-  const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
-  if (!activeUser || activeUser.is_active !== 1) {
-    const err = new Error('User account is deactivated or invalid.');
-    (err as any).statusCode = 403;
-    (err as any).code = 'USER_DEACTIVATED';
-    throw err;
-  }
+  // G4S-03: Acquire write lock before querying authorization or state
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    // 1. Live Active User Check
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      const err = new Error('User account is deactivated or invalid.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'USER_DEACTIVATED';
+      throw err;
+    }
 
   // 2. Resolve Mark Record
   let mark: any;
@@ -228,10 +231,8 @@ export function requestMarkCorrection(params: RequestMarkCorrectionParams): {
     }
   }
 
-  // 8. Transactional CAS Validation & Insertion
-  db.exec('BEGIN IMMEDIATE;');
-  try {
-    const lockedMark = db.prepare('SELECT * FROM marks WHERE id = ?').get(mark.id) as any;
+  // 8. CAS Validation & Insertion under write lock
+  const lockedMark = db.prepare('SELECT * FROM marks WHERE id = ?').get(mark.id) as any;
     const currentScore = lockedMark.score !== null ? Number(lockedMark.score) : null;
     const currentStatus = lockedMark.assessment_status;
 
@@ -321,152 +322,155 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
 } {
   const { correctionId, decision, reviewComments = '', user, ipAddress = '127.0.0.1' } = params;
 
-  // 1. Live Active User Check
-  const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
-  if (!activeUser || activeUser.is_active !== 1) {
-    const err = new Error('User account is deactivated or invalid.');
-    (err as any).statusCode = 403;
-    (err as any).code = 'USER_DEACTIVATED';
-    throw err;
-  }
-
-  // 2. Fetch Correction Record
-  const correction = db.prepare('SELECT * FROM marks_corrections WHERE id = ?').get(correctionId) as any;
-  if (!correction) {
-    const err = new Error('Correction request not found.');
-    (err as any).statusCode = 404;
-    (err as any).code = 'CORRECTION_NOT_FOUND';
-    throw err;
-  }
-
-  if (correction.status !== 'pending') {
-    const err = new Error(`Correction request has already been reviewed (current status: '${correction.status}').`);
-    (err as any).statusCode = 409;
-    (err as any).code = 'CORRECTION_ALREADY_REVIEWED';
-    throw err;
-  }
-
-  // 3. Fetch Associated Entities
-  const sheet = db.prepare(`
-    SELECT ms.*, c.grade as class_grade
-    FROM marks_sheets ms
-    JOIN classes c ON ms.class_id = c.id
-    WHERE ms.id = ?
-  `).get(correction.sheet_id) as any;
-
-  const mark = db.prepare('SELECT * FROM marks WHERE id = ?').get(correction.mark_id) as any;
-  const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(correction.examination_id) as any;
-
-  if (!sheet || !mark || !exam) {
-    const err = new Error('Associated examination or marks sheet records not found.');
-    (err as any).statusCode = 404;
-    (err as any).code = 'CONTAINER_NOT_FOUND';
-    throw err;
-  }
-
-  // 4. Role Authority Check
-  // Restricted to Principal or Vice Principal Academic with active appointment covering the class grade
-  const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
-  const isAuthorizedApprover = activeAuths.some(a =>
-    ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
-    doesBandCoverGrade(a.grade_band, sheet.class_grade)
-  );
-
-  if (!isAuthorizedApprover) {
-    const err = new Error(
-      'Access denied: Approving or rejecting a post-publication mark correction requires an active Principal or Vice Principal Academic appointment covering this grade band and academic year.'
-    );
-    (err as any).statusCode = 403;
-    (err as any).code = 'INSUFFICIENT_AUTHORIZATION';
-    throw err;
-  }
-
-  // 5. Institutional Segregation of Duties (SoD) Anti-Self-Approval
-  // 5.1 Requester cannot approve
-  if (correction.requested_by_user_id === user.id) {
-    const err = new Error('Institutional Segregation Violation: The user who requested the correction cannot approve it.');
-    (err as any).statusCode = 403;
-    (err as any).code = 'SELF_APPROVAL_REQUESTER';
-    throw err;
-  }
-
-  // 5.2 Historical Mark Entrant / Modifier Check (Lifetime Author History) - G4R-04
-  const historicalAuthorCheck = db.prepare(`
-    SELECT COUNT(*) as cnt FROM (
-      SELECT entered_by_user_id as user_id FROM marks WHERE id = ? AND entered_by_user_id = ?
-      UNION
-      SELECT actor_user_id as user_id FROM marks_audit_history WHERE mark_id = ? AND actor_user_id = ?
-      UNION
-      SELECT requested_by_user_id as user_id FROM marks_corrections WHERE mark_id = ? AND requested_by_user_id = ?
-    )
-  `).get(mark.id, user.id, mark.id, user.id, mark.id, user.id) as { cnt: number };
-
-  if (historicalAuthorCheck.cnt > 0) {
-    const err = new Error(
-      'Institutional Segregation Violation: The user who previously entered, drafted, requested, or modified this mark cannot approve its correction.'
-    );
-    (err as any).statusCode = 403;
-    (err as any).code = 'SELF_APPROVAL_ENTRANT';
-    throw err;
-  }
-
-  // 5.3 Assigned subject teacher cannot approve
-  const isAssignedTeacher = db.prepare(`
-    SELECT id FROM teacher_assignments
-    WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
-  `).get(user.id, sheet.class_id, sheet.subject_id, sheet.academic_year_id);
-
-  if (sheet.teacher_id === user.id || isAssignedTeacher) {
-    const err = new Error('Institutional Segregation Violation: The assigned subject teacher cannot approve corrections for their own class.');
-    (err as any).statusCode = 403;
-    (err as any).code = 'SELF_APPROVAL_TEACHER';
-    throw err;
-  }
-
-  // 6. Handle Rejection
-  if (decision === 'reject') {
-    db.prepare(`
-      UPDATE marks_corrections SET
-        status = 'rejected',
-        reviewed_by_user_id = ?,
-        reviewed_at = datetime('now'),
-        review_comments = ?
-      WHERE id = ? AND status = 'pending'
-    `).run(user.id, reviewComments.trim() || 'Rejected by authorized leadership', correctionId);
-
-    // Audit log
-    db.prepare(`
-      INSERT INTO marks_audit_history (
-        mark_id, sheet_id, examination_id, student_id, subject_id,
-        action, actor_user_id, previous_score, new_score, previous_status, new_status,
-        correction_id, reason, ip_address, created_at
-      ) VALUES (?, ?, ?, ?, ?, 'POST_PUBLICATION_CORRECTION', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(
-      mark.id, sheet.id, exam.id, mark.student_id, mark.subject_id,
-      user.id, mark.score, mark.score, mark.assessment_status, mark.assessment_status,
-      correctionId, `Correction rejected: ${reviewComments.trim() || 'No comments provided'}`, ipAddress
-    );
-
-    return {
-      success: true,
-      correctionId,
-      status: 'rejected'
-    };
-  }
-
-  // 7. Handle Approval — ATOMIC WRITE TRANSACTION
+  // G4S-02 & G4S-03: ATOMIC IMMEDIATE TRANSACTION BEGIN
+  // Acquire write lock BEFORE all authorization, state, and concurrency checks
   db.exec('BEGIN IMMEDIATE;');
   try {
-    // 7.1 Verify correction still pending under lock
-    const lockedCorrection = db.prepare('SELECT status FROM marks_corrections WHERE id = ?').get(correctionId) as any;
-    if (lockedCorrection.status !== 'pending') {
-      const err = new Error('Correction request was modified concurrently.');
+    // 1. Live Active User Check inside write transaction
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      const err = new Error('User account is deactivated or invalid.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'USER_DEACTIVATED';
+      throw err;
+    }
+
+    // 2. Fetch Correction Record under write lock
+    const correction = db.prepare('SELECT * FROM marks_corrections WHERE id = ?').get(correctionId) as any;
+    if (!correction) {
+      const err = new Error('Correction request not found.');
+      (err as any).statusCode = 404;
+      (err as any).code = 'CORRECTION_NOT_FOUND';
+      throw err;
+    }
+
+    if (correction.status !== 'pending') {
+      const err = new Error(`Correction request has already been reviewed (current status: '${correction.status}').`);
       (err as any).statusCode = 409;
       (err as any).code = 'CORRECTION_ALREADY_REVIEWED';
       throw err;
     }
 
-    // 7.2 CAS verification on mark record
+    // 3. Fetch Associated Entities under write lock
+    const sheet = db.prepare(`
+      SELECT ms.*, c.grade as class_grade
+      FROM marks_sheets ms
+      JOIN classes c ON ms.class_id = c.id
+      WHERE ms.id = ?
+    `).get(correction.sheet_id) as any;
+
+    const mark = db.prepare('SELECT * FROM marks WHERE id = ?').get(correction.mark_id) as any;
+    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(correction.examination_id) as any;
+
+    if (!sheet || !mark || !exam) {
+      const err = new Error('Associated examination or marks sheet records not found.');
+      (err as any).statusCode = 404;
+      (err as any).code = 'CONTAINER_NOT_FOUND';
+      throw err;
+    }
+
+    // 4. In-Transaction Role & Leadership Scope Check (G4S-03)
+    // Restricted to Principal or Vice Principal Academic with active appointment covering the class grade
+    const activeAuths = getActiveStaffAuthorizations(user.id, sheet.academic_year_id);
+    const isAuthorizedApprover = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
+      doesBandCoverGrade(a.grade_band, sheet.class_grade)
+    );
+
+    if (!isAuthorizedApprover) {
+      const err = new Error(
+        'Access denied: Approving or rejecting a post-publication mark correction requires an active Principal or Vice Principal Academic appointment covering this grade band and academic year.'
+      );
+      (err as any).statusCode = 403;
+      (err as any).code = 'INSUFFICIENT_AUTHORIZATION';
+      throw err;
+    }
+
+    // 5. In-Transaction Institutional Segregation of Duties (SoD) Anti-Self-Approval
+    // 5.1 Requester cannot approve
+    if (correction.requested_by_user_id === user.id) {
+      const err = new Error('Institutional Segregation Violation: The user who requested the correction cannot approve it.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'SELF_APPROVAL_REQUESTER';
+      throw err;
+    }
+
+    // 5.2 Historical Mark Entrant / Modifier Check (Lifetime Author History)
+    const historicalAuthorCheck = db.prepare(`
+      SELECT COUNT(*) as cnt FROM (
+        SELECT entered_by_user_id as user_id FROM marks WHERE id = ? AND entered_by_user_id = ?
+        UNION
+        SELECT actor_user_id as user_id FROM marks_audit_history WHERE mark_id = ? AND actor_user_id = ?
+        UNION
+        SELECT requested_by_user_id as user_id FROM marks_corrections WHERE mark_id = ? AND requested_by_user_id = ?
+      )
+    `).get(mark.id, user.id, mark.id, user.id, mark.id, user.id) as { cnt: number };
+
+    if (historicalAuthorCheck.cnt > 0) {
+      const err = new Error(
+        'Institutional Segregation Violation: The user who previously entered, drafted, requested, or modified this mark cannot approve its correction.'
+      );
+      (err as any).statusCode = 403;
+      (err as any).code = 'SELF_APPROVAL_ENTRANT';
+      throw err;
+    }
+
+    // 5.3 Assigned subject teacher cannot approve
+    const isAssignedTeacher = db.prepare(`
+      SELECT id FROM teacher_assignments
+      WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
+    `).get(user.id, sheet.class_id, sheet.subject_id, sheet.academic_year_id);
+
+    if (sheet.teacher_id === user.id || isAssignedTeacher) {
+      const err = new Error('Institutional Segregation Violation: The assigned subject teacher cannot approve corrections for their own class.');
+      (err as any).statusCode = 403;
+      (err as any).code = 'SELF_APPROVAL_TEACHER';
+      throw err;
+    }
+
+    // 6. Handle Rejection (G4S-02) — Wrapped atomically with audit insertion under write lock
+    if (decision === 'reject') {
+      const updateRes = db.prepare(`
+        UPDATE marks_corrections SET
+          status = 'rejected',
+          reviewed_by_user_id = ?,
+          reviewed_at = datetime('now'),
+          review_comments = ?
+        WHERE id = ? AND status = 'pending'
+      `).run(user.id, reviewComments.trim() || 'Rejected by authorized leadership', correctionId);
+
+      if (Number(updateRes.changes) !== 1) {
+        const err = new Error('Correction request has already been reviewed or modified concurrently.');
+        (err as any).statusCode = 409;
+        (err as any).code = 'CORRECTION_ALREADY_REVIEWED';
+        throw err;
+      }
+
+      // Audit log insertion inside the same transaction
+      db.prepare(`
+        INSERT INTO marks_audit_history (
+          mark_id, sheet_id, examination_id, student_id, subject_id,
+          action, actor_user_id, previous_score, new_score, previous_status, new_status,
+          correction_id, reason, ip_address, created_at
+        ) VALUES (?, ?, ?, ?, ?, 'POST_PUBLICATION_CORRECTION', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `).run(
+        mark.id, sheet.id, exam.id, mark.student_id, mark.subject_id,
+        user.id, mark.score, mark.score, mark.assessment_status, mark.assessment_status,
+        correctionId, `Correction rejected: ${reviewComments.trim() || 'No comments provided'}`, ipAddress
+      );
+
+      // Rejection NEVER modifies marks scores or published result data
+      db.exec('COMMIT;');
+
+      return {
+        success: true,
+        correctionId,
+        status: 'rejected'
+      };
+    }
+
+    // 7. Handle Approval — ATOMIC WRITE TRANSACTION
+    // 7.1 CAS verification on locked mark record
     const lockedMark = db.prepare('SELECT * FROM marks WHERE id = ?').get(mark.id) as any;
     const curScore = lockedMark.score !== null ? Number(lockedMark.score) : null;
     const curStatus = lockedMark.assessment_status;
@@ -484,7 +488,7 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       throw err;
     }
 
-    // 7.3 Resolve Examination Policy & Re-calculate Grade Letter
+    // 7.2 Resolve Examination Policy & Re-calculate Grade Letter
     let policy: any = null;
     if (exam.assessment_policy_id) {
       try { policy = getAssessmentPolicyProfile(exam.assessment_policy_id); } catch {}
@@ -496,7 +500,7 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       policy
     );
 
-    // 7.4 Apply Mark Update
+    // 7.3 Apply Mark Update
     const newScore = correction.requested_score !== null ? Number(correction.requested_score) : null;
     db.prepare(`
       UPDATE marks SET
@@ -507,7 +511,7 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       WHERE id = ?
     `).run(newScore, correction.requested_status, gradeRes.gradeLetter, lockedMark.id);
 
-    // 7.5 Increment Sheet Revision
+    // 7.4 Increment Sheet Revision
     const newRevision = sheet.revision + 1;
     db.prepare(`
       UPDATE marks_sheets SET
@@ -516,7 +520,7 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       WHERE id = ?
     `).run(newRevision, sheet.id);
 
-    // 7.6 Record Post-Write Snapshot in marks_sheet_revisions
+    // 7.5 Record Post-Write Snapshot in marks_sheet_revisions
     const rosterMarks = db.prepare(`
       SELECT m.student_id, m.score, m.max_score, m.assessment_status, m.grade_letter, m.status, m.updated_at
       FROM marks m
@@ -529,7 +533,7 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       ) VALUES (?, ?, 'published', ?, ?, datetime('now'))
     `).run(sheet.id, newRevision, user.id, JSON.stringify(rosterMarks));
 
-    // 7.7 Record Detailed Audit Trail
+    // 7.6 Record Detailed Audit Trail
     db.prepare(`
       INSERT INTO marks_audit_history (
         mark_id, sheet_id, examination_id, student_id, subject_id,
@@ -544,15 +548,22 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       ipAddress
     );
 
-    // 7.8 Update Correction Record Status
-    db.prepare(`
+    // 7.7 Update Correction Record Status
+    const updateApproveRes = db.prepare(`
       UPDATE marks_corrections SET
         status = 'approved',
         reviewed_by_user_id = ?,
         reviewed_at = datetime('now'),
         review_comments = ?
-      WHERE id = ?
+      WHERE id = ? AND status = 'pending'
     `).run(user.id, reviewComments.trim() || 'Approved by authorized leadership', correctionId);
+
+    if (Number(updateApproveRes.changes) !== 1) {
+      const err = new Error('Correction request was modified concurrently.');
+      (err as any).statusCode = 409;
+      (err as any).code = 'CORRECTION_ALREADY_REVIEWED';
+      throw err;
+    }
 
     db.exec('COMMIT;');
 
@@ -565,7 +576,7 @@ export function reviewMarkCorrection(params: ReviewMarkCorrectionParams): {
       newRevision
     };
   } catch (err) {
-    db.exec('ROLLBACK;');
+    try { db.exec('ROLLBACK;'); } catch {}
     throw err;
   }
 }

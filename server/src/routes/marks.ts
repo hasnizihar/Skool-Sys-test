@@ -230,39 +230,54 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
   const examId = Number(req.params.examId);
   const user = req.user!;
 
-  const student = db.prepare(`
-    SELECT s.*, c.id as class_id, c.name as class_name, c.grade, e.roll_number,
-           u.full_name as class_teacher_name, ay.name as academic_year, ay.id as academic_year_id
-    FROM students s
-    JOIN enrollments e ON s.id = e.student_id AND e.status = 'enrolled'
-    JOIN classes c ON e.class_id = c.id
-    LEFT JOIN users u ON c.class_teacher_id = u.id
-    LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
-    WHERE s.id = ?
-  `).get(studentId) as any;
-
-  if (!student) {
-    res.status(404).json({ error: 'Student not enrolled or not found.' });
-    return;
-  }
-
+  // 1. G4S-05: Resolve Examination and its academic year first
   const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(examId) as any;
   if (!exam) {
     res.status(404).json({ error: 'Examination not found.' });
     return;
   }
 
+  // 2. Resolve Student Enrolment strictly bound to the examination's academic year
+  // Prevents subsequent-year promotions from corrupting historical examination results.
+  const student = db.prepare(`
+    SELECT s.*, c.id as class_id, c.name as class_name, c.grade, e.roll_number,
+           u.full_name as class_teacher_name, ay.name as academic_year, ay.id as academic_year_id,
+           e.status as enrollment_status
+    FROM students s
+    JOIN enrollments e ON s.id = e.student_id AND e.academic_year_id = ?
+    JOIN classes c ON e.class_id = c.id
+    LEFT JOIN users u ON c.class_teacher_id = u.id
+    LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
+    WHERE s.id = ?
+  `).get(exam.academic_year_id, studentId) as any;
+
+  if (!student) {
+    res.status(404).json({
+      error: 'Student not enrolled in examination academic year or not found.',
+      code: 'STUDENT_ENROLLMENT_NOT_FOUND'
+    });
+    return;
+  }
+
+  // 3. Verify student grade is covered by examination grade band scope
+  if (exam.grade_band && exam.grade_band !== 'all') {
+    if (!doesBandCoverGrade(exam.grade_band, Number(student.grade))) {
+      res.status(403).json({
+        error: `Access denied: Student grade (${student.grade}) is outside the examination grade band scope (${exam.grade_band}).`,
+        code: 'EXAM_SCOPE_MISMATCH'
+      });
+      return;
+    }
+  }
+
   const isPublished = exam.is_published === 1 || exam.status === 'published';
 
-  // MANDATORY Gate 3R Fix P0-03: Unpublished examination results confidentiality
-  // In-scope class teachers and subject teachers MUST be blocked prior to official publication!
-  // Only authorized academic leadership (Principal, VP Academic, Section Head, or Exam Coordinator)
-  // may preview unreleased report cards with explicit watermarking.
+  // 4. Confidentiality and Scoped Authorization Gate
   if (!isPublished) {
     const isLeadership = hasAcademicStaffRole(
       user.id,
       ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
-      student.academic_year_id || exam.academic_year_id,
+      exam.academic_year_id,
       Number(student.grade)
     );
 
@@ -274,14 +289,30 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       return;
     }
   } else {
-    // For published exams, require admin or class access
-    if (user.role !== 'admin' && !canAccessClass(user, student.class_id)) {
-      res.status(403).json({ error: 'Access denied. You are not assigned to this student\'s class.' });
+    // For published exams, require admin, in-scope academic leadership,
+    // or assigned class/subject teacher for this class in this academic year
+    const isLeadership = hasAcademicStaffRole(
+      user.id,
+      ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
+      exam.academic_year_id,
+      Number(student.grade)
+    );
+
+    const isAssignedTeacher = db.prepare(`
+      SELECT 1 FROM teacher_assignments
+      WHERE teacher_id = ? AND class_id = ? AND academic_year_id = ?
+    `).get(user.id, student.class_id, exam.academic_year_id);
+
+    if (user.role !== 'admin' && !isLeadership && !isAssignedTeacher) {
+      res.status(403).json({
+        error: 'Access denied. You are not assigned to this student\'s class for this academic year.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
       return;
     }
   }
 
-  // Get marks for all subjects assigned to this class
+  // Get marks for all subjects assigned to this class in this academic year
   const classSubjects = db.prepare(`
     SELECT sub.id as subject_id, sub.code as subject_code, sub.name as subject_name, sub.category,
            m.score, m.is_absent, m.is_exempt, m.max_score, m.grade_letter, m.status as mark_status,
@@ -289,13 +320,13 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
     FROM class_subjects cs
     JOIN subjects sub ON cs.subject_id = sub.id
     LEFT JOIN marks m ON m.student_id = ? AND m.subject_id = sub.id AND m.examination_id = ?
-    LEFT JOIN teacher_assignments ta ON ta.class_id = cs.class_id AND ta.subject_id = sub.id
+    LEFT JOIN teacher_assignments ta ON ta.class_id = cs.class_id AND ta.subject_id = sub.id AND ta.academic_year_id = ?
     LEFT JOIN users u ON ta.teacher_id = u.id
     WHERE cs.class_id = ?
     ORDER BY sub.category ASC, sub.name ASC
-  `).all(studentId, examId, student.class_id) as any[];
+  `).all(studentId, examId, exam.academic_year_id, student.class_id) as any[];
 
-  // Attendance summary
+  // Attendance summary strictly bound to the examination's academic year
   const attendance = db.prepare(`
     SELECT 
       COUNT(*) as total_school_days,
@@ -304,8 +335,8 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       SUM(CASE WHEN ar.status = 'absent' THEN 1 ELSE 0 END) as absent_days
     FROM attendance_records ar
     JOIN attendance_sessions sess ON ar.session_id = sess.id
-    WHERE ar.student_id = ? AND sess.class_id = ?
-  `).get(studentId, student.class_id) as any;
+    WHERE ar.student_id = ? AND sess.class_id = ? AND sess.academic_year_id = ?
+  `).get(studentId, student.class_id, exam.academic_year_id) as any;
 
   // Calculate Student Total & Average
   let totalScore = 0;

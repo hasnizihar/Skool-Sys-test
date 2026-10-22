@@ -275,6 +275,46 @@ export function createAssessmentPolicyProfile(params: {
     throw err;
   }
 
+  // G4S-04: Validate ranking rules if provided
+  if (rankingRules) {
+    if (rankingRules.rankingMethod && rankingRules.rankingMethod !== 'competition') {
+      const err = new Error(`Unsupported rankingMethod '${rankingRules.rankingMethod}'. Only 'competition' ranking is supported.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    if (rankingRules.tieHandling && rankingRules.tieHandling !== 'equal_rank_skip_next') {
+      const err = new Error(`Unsupported tieHandling '${rankingRules.tieHandling}'. Only 'equal_rank_skip_next' tie handling is supported.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    if (rankingRules.minimumSubjectsRequired !== undefined && rankingRules.minimumSubjectsRequired !== null) {
+      if (!Number.isInteger(rankingRules.minimumSubjectsRequired) || rankingRules.minimumSubjectsRequired < 1) {
+        const err = new Error(`minimumSubjectsRequired must be a positive integer. Received: ${rankingRules.minimumSubjectsRequired}`);
+        (err as any).statusCode = 400;
+        (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+        throw err;
+      }
+    }
+  }
+
+  // G4S-04: Validate absence rules if provided
+  if (absenceRules) {
+    if (absenceRules.absentHandling && !['zero', 'exclude', 'provisional_fail'].includes(absenceRules.absentHandling)) {
+      const err = new Error(`Invalid absentHandling '${absenceRules.absentHandling}'. Must be 'zero', 'exclude', or 'provisional_fail'.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+    if (absenceRules.medicalHandling && !['exclude', 'deferred'].includes(absenceRules.medicalHandling)) {
+      const err = new Error(`Invalid medicalHandling '${absenceRules.medicalHandling}'. Must be 'exclude' or 'deferred'.`);
+      (err as any).statusCode = 400;
+      (err as any).code = 'INVALID_POLICY_CONFIGURATION';
+      throw err;
+    }
+  }
+
   // Validate subject weights if provided
   if (subjectWeights && typeof subjectWeights === 'object') {
     for (const [key, val] of Object.entries(subjectWeights)) {
@@ -509,22 +549,67 @@ export function calculateClassResults(
     throw new Error(`Class ${classId} not found.`);
   }
 
-  // 1. Resolve policy profile if not explicitly passed
+  // 1. Resolve examination info and policy profile
+  const examInfo = db.prepare('SELECT assessment_policy_id, academic_year_id FROM examinations WHERE id = ?').get(examinationId) as any;
+  const examAcademicYearId = examInfo?.academic_year_id || classInfo?.academic_year_id;
+
   let policy = policyProfile;
-  if (!policy) {
-    const exam = db.prepare('SELECT assessment_policy_id, academic_year_id FROM examinations WHERE id = ?').get(examinationId) as any;
-    if (exam?.assessment_policy_id) {
-      try { policy = getAssessmentPolicyProfile(exam.assessment_policy_id); } catch {}
+  if (!policy && examInfo?.assessment_policy_id) {
+    try { policy = getAssessmentPolicyProfile(examInfo.assessment_policy_id); } catch {}
+  }
+
+  let absenceRules: AbsenceRules = PROVISIONAL_DEFAULT_ABSENCE_RULES;
+  let rankingRules: RankingRules = PROVISIONAL_DEFAULT_RANKING_RULES;
+  let subjectWeights: Record<string, number> = {};
+
+  if (policy) {
+    if (policy.absence_rules_json) {
+      try {
+        absenceRules = typeof policy.absence_rules_json === 'string'
+          ? JSON.parse(policy.absence_rules_json)
+          : policy.absence_rules_json;
+      } catch {
+        absenceRules = PROVISIONAL_DEFAULT_ABSENCE_RULES;
+      }
+    }
+    if (policy.ranking_rules_json) {
+      try {
+        rankingRules = typeof policy.ranking_rules_json === 'string'
+          ? JSON.parse(policy.ranking_rules_json)
+          : policy.ranking_rules_json;
+      } catch {
+        rankingRules = PROVISIONAL_DEFAULT_RANKING_RULES;
+      }
+    }
+    if (policy.subject_weights_json) {
+      try {
+        subjectWeights = typeof policy.subject_weights_json === 'string'
+          ? JSON.parse(policy.subject_weights_json)
+          : policy.subject_weights_json;
+      } catch {
+        subjectWeights = {};
+      }
     }
   }
 
-  let subjectWeights: Record<string, number> = {};
-  if (policy?.subject_weights_json) {
-    try {
-      subjectWeights = typeof policy.subject_weights_json === 'string'
-        ? JSON.parse(policy.subject_weights_json)
-        : policy.subject_weights_json;
-    } catch {}
+  // G4S-04: Reject unsupported policy configurations
+  if (rankingRules.rankingMethod && rankingRules.rankingMethod !== 'competition') {
+    const err = new Error(`Unsupported rankingMethod '${rankingRules.rankingMethod}'. Only 'competition' ranking is currently supported.`);
+    (err as any).statusCode = 400;
+    (err as any).code = 'UNSUPPORTED_POLICY_CONFIGURATION';
+    throw err;
+  }
+  if (rankingRules.tieHandling && rankingRules.tieHandling !== 'equal_rank_skip_next') {
+    const err = new Error(`Unsupported tieHandling '${rankingRules.tieHandling}'. Only 'equal_rank_skip_next' tie handling is currently supported.`);
+    (err as any).statusCode = 400;
+    (err as any).code = 'UNSUPPORTED_POLICY_CONFIGURATION';
+    throw err;
+  }
+  if (absenceRules.absentHandling && !['zero', 'exclude', 'provisional_fail'].includes(absenceRules.absentHandling)) {
+    const err = new Error(`Unsupported absentHandling '${absenceRules.absentHandling}'. Must be 'zero', 'exclude', or 'provisional_fail'.`);
+    (err as any).statusCode = 400;
+    (err as any).code = 'UNSUPPORTED_POLICY_CONFIGURATION';
+    throw err;
   }
 
   // 2. Get confirmed and active enrollments for this class
@@ -536,36 +621,42 @@ export function calculateClassResults(
     ORDER BY e.roll_number ASC, s.admission_no ASC
   `).all(classId) as any[];
 
-  // 3. Get all examined class subjects with code for this examination
+  // 3. G4S-01: Get examined class subjects for this examination
+  // If examination_schedules defines explicit class-subject roster for this exam, use it;
+  // otherwise, discover examined subjects from submitted marks sheets.
+  // NEVER fall back to all class_subjects (do not fabricate examination participation from class membership).
   let classSubjects = db.prepare(`
-    SELECT DISTINCT ms.subject_id, s.code as subject_code, s.name as subject_name
-    FROM marks_sheets ms
-    JOIN subjects s ON ms.subject_id = s.id
-    WHERE ms.examination_id = ? AND ms.class_id = ?
+    SELECT DISTINCT es.subject_id, s.code as subject_code, s.name as subject_name
+    FROM examination_schedules es
+    JOIN subjects s ON es.subject_id = s.id
+    WHERE es.examination_id = ? AND es.class_id = ?
   `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
 
   if (classSubjects.length === 0) {
     classSubjects = db.prepare(`
-      SELECT cs.subject_id, s.code as subject_code, s.name as subject_name
-      FROM class_subjects cs
-      JOIN subjects s ON cs.subject_id = s.id
-      WHERE cs.class_id = ?
-    `).all(classId) as { subject_id: number; subject_code: string; subject_name: string }[];
+      SELECT DISTINCT ms.subject_id, s.code as subject_code, s.name as subject_name
+      FROM marks_sheets ms
+      JOIN subjects s ON ms.subject_id = s.id
+      WHERE ms.examination_id = ? AND ms.class_id = ?
+    `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
   }
+
+  if (classSubjects.length === 0) {
+    classSubjects = db.prepare(`
+      SELECT DISTINCT m.subject_id, s.code as subject_code, s.name as subject_name
+      FROM marks m
+      JOIN subjects s ON m.subject_id = s.id
+      WHERE m.examination_id = ? AND m.class_id = ?
+    `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
+  }
+
   const subjectIds = classSubjects.map(cs => cs.subject_id);
   const subjectCodeMap = new Map<number, string>(classSubjects.map(cs => [cs.subject_id, cs.subject_code]));
 
-  // 4. Check for any unverified student subject enrollments in this class
-  const unverifiedCheck = db.prepare(`
-    SELECT COUNT(*) as cnt
-    FROM student_subject_enrollments sse
-    JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
-    WHERE e.class_id = ? AND e.status = 'enrolled' AND sse.enrollment_status = 'provisional_unverified'
-  `).get(classId) as { cnt: number };
+  // 4. G4S-01: Scoped enrolment verification
+  let unverifiedCount = 0;
 
-  let unverifiedCount = Number(unverifiedCheck?.cnt || 0);
-
-  // G4R-01: Positive confirmed enrollment verification across ALL marks in this exam/class
+  // Positive confirmed enrollment verification across ALL marks in this exam/class
   // If ANY mark exists for a student who lacks a confirmed enrollment in that subject, flag as unverified!
   const unconfirmedMarkCheck = db.prepare(`
     SELECT COUNT(*) as cnt
@@ -578,9 +669,35 @@ export function calculateClassResults(
           AND sse.academic_year_id = ?
           AND sse.enrollment_status = 'confirmed'
       )
-  `).get(examinationId, classId, classInfo.academic_year_id) as { cnt: number };
+  `).get(examinationId, classId, examAcademicYearId) as { cnt: number };
 
   unverifiedCount += Number(unconfirmedMarkCheck?.cnt || 0);
+
+  // Check provisional enrolments ONLY for applicable examined subjects and participating students.
+  // Unrelated subjects outside this examination or unexamined electives NEVER block publication.
+  if (subjectIds.length > 0) {
+    const placeholders = subjectIds.map(() => '?').join(',');
+    const provisionalExaminedCheck = db.prepare(`
+      SELECT COUNT(*) as cnt
+      FROM student_subject_enrollments sse
+      JOIN enrollments e ON sse.student_id = e.student_id AND sse.academic_year_id = e.academic_year_id
+      JOIN subjects s ON sse.subject_id = s.id
+      WHERE e.class_id = ? AND e.status = 'enrolled'
+        AND sse.enrollment_status = 'provisional_unverified'
+        AND sse.subject_id IN (${placeholders})
+        AND (
+          s.category = 'Core'
+          OR sse.enrollment_category = 'core_compulsory'
+          OR EXISTS (
+            SELECT 1 FROM marks m
+            WHERE m.examination_id = ? AND m.class_id = ?
+              AND m.student_id = sse.student_id AND m.subject_id = sse.subject_id
+          )
+        )
+    `).get(classId, ...subjectIds, examinationId, classId) as { cnt: number };
+
+    unverifiedCount += Number(provisionalExaminedCheck?.cnt || 0);
+  }
 
   // 5. Gather marks for all students in this class for this exam
   const studentResults: any[] = [];
@@ -604,6 +721,7 @@ export function calculateClassResults(
     let absentCount = 0;
     let exemptCount = 0;
     let medicalCount = 0;
+    let isDeferred = false;
 
     const subjectGrades: Record<number, any> = {};
 
@@ -612,7 +730,7 @@ export function calculateClassResults(
       const subEnrollment = db.prepare(`
         SELECT enrollment_status FROM student_subject_enrollments
         WHERE student_id = ? AND subject_id = ? AND academic_year_id = ?
-      `).get(stu.student_id, subId, classInfo.academic_year_id) as { enrollment_status: string } | undefined;
+      `).get(stu.student_id, subId, examAcademicYearId) as { enrollment_status: string } | undefined;
 
       // If no confirmed enrollment or dropped/transferred, this student does NOT participate in this subject
       // (e.g. taking alternative elective such as Tamil instead of Sinhala)
@@ -667,12 +785,21 @@ export function calculateClassResults(
         if (gradeRes.normalizedPercentage >= 35.0) passedCount++;
       } else if (m.assessment_status === 'ABSENT') {
         absentCount++;
-        // Absent treated as 0% under default rules
-        totalWeight += weight;
+        if (absenceRules.absentHandling === 'zero' || absenceRules.absentHandling === 'provisional_fail') {
+          totalWeight += weight; // Treated as 0% contributing with subject weight
+        } else if (absenceRules.absentHandling === 'exclude') {
+          // Excluded from total weight
+        }
       } else if (m.assessment_status === 'EXEMPT') {
         exemptCount++;
+        // Excluded from total weight
       } else if (m.assessment_status === 'MEDICAL') {
         medicalCount++;
+        if (absenceRules.medicalHandling === 'exclude') {
+          // Excluded from total weight
+        } else if (absenceRules.medicalHandling === 'deferred') {
+          isDeferred = true;
+        }
       }
     }
 
@@ -690,36 +817,46 @@ export function calculateClassResults(
       absentCount,
       exemptCount,
       medicalCount,
+      isDeferred,
       rank: null,
       subjectGrades
     });
   }
 
-  // 6. Compute deterministic standard competition ranking ("1224" method)
-  // Rankable students must have at least 1 graded or assessed subject
-  const eligibleForRank = studentResults.filter(s => (s.gradedSubjectsCount > 0 || s.absentCount > 0) && s.averagePercentage !== null);
-  // Sort primarily by policy-weighted averagePercentage descending, secondarily by totalScore descending, tertiary by roll number
+  // 6. G4S-04: Compute deterministic standard competition ranking ("1224" method)
+  // Respect configured minimum subject requirements before assigning official rankings
+  const minSubjects = typeof rankingRules.minimumSubjectsRequired === 'number'
+    ? rankingRules.minimumSubjectsRequired
+    : 1;
+
+  const eligibleForRank = studentResults.filter(s => {
+    if (s.averagePercentage === null) return false;
+    if (s.isDeferred) return false;
+    if (absenceRules.absentHandling === 'provisional_fail' && s.absentCount > 0) return false;
+    const assessedCount = s.gradedSubjectsCount + (absenceRules.absentHandling === 'zero' ? s.absentCount : 0);
+    return assessedCount >= minSubjects;
+  });
+
+  // Sort primarily by policy-weighted averagePercentage descending ONLY.
+  // Secondary sort by rollNumber is solely for deterministic array ordering, NEVER breaking equal-rank ties.
   eligibleForRank.sort((a, b) => {
     const diff = (b.averagePercentage ?? -1) - (a.averagePercentage ?? -1);
     if (Math.abs(diff) > 0.0001) return diff;
-    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
     return (a.rollNumber || 9999) - (b.rollNumber || 9999);
   });
 
   for (let i = 0; i < eligibleForRank.length; i++) {
-    if (i > 0) {
+    if (i === 0) {
+      eligibleForRank[0].rank = 1;
+    } else {
       const prev = eligibleForRank[i - 1];
       const curr = eligibleForRank[i];
-      if (Math.abs((curr.averagePercentage ?? 0) - (prev.averagePercentage ?? 0)) < 0.0001 &&
-          Math.abs(curr.totalScore - prev.totalScore) < 0.0001) {
-        // Tie: identical rank
+      // Approved tie handling: equal average percentage produces equal rank!
+      if (Math.abs((curr.averagePercentage ?? 0) - (prev.averagePercentage ?? 0)) < 0.0001) {
         curr.rank = prev.rank;
       } else {
-        // Competition rank: jump to i + 1
-        curr.rank = i + 1;
+        curr.rank = i + 1; // Competition rank skips next
       }
-    } else {
-      eligibleForRank[0].rank = 1;
     }
   }
 
