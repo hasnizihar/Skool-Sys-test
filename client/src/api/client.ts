@@ -138,11 +138,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
-  saveDraftMarks: (payload: { sheetId: number; baseRevision: number; marks: any[] }) =>
-    apiFetch('/api/marks/sheets/draft', {
+  saveDraftMarks: (
+    arg1: number | { sheetId: number; baseRevision: number; marks: any[] },
+    arg2?: { baseRevision: number; marks: any[] }
+  ) => {
+    let sheetId: number;
+    let payload: { baseRevision: number; marks: any[] };
+    if (typeof arg1 === 'number') {
+      sheetId = arg1;
+      payload = arg2!;
+    } else {
+      sheetId = arg1.sheetId;
+      payload = { baseRevision: arg1.baseRevision, marks: arg1.marks };
+    }
+    return apiFetch(`/api/marks/sheets/${sheetId}/save-draft`, {
       method: 'POST',
       body: JSON.stringify(payload)
-    }),
+    });
+  },
+  getPublishedMark: (examinationId: number, studentId: number, subjectId: number) =>
+    apiFetch(`/api/marks/published-mark?examinationId=${examinationId}&studentId=${studentId}&subjectId=${subjectId}`),
   submitMarksSheet: (sheetId: number, payload: { baseRevision: number; notes?: string }) =>
     apiFetch(`/api/marks/sheets/${sheetId}/submit`, {
       method: 'POST',

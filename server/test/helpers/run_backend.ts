@@ -6,7 +6,7 @@ const testDir = path.resolve(import.meta.dirname, '..');
 const rootDir = path.resolve(testDir, '../..');
 const files = fs
   .readdirSync(testDir)
-  .filter((f) => f.endsWith('.test.ts') && f !== 'attendance_browser_real.test.ts')
+  .filter((f) => f.endsWith('.test.ts') && !f.includes('_browser_'))
   .sort()
   .map((f) => path.join('test', f));
 

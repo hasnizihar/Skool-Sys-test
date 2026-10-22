@@ -199,13 +199,20 @@ router.post('/sheet', requireAuth, (req, res) => {
   }
 
   try {
-    const formattedMarks: MarkEntryInput[] = marks.map((m: any) => ({
-      studentId: Number(m.student_id ?? m.studentId),
-      score: (m.score === null || m.score === undefined || m.score === '') ? null : Number(m.score),
-      maxScore: m.max_score ? Number(m.max_score) : 100.0,
-      assessmentStatus: (m.is_absent ? 'ABSENT' : (m.is_exempt ? 'EXEMPT' : (m.score !== null && m.score !== undefined && m.score !== '' ? 'PRESENT' : 'NOT_ASSESSED'))) as 'PRESENT' | 'ABSENT' | 'EXEMPT' | 'NOT_ASSESSED',
-      remarks: m.remarks
-    }));
+    const formattedMarks: MarkEntryInput[] = marks.map((m: any) => {
+      const assessmentStatus = m.assessmentStatus ||
+        (m.is_absent ? 'ABSENT' : (m.is_exempt ? 'EXEMPT' : (m.score !== null && m.score !== undefined && m.score !== '' ? 'PRESENT' : 'NOT_ASSESSED')));
+      const score = (['ABSENT', 'MEDICAL', 'EXEMPT', 'NOT_ASSESSED'].includes(assessmentStatus) || m.score === null || m.score === undefined || m.score === '')
+        ? null
+        : Number(m.score);
+      return {
+        studentId: Number(m.student_id ?? m.studentId),
+        score,
+        maxScore: m.max_score ? Number(m.max_score) : (m.maxScore ? Number(m.maxScore) : 100.0),
+        assessmentStatus: assessmentStatus as 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED',
+        remarks: m.remarks
+      };
+    });
 
     const result = saveOrSubmitLegacyMarksSheet({
       examId: Number(examId),
@@ -651,7 +658,7 @@ router.get('/sheets', requireAuth, (req, res) => {
 
     const { examinationId, classId, subjectId, status } = req.query;
 
-    let query = `
+    const baseQuery = `
       SELECT ms.*,
              c.name as class_name, c.grade as class_grade,
              sub.name as subject_name, sub.code as subject_code, sub.category as subject_category,
@@ -670,72 +677,83 @@ router.get('/sheets', requireAuth, (req, res) => {
       LEFT JOIN users u_teacher ON ms.teacher_id = u_teacher.id
       LEFT JOIN users u_reviewer ON ms.reviewed_by_user_id = u_reviewer.id
       LEFT JOIN users u_approver ON ms.approved_by_user_id = u_approver.id
-      WHERE 1=1
     `;
+
+    const whereClauses: string[] = [];
     const params: any[] = [];
 
     if (examinationId) {
-      query += ' AND ms.examination_id = ?';
+      whereClauses.push('ms.examination_id = ?');
       params.push(Number(examinationId));
     }
     if (classId) {
-      query += ' AND ms.class_id = ?';
+      whereClauses.push('ms.class_id = ?');
       params.push(Number(classId));
     }
     if (subjectId) {
-      query += ' AND ms.subject_id = ?';
+      whereClauses.push('ms.subject_id = ?');
       params.push(Number(subjectId));
     }
     if (status) {
-      query += ' AND ms.status = ?';
+      whereClauses.push('ms.status = ?');
       params.push(String(status));
     }
 
+    // Least-privilege scoping rules (G5F-04):
+    // ALL leadership appointments MUST match the marks sheet's academic year and covered grade band.
+    // Cross-year appointments from one year NEVER authorize sheets in another year!
     const activeAuths = getActiveStaffAuthorizations(user.id);
-    const isWholeExamLeadership = activeAuths.some(a => ['principal', 'vice_principal_academic'].includes(a.auth_role) && a.grade_band === 'all');
+    const scopeOrs: string[] = [];
 
-    if (!isWholeExamLeadership) {
-      const scopeOrs: string[] = [];
-
-      for (const auth of activeAuths) {
-        if (['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(auth.auth_role)) {
-          if (auth.grade_band === 'all') {
-            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id})`);
-          } else if (auth.grade_band === 'junior_6_9') {
-            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id} AND c.grade BETWEEN 6 AND 9)`);
-          } else if (auth.grade_band === 'ol_10_11') {
-            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id} AND c.grade BETWEEN 10 AND 11)`);
-          } else if (auth.grade_band === 'al_12_13') {
-            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id} AND c.grade BETWEEN 12 AND 13)`);
-          }
+    for (const auth of activeAuths) {
+      if (['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(auth.auth_role)) {
+        if (auth.grade_band === 'all') {
+          scopeOrs.push('(ms.academic_year_id = ?)');
+          params.push(auth.academic_year_id);
+        } else if (auth.grade_band === 'junior_6_9') {
+          scopeOrs.push('(ms.academic_year_id = ? AND c.grade BETWEEN 6 AND 9)');
+          params.push(auth.academic_year_id);
+        } else if (auth.grade_band === 'ol_10_11') {
+          scopeOrs.push('(ms.academic_year_id = ? AND c.grade BETWEEN 10 AND 11)');
+          params.push(auth.academic_year_id);
+        } else if (auth.grade_band === 'al_12_13') {
+          scopeOrs.push('(ms.academic_year_id = ? AND c.grade BETWEEN 12 AND 13)');
+          params.push(auth.academic_year_id);
         }
-      }
-
-      scopeOrs.push(`EXISTS (
-        SELECT 1 FROM teacher_assignments ta
-        WHERE ta.teacher_id = ${user.id} AND ta.class_id = ms.class_id AND (ta.subject_id = ms.subject_id OR ta.assignment_type = 'class_teacher')
-          AND ta.academic_year_id = ms.academic_year_id
-      )`);
-      scopeOrs.push(`EXISTS (
-        SELECT 1 FROM classes cls
-        WHERE cls.id = ms.class_id AND cls.class_teacher_id = ${user.id}
-      )`);
-
-      if (user.role === 'admin') {
-        scopeOrs.push('(e.is_published = 1)');
-      }
-
-      if (scopeOrs.length > 0) {
-        query += ` AND (${scopeOrs.join(' OR ')})`;
-      } else {
-        res.json({ sheets: [] });
-        return;
       }
     }
 
-    query += ' ORDER BY e.id DESC, c.grade ASC, c.name ASC, sub.name ASC';
+    // Active teaching assignment in the marks sheet's academic year
+    scopeOrs.push(`EXISTS (
+      SELECT 1 FROM teacher_assignments ta
+      WHERE ta.teacher_id = ? AND ta.class_id = ms.class_id
+        AND (ta.subject_id = ms.subject_id OR ta.assignment_type = 'class_teacher')
+        AND ta.academic_year_id = ms.academic_year_id
+    )`);
+    params.push(user.id);
 
-    const sheets = db.prepare(query).all(...params);
+    // Active class teacher assignment on class in the marks sheet's academic year
+    scopeOrs.push(`EXISTS (
+      SELECT 1 FROM classes cls
+      WHERE cls.id = ms.class_id AND cls.class_teacher_id = ? AND cls.academic_year_id = ms.academic_year_id
+    )`);
+    params.push(user.id);
+
+    // Plain administrators (without in-scope academic leadership appointments) can ONLY see officially published sheets;
+    // unpublished sheet metadata is confidential and protected against unscoped access.
+    if (user.role === 'admin') {
+      scopeOrs.push("(e.is_published = 1 AND ms.status = 'published')");
+    }
+
+    if (scopeOrs.length > 0) {
+      whereClauses.push(`(${scopeOrs.join(' OR ')})`);
+    } else {
+      res.json({ sheets: [] });
+      return;
+    }
+
+    const fullQuery = `${baseQuery} WHERE ${whereClauses.join(' AND ')} ORDER BY e.id DESC, c.grade ASC, c.name ASC, sub.name ASC`;
+    const sheets = db.prepare(fullQuery).all(...params);
     res.json({ sheets });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1496,6 +1514,105 @@ router.post('/policies/:id/approve', requireAuth, (req, res) => {
   } catch (err: any) {
     const status = err.statusCode || 400;
     res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 G5F-03: Retrieve Authoritative Published Mark Record for Corrections
+router.get('/published-mark', requireAuth, (req, res) => {
+  try {
+    const user = req.user!;
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      res.status(403).json({ error: 'User account is deactivated or invalid.', code: 'USER_DEACTIVATED' });
+      return;
+    }
+
+    const { examinationId, studentId, subjectId } = req.query;
+    if (!examinationId || !studentId || !subjectId) {
+      res.status(400).json({ error: 'examinationId, studentId, and subjectId are required.' });
+      return;
+    }
+
+    const eId = Number(examinationId);
+    const stId = Number(studentId);
+    const subId = Number(subjectId);
+
+    const mark = db.prepare(`
+      SELECT m.*,
+             ms.id as sheet_id, ms.status as sheet_status, ms.academic_year_id,
+             e.id as exam_id, e.is_published, e.status as exam_status,
+             c.id as class_id, c.grade as class_grade, c.name as class_name,
+             sub.id as subject_id, sub.name as subject_name, sub.code as subject_code,
+             s.id as student_id, s.full_name as student_name, s.admission_no
+      FROM marks m
+      JOIN marks_sheets ms ON m.sheet_id = ms.id
+      JOIN examinations e ON m.examination_id = e.id
+      JOIN classes c ON m.class_id = c.id
+      JOIN subjects sub ON m.subject_id = sub.id
+      JOIN students s ON m.student_id = s.id
+      WHERE m.examination_id = ? AND m.student_id = ? AND m.subject_id = ?
+    `).get(eId, stId, subId) as any;
+
+    if (!mark) {
+      res.status(404).json({
+        error: 'Target published mark record not found for this examination, student, and subject.',
+        code: 'MARK_NOT_FOUND'
+      });
+      return;
+    }
+
+    if (mark.is_published !== 1 || mark.exam_status !== 'published' || mark.sheet_status !== 'published') {
+      res.status(400).json({
+        error: 'Target mark belongs to an examination or marks sheet that is not officially published.',
+        code: 'EXAMINATION_NOT_PUBLISHED'
+      });
+      return;
+    }
+
+    // Role & Scope Authorization Check (Assigned subject teacher OR scoped leadership OR admin)
+    const isAssigned = db.prepare(`
+      SELECT id FROM teacher_assignments
+      WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
+    `).get(user.id, mark.class_id, mark.subject_id, mark.academic_year_id);
+
+    const activeAuths = getActiveStaffAuthorizations(user.id, mark.academic_year_id);
+    const isLeadership = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, mark.class_grade))
+    );
+
+    if (!isAssigned && !isLeadership && user.role !== 'admin') {
+      res.status(403).json({
+        error: 'Access denied: You are not authorized to view or correct this student mark.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
+    const markObj = {
+      id: mark.id,
+      markId: mark.id,
+      sheetId: mark.sheet_id,
+      examinationId: mark.examination_id,
+      studentId: mark.student_id,
+      studentName: mark.student_name,
+      admissionNo: mark.admission_no,
+      subjectId: mark.subject_id,
+      subjectName: mark.subject_name,
+      subjectCode: mark.subject_code,
+      score: mark.score !== null ? Number(mark.score) : null,
+      maxScore: mark.max_score ? Number(mark.max_score) : 100.0,
+      assessmentStatus: mark.assessment_status,
+      gradeLetter: mark.grade_letter,
+      updatedAt: mark.updated_at
+    };
+
+    res.json({
+      ...markObj,
+      mark: markObj
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

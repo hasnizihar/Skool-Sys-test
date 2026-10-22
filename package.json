@@ -9,6 +9,8 @@
     "seed": "npm --prefix server run seed",
     "test": "npm --prefix server run test",
     "test:browser": "npm --prefix server run test:browser",
+    "test:browser:attendance": "npm --prefix server run test:browser:attendance",
+    "test:browser:exam": "npm --prefix server run test:browser:exam",
     "test:all": "npm --prefix server run test:all",
     "typecheck": "npm --prefix server run typecheck",
     "lint": "npm --prefix client run lint",

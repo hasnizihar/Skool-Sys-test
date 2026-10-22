@@ -69,7 +69,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   // Tab: Marks Entry state
   const [roster, setRoster] = useState<any[]>([]);
   const [activeSheet, setActiveSheet] = useState<any | null>(null);
-  const [marksMap, setMarksMap] = useState<Record<number, { score: string; status: string }>>({});
+  const [marksMap, setMarksMap] = useState<Record<number, { score: string; status: string; remarks?: string }>>({});
   const [stats, setStats] = useState<any | null>(null);
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -123,6 +123,26 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   const [correctionJustification, setCorrectionJustification] = useState<string>('');
   const [correctionError, setCorrectionError] = useState<string | null>(null);
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
+  const [authoritativeMark, setAuthoritativeMark] = useState<any | null>(null);
+  const [loadingAuthoritativeMark, setLoadingAuthoritativeMark] = useState(false);
+  const [authoritativeMarkError, setAuthoritativeMarkError] = useState<string | null>(null);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [allSubjects, setAllSubjects] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (showRequestCorrectionModal) {
+      if (allStudents.length === 0) {
+        api.getStudents().then((res: any) => {
+          setAllStudents(res.students || []);
+        }).catch(() => {});
+      }
+      if (allSubjects.length === 0) {
+        api.getSubjects().then((res: any) => {
+          setAllSubjects(res.subjects || []);
+        }).catch(() => {});
+      }
+    }
+  }, [showRequestCorrectionModal, allStudents.length, allSubjects.length]);
 
   // Examination Creation / Edit Modal
   const [showExamModal, setShowExamModal] = useState(false);
@@ -183,6 +203,45 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
     }
   }, [activeTab]);
 
+  // PR-005 G5F-03: Fetch authoritative published mark when correction targets change
+  useEffect(() => {
+    if (showRequestCorrectionModal && selectedExamId && correctionStudentId && correctionSubjectId) {
+      let isMounted = true;
+      const fetchAuthMark = async () => {
+        try {
+          setLoadingAuthoritativeMark(true);
+          setAuthoritativeMarkError(null);
+          const data = await api.getPublishedMark(
+            Number(selectedExamId),
+            Number(correctionStudentId),
+            Number(correctionSubjectId)
+          );
+          if (isMounted) {
+            setAuthoritativeMark(data);
+            if (data.score !== null && data.score !== undefined) {
+              setCorrectionRequestedScore(String(data.score));
+            } else {
+              setCorrectionRequestedScore('');
+            }
+            setCorrectionRequestedStatus(data.assessmentStatus || 'PRESENT');
+          }
+        } catch (err: any) {
+          if (isMounted) {
+            setAuthoritativeMark(null);
+            setAuthoritativeMarkError(err.message || 'Unable to fetch authoritative published mark record for this student and subject.');
+          }
+        } finally {
+          if (isMounted) setLoadingAuthoritativeMark(false);
+        }
+      };
+      fetchAuthMark();
+      return () => { isMounted = false; };
+    } else {
+      setAuthoritativeMark(null);
+      setAuthoritativeMarkError(null);
+    }
+  }, [showRequestCorrectionModal, selectedExamId, correctionStudentId, correctionSubjectId]);
+
   const loadLookups = async () => {
     try {
       const [examRes, classRes, yearsRes] = await Promise.all([
@@ -242,16 +301,18 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       setStats(res.stats || null);
       setActiveSheet(res.sheet || null);
 
-      const map: Record<number, { score: string; status: string }> = {};
+      const map: Record<number, { score: string; status: string; remarks?: string }> = {};
       (res.roster || []).forEach((r: any) => {
-        let status = 'PRESENT';
-        if (r.is_absent) status = 'ABSENT';
-        else if (r.is_exempt) status = 'EXEMPT';
-        else if (r.status === 'MEDICAL') status = 'MEDICAL';
+        let status = r.assessment_status || r.mark_status || 'PRESENT';
+        if (r.is_absent && status !== 'ABSENT') status = 'ABSENT';
+        else if (r.is_exempt && status !== 'EXEMPT') status = 'EXEMPT';
+        else if (r.status === 'MEDICAL' || status === 'MEDICAL') status = 'MEDICAL';
+        else if (status === 'NOT_ASSESSED') status = 'NOT_ASSESSED';
 
         map[r.student_id] = {
-          score: r.score !== null && r.score !== undefined ? String(r.score) : '',
-          status
+          score: (status === 'PRESENT' && r.score !== null && r.score !== undefined) ? String(r.score) : '',
+          status,
+          remarks: r.remarks || ''
         };
       });
       setMarksMap(map);
@@ -368,7 +429,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
     return { letter: 'F', cls: 'grade-f' };
   };
 
-  // Save Draft Marks (CAS Base Revision)
+  // Save Draft Marks (CAS Base Revision - G5F-02)
   const handleSaveDraft = async () => {
     if (!activeSheet?.id) {
       // If sheet does not exist yet, save via primary saveMarksSheet
@@ -376,29 +437,41 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       return;
     }
 
-    const payloadMarks = roster.map((r) => {
+    const eligibleRoster = roster.filter((r) => r.is_eligible_for_draft !== false);
+    const payloadMarks = eligibleRoster.map((r) => {
       const entry = marksMap[r.student_id] || { score: '', status: 'PRESENT' };
+      const assessmentStatus = entry.status || 'PRESENT';
+      const isPresent = assessmentStatus === 'PRESENT';
+      const hasNumericScore = isPresent && entry.score !== '' && entry.score !== null && entry.score !== undefined;
+
       return {
         studentId: r.student_id,
-        score: entry.status === 'PRESENT' && entry.score !== '' ? Number(entry.score) : null,
-        status: entry.status
+        score: hasNumericScore ? Number(entry.score) : null,
+        maxScore: 100,
+        assessmentStatus: assessmentStatus as 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED',
+        remarks: entry.remarks || undefined
       };
     });
 
     try {
       setSavingDraft(true);
       setSheetMessage(null);
-      await api.saveDraftMarks({
-        sheetId: activeSheet.id,
+      await api.saveDraftMarks(activeSheet.id, {
         baseRevision: activeSheet.revision || 1,
         marks: payloadMarks
       });
-      setSheetMessage({ type: 'success', text: 'Draft marks saved successfully!' });
       if (selectedExamId && selectedClassId && selectedSubjectId) {
-        loadMarksSheet(selectedExamId, selectedClassId, selectedSubjectId);
+        await loadMarksSheet(selectedExamId, selectedClassId, selectedSubjectId);
       }
+      setSheetMessage({ type: 'success', text: 'Draft marks saved successfully!' });
     } catch (err: any) {
-      setSheetMessage({ type: 'error', text: `Failed to save draft: ${err.message}` });
+      let errText = `Failed to save draft: ${err.message}`;
+      if (err.code === 'STALE_REVISION' || err.status === 409) {
+        errText = `Stale Revision Conflict: The sheet was modified by another user (server revision: ${err.currentRevision || 'newer'}). Please reload the latest sheet before saving.`;
+      } else if (err.code === 'UNASSIGNED_TEACHER' || err.status === 403) {
+        errText = 'Access Denied: Only the verified assigned subject teacher for this academic year is authorized to save draft marks for this sheet.';
+      }
+      setSheetMessage({ type: 'error', text: errText });
     } finally {
       setSavingDraft(false);
     }
@@ -425,10 +498,10 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
         baseRevision: activeSheet.revision || 1,
         notes: 'Submitted for formal academic review'
       });
-      setSheetMessage({ type: 'success', text: 'Marks sheet submitted for review successfully!' });
       if (selectedExamId && selectedClassId && selectedSubjectId) {
-        loadMarksSheet(selectedExamId, selectedClassId, selectedSubjectId);
+        await loadMarksSheet(selectedExamId, selectedClassId, selectedSubjectId);
       }
+      setSheetMessage({ type: 'success', text: 'Marks sheet submitted for review successfully!' });
     } catch (err: any) {
       setSheetMessage({ type: 'error', text: `Failed to submit marks sheet: ${err.message}` });
     } finally {
@@ -440,28 +513,49 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   const handleLegacySave = async (status: string = 'draft') => {
     if (!selectedExamId || !selectedClassId || !selectedSubjectId || roster.length === 0) return;
 
-    const payloadMarks = roster.map((r) => {
+    const eligibleRoster = roster.filter((r) => r.is_eligible_for_draft !== false);
+    const payloadMarks = eligibleRoster.map((r) => {
       const entry = marksMap[r.student_id] || { score: '', status: 'PRESENT' };
+      const assessmentStatus = entry.status || 'PRESENT';
+      const isPresent = assessmentStatus === 'PRESENT';
+      const hasNumericScore = isPresent && entry.score !== '' && entry.score !== null && entry.score !== undefined;
+
       return {
         student_id: r.student_id,
-        score: entry.status === 'PRESENT' && entry.score !== '' ? Number(entry.score) : null,
-        is_absent: entry.status === 'ABSENT' ? 1 : 0
+        studentId: r.student_id,
+        score: hasNumericScore ? Number(entry.score) : null,
+        maxScore: 100,
+        max_score: 100,
+        assessmentStatus,
+        is_absent: assessmentStatus === 'ABSENT' ? 1 : 0,
+        is_exempt: assessmentStatus === 'EXEMPT' ? 1 : 0,
+        remarks: entry.remarks || undefined
       };
     });
 
     try {
       setSavingDraft(true);
+      setSheetMessage(null);
       await api.saveMarksSheet({
         examId: selectedExamId,
         classId: selectedClassId,
         subjectId: selectedSubjectId,
         marks: payloadMarks,
-        status
+        status,
+        baseRevision: activeSheet?.revision
       });
+      if (selectedExamId && selectedClassId && selectedSubjectId) {
+        await loadMarksSheet(selectedExamId, selectedClassId, selectedSubjectId);
+      }
       setSheetMessage({ type: 'success', text: 'Marks sheet initialized and saved!' });
-      loadMarksSheet(selectedExamId, selectedClassId, selectedSubjectId);
     } catch (err: any) {
-      setSheetMessage({ type: 'error', text: `Save failed: ${err.message}` });
+      let errText = `Save failed: ${err.message}`;
+      if (err.code === 'STALE_REVISION' || err.status === 409) {
+        errText = `Stale Revision Conflict: The sheet has been modified. Please reload before saving.`;
+      } else if (err.code === 'UNASSIGNED_TEACHER' || err.status === 403) {
+        errText = 'Access Denied: Only the verified assigned subject teacher is authorized to create or edit marks for this sheet.';
+      }
+      setSheetMessage({ type: 'error', text: errText });
     } finally {
       setSavingDraft(false);
     }
@@ -618,10 +712,17 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
     }
   };
 
-  // Correction Request Action
+  // Correction Request Action (G5F-03)
   const handleRequestCorrection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedExamId || !correctionStudentId || !correctionSubjectId) return;
+    if (!selectedExamId || !correctionStudentId || !correctionSubjectId) {
+      alert('Examination, Student, and Subject are all required.');
+      return;
+    }
+    if (!authoritativeMark) {
+      alert('Authoritative published mark record could not be verified. Correction requests cannot be submitted without an existing published mark.');
+      return;
+    }
     if (!correctionJustification.trim() || correctionJustification.trim().length < 10) {
       alert('Justification Required: Please provide a detailed justification (minimum 10 characters).');
       return;
@@ -631,12 +732,12 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       setSubmittingCorrection(true);
       setCorrectionError(null);
 
-      // Find current score from roster or report card if available
-      const currentRosterItem = roster.find((r) => r.student_id === Number(correctionStudentId));
-      const expectedPrevScore = currentRosterItem && currentRosterItem.score !== null ? currentRosterItem.score : 0;
-      const expectedPrevStatus = currentRosterItem?.is_absent ? 'ABSENT' : 'PRESENT';
+      const expectedPrevScore = authoritativeMark.score !== null && authoritativeMark.score !== undefined ? Number(authoritativeMark.score) : null;
+      const expectedPrevStatus = authoritativeMark.assessmentStatus;
 
       await api.requestCorrection({
+        markId: authoritativeMark.markId,
+        sheetId: authoritativeMark.sheetId,
         examinationId: selectedExamId,
         studentId: Number(correctionStudentId),
         subjectId: Number(correctionSubjectId),
@@ -651,10 +752,15 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       setShowRequestCorrectionModal(false);
       setCorrectionJustification('');
       setCorrectionRequestedScore('');
+      setAuthoritativeMark(null);
       loadCorrections(selectedExamId);
       alert('Post-publication correction request submitted for leadership review!');
     } catch (err: any) {
-      setCorrectionError(err.message || 'Failed to submit correction request.');
+      if (err.code === 'STALE_MARK_STATE' || err.status === 409) {
+        setCorrectionError(`Stale Mark Conflict: ${err.message}. The database record was updated since it was loaded. Please reload the authoritative mark.`);
+      } else {
+        setCorrectionError(err.message || 'Failed to submit correction request.');
+      }
     } finally {
       setSubmittingCorrection(false);
     }
@@ -1481,6 +1587,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
 
             {sheetMessage && (
               <div
+                className={`alert ${sheetMessage.type === 'success' ? 'alert-success' : 'alert-danger'}`}
                 style={{
                   marginTop: '1rem',
                   padding: '0.75rem 1rem',
@@ -2779,8 +2886,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                     onChange={(e) => setCorrectionStudentId(Number(e.target.value))}
                   >
                     <option value="">Select Student</option>
-                    {roster.map((r) => (
-                      <option key={r.student_id} value={r.student_id}>
+                    {(roster.length > 0 ? roster : allStudents).map((r) => (
+                      <option key={r.student_id || r.id} value={r.student_id || r.id}>
                         {r.full_name} ({r.admission_no})
                       </option>
                     ))}
@@ -2796,13 +2903,40 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                     onChange={(e) => setCorrectionSubjectId(Number(e.target.value))}
                   >
                     <option value="">Select Subject</option>
-                    {subjects.map((s) => (
+                    {(subjects.length > 0 ? subjects : allSubjects).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} ({s.code})
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* Authoritative Mark Preview / Verification (G5F-03) */}
+                {loadingAuthoritativeMark && (
+                  <div style={{ padding: '0.6rem', fontSize: '0.825rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <RefreshCw size={14} className="spin" /> Fetching authoritative published mark record...
+                  </div>
+                )}
+                {authoritativeMark && (
+                  <div style={{ padding: '0.75rem', background: 'var(--bg-subtle)', borderRadius: '6px', border: '1px solid var(--border)', marginBottom: '1rem' }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Authoritative Published Mark (Verified)
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.35rem', fontSize: '0.85rem' }}>
+                      <div>
+                        <strong>Mark ID:</strong> #{authoritativeMark.markId} | <strong>Status:</strong> <span className="badge" style={{ fontSize: '0.7rem' }}>{authoritativeMark.assessmentStatus}</span>
+                      </div>
+                      <div>
+                        <strong>Current Score:</strong> {authoritativeMark.score !== null ? <strong>{authoritativeMark.score} / {authoritativeMark.maxScore}</strong> : <em>N/A ({authoritativeMark.assessmentStatus})</em>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {authoritativeMarkError && (
+                  <div style={{ color: 'var(--absent)', fontSize: '0.825rem', marginBottom: '0.75rem', padding: '0.5rem', background: '#ffebee', borderRadius: '4px', border: '1px solid #ffcdd2' }}>
+                    ⚠️ {authoritativeMarkError}
+                  </div>
+                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
@@ -2870,7 +3004,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                 <button type="button" onClick={() => setShowRequestCorrectionModal(false)} className="btn btn-secondary">
                   Cancel
                 </button>
-                <button type="submit" disabled={submittingCorrection} className="btn btn-primary">
+                <button type="submit" disabled={submittingCorrection || loadingAuthoritativeMark || !authoritativeMark} className="btn btn-primary">
                   {submittingCorrection ? 'Submitting...' : 'Submit Correction Request'}
                 </button>
               </div>

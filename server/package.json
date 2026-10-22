@@ -8,7 +8,9 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "tsx test/helpers/run_backend.ts",
-    "test:browser": "tsx --test test/attendance_browser_real.test.ts",
+    "test:browser": "tsx --test test/attendance_browser_real.test.ts test/examination_browser_real.test.ts",
+    "test:browser:attendance": "tsx --test test/attendance_browser_real.test.ts",
+    "test:browser:exam": "tsx --test test/examination_browser_real.test.ts",
     "test:all": "tsx --test test/**/*.test.ts",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts"
