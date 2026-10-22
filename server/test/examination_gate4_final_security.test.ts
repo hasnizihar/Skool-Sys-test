@@ -447,6 +447,64 @@ describe('PR-005 Gate 4 Final Security Closeout: FIX 01, FIX 02, FIX 03', { conc
       const data = await res.json() as any;
       assert.equal(data.code, 'UNPUBLISHED_RESULTS_LOCKED');
     });
+
+    test('Negative: Plain unscoped administrator without academic leadership appointment receives 403 Forbidden with INSUFFICIENT_AUTHORIZATION', async () => {
+      // adminToken belongs to adminUserId who has role 'admin' but ZERO academic_staff_authorizations
+      const res = await testServer.request(`/api/marks/examinations/${examPubConfId}/publication-summary`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+
+      assert.equal(res.status, 403);
+      const data = await res.json() as any;
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('Negative: Teacher with revoked teaching assignments receives 403 Forbidden with INSUFFICIENT_AUTHORIZATION', async () => {
+      // Create a temporary teacher with assignment, then revoke assignment
+      const revUserId = Number(db.prepare("INSERT INTO users (username, email, password_hash, full_name, role, is_active) VALUES ('g4f_revoked', 'rev@kcc.test', 'hash', 'Revoked Teacher', 'subject_teacher', 1)").run().lastInsertRowid);
+      const revToken = jwt.sign({ id: revUserId, username: 'g4f_revoked', role: 'subject_teacher', tokenVersion: 1 }, process.env.JWT_SECRET!);
+
+      // Temporarily assign
+      const asgId = Number(db.prepare("INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, academic_year_id, assignment_type) VALUES (?, ?, ?, ?, 'subject_teacher')").run(revUserId, class8AId, subjectMathId, year2026Id).lastInsertRowid);
+
+      // Now revoke assignment by deleting it
+      db.prepare("DELETE FROM teacher_assignments WHERE id = ?").run(asgId);
+
+      const res = await testServer.request(`/api/marks/examinations/${examPubConfId}/publication-summary`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${revToken}` }
+      });
+
+      assert.equal(res.status, 403);
+      const data = await res.json() as any;
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('Negative: Malformed publication snapshot content fails closed with 500 MALFORMED_PUBLICATION_SNAPSHOT', async () => {
+      // Create an exam and publication with corrupted/malformed snapshot JSON
+      const examMalformedId = Number(db.prepare(`
+        INSERT INTO examinations (name, academic_year_id, term, start_date, end_date, assessment_policy_id, grade_band, status, is_published)
+        VALUES ('Malformed Snapshot Exam', ?, 1, '2026-03-01', '2026-03-15', ?, 'junior_6_9', 'published', 1)
+      `).run(year2026Id, policyApprovedId).lastInsertRowid);
+
+      db.prepare(`
+        INSERT INTO examination_publications (
+          examination_id, publication_version, policy_profile_id, policy_version,
+          published_by_user_id, publication_snapshot_json, audit_hash
+        ) VALUES (?, 1, ?, 1, ?, '{"classes": NOT_VALID_JSON', 'dummy_hash')
+      `).run(examMalformedId, policyApprovedId, principalUserId);
+
+      // Assigned teacher Kamal requests publication summary: filtering MUST fail closed!
+      const res = await testServer.request(`/api/marks/examinations/${examMalformedId}/publication-summary`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${teacherKamalToken}` }
+      });
+
+      assert.equal(res.status, 500);
+      const data = await res.json() as any;
+      assert.equal(data.code, 'MALFORMED_PUBLICATION_SNAPSHOT');
+    });
   });
 
   // =========================================================================

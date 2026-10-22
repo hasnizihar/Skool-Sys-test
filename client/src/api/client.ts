@@ -82,6 +82,7 @@ export const api = {
 
   // Academic
   getYears: () => apiFetch('/api/academic/years'),
+  getAcademicYears: () => apiFetch('/api/academic/years'),
   getGrades: () => apiFetch('/api/academic/grades'),
   getClasses: (grade?: number) =>
     apiFetch(`/api/academic/classes${grade ? `?grade=${grade}` : ''}`),
@@ -91,13 +92,133 @@ export const api = {
     apiFetch(`/api/academic/subjects${gradeLevel ? `?gradeLevel=${gradeLevel}` : ''}`),
   getClassSubjects: (classId: number) =>
     apiFetch(`/api/academic/classes/${classId}/subjects`),
-  getExaminations: () => apiFetch('/api/academic/examinations'),
+  getExaminations: (params: { academic_year_id?: number; term?: number; status?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.academic_year_id) query.set('academic_year_id', String(params.academic_year_id));
+    if (params.term) query.set('term', String(params.term));
+    if (params.status) query.set('status', params.status);
+    const qStr = query.toString();
+    return apiFetch(`/api/academic/examinations${qStr ? `?${qStr}` : ''}`);
+  },
+  createExamination: (payload: any) =>
+    apiFetch('/api/academic/examinations', { method: 'POST', body: JSON.stringify(payload) }),
+  updateExamination: (id: number, payload: any) =>
+    apiFetch(`/api/academic/examinations/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   createClass: (payload: any) =>
     apiFetch('/api/academic/classes', { method: 'POST', body: JSON.stringify(payload) }),
   createSubject: (payload: any) =>
     apiFetch('/api/academic/subjects', { method: 'POST', body: JSON.stringify(payload) }),
 
-  // Students
+  // Examination Schedules
+  getExaminationSchedules: (examId: number) =>
+    apiFetch(`/api/marks/examinations/${examId}/schedules`),
+  addExaminationSchedule: (examId: number, payload: { classId: number; subjectId: number; isRequired?: boolean }) =>
+    apiFetch(`/api/marks/examinations/${examId}/schedules`, { method: 'POST', body: JSON.stringify(payload) }),
+  approveExaminationSchedules: (examId: number, payload: { scheduleIds?: number[] } = {}) =>
+    apiFetch(`/api/marks/examinations/${examId}/schedules/approve`, { method: 'POST', body: JSON.stringify(payload) }),
+  deleteExaminationSchedule: (examId: number, scheduleId: number) =>
+    apiFetch(`/api/marks/examinations/${examId}/schedules/${scheduleId}`, { method: 'DELETE' }),
+
+  // Marks Sheets & Workflow
+  getMarksSheets: (params: { examinationId?: number; classId?: number; subjectId?: number; status?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.examinationId) query.set('examinationId', String(params.examinationId));
+    if (params.classId) query.set('classId', String(params.classId));
+    if (params.subjectId) query.set('subjectId', String(params.subjectId));
+    if (params.status) query.set('status', params.status);
+    const qStr = query.toString();
+    return apiFetch(`/api/marks/sheets${qStr ? `?${qStr}` : ''}`);
+  },
+  getMarksSheetDetails: (sheetId: number) =>
+    apiFetch(`/api/marks/sheets/${sheetId}`),
+  getMarksSheet: (examId: number, classId: number, subjectId: number) =>
+    apiFetch(`/api/marks/sheet?examId=${examId}&classId=${classId}&subjectId=${subjectId}`),
+  saveMarksSheet: (payload: any) =>
+    apiFetch('/api/marks/sheet', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  saveDraftMarks: (payload: { sheetId: number; baseRevision: number; marks: any[] }) =>
+    apiFetch('/api/marks/sheets/draft', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  submitMarksSheet: (sheetId: number, payload: { baseRevision: number; notes?: string }) =>
+    apiFetch(`/api/marks/sheets/${sheetId}/submit`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  reviewMarksSheet: (sheetId: number, payload: { baseRevision: number; decision: 'endorse' | 'return'; remarks: string }) =>
+    apiFetch(`/api/marks/sheets/${sheetId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  approveMarksSheet: (sheetId: number, payload: { baseRevision: number; remarks?: string }) =>
+    apiFetch(`/api/marks/sheets/${sheetId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  getMarksSheetHistory: (sheetId: number) =>
+    apiFetch(`/api/marks/sheets/${sheetId}/history`),
+  getMarksSheetRevisionSnapshot: (sheetId: number, revision: number) =>
+    apiFetch(`/api/marks/sheets/${sheetId}/revisions/${revision}`),
+
+  // Assessment Policies
+  getPolicies: (params: { academic_year_id?: number; grade_band?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.academic_year_id) query.set('academic_year_id', String(params.academic_year_id));
+    if (params.grade_band) query.set('grade_band', params.grade_band);
+    const qStr = query.toString();
+    return apiFetch(`/api/marks/policies${qStr ? `?${qStr}` : ''}`);
+  },
+  getPolicy: (id: number) =>
+    apiFetch(`/api/marks/policies/${id}`),
+  createPolicy: (payload: any) =>
+    apiFetch('/api/marks/policies', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  approvePolicy: (id: number) =>
+    apiFetch(`/api/marks/policies/${id}/approve`, {
+      method: 'POST'
+    }),
+
+  // Publication & Publication Readiness
+  getPublicationReadiness: (examId: number) =>
+    apiFetch(`/api/marks/examinations/${examId}/publication-readiness`),
+  publishExamination: (examId: number, payload: { policyProfileId?: number; expectedStatus?: string } = {}) =>
+    apiFetch(`/api/marks/examinations/${examId}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  getPublicationSummary: (examId: number) =>
+    apiFetch(`/api/marks/examinations/${examId}/publication-summary`),
+
+  // Post-Publication Mark Corrections
+  getCorrections: (params: { examinationId?: number; sheetId?: number; status?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.examinationId) query.set('examinationId', String(params.examinationId));
+    if (params.sheetId) query.set('sheetId', String(params.sheetId));
+    if (params.status) query.set('status', params.status);
+    const qStr = query.toString();
+    return apiFetch(`/api/marks/corrections${qStr ? `?${qStr}` : ''}`);
+  },
+  getCorrection: (id: number) =>
+    apiFetch(`/api/marks/corrections/${id}`),
+  requestCorrection: (payload: any) =>
+    apiFetch('/api/marks/corrections', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  reviewCorrection: (id: number, payload: { decision: 'approve' | 'reject'; reviewComments?: string }) =>
+    apiFetch(`/api/marks/corrections/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+
+  // Report Card
+  getStudentReportCard: (studentId: number, examId: number) =>
+    apiFetch(`/api/marks/student-report/${studentId}/${examId}`),
   getStudents: (params: { q?: string; grade?: number; classId?: number; status?: string } = {}) => {
     const query = new URLSearchParams();
     if (params.q) query.set('q', params.q);
@@ -129,17 +250,6 @@ export const api = {
     apiFetch(`/api/attendance/reports/daily${date ? `?date=${date}` : ''}`),
   getMonthlyAttendanceReport: (classId: number, year: number, month: number) =>
     apiFetch(`/api/attendance/reports/monthly?classId=${classId}&year=${year}&month=${month}`),
-
-  // Marks
-  getMarksSheet: (examId: number, classId: number, subjectId: number) =>
-    apiFetch(`/api/marks/sheet?examId=${examId}&classId=${classId}&subjectId=${subjectId}`),
-  saveMarksSheet: (payload: any) =>
-    apiFetch('/api/marks/sheet', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    }),
-  getStudentReportCard: (studentId: number, examId: number) =>
-    apiFetch(`/api/marks/student-report/${studentId}/${examId}`),
 
   // Admin
   getUsers: () => apiFetch('/api/admin/users'),

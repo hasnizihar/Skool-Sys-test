@@ -4,9 +4,20 @@ import bcrypt from 'bcryptjs';
 export function runSeed() {
   initDatabase();
 
-  console.log('🌱 Starting SkoolSys database seed...');
+  console.log('🌱 Starting SkoolSys PR-005 database seed...');
 
-  // 1. Academic Year
+  // 1. Clean existing tables in proper dependency order
+  db.exec("PRAGMA foreign_keys = OFF;");
+  db.exec("DELETE FROM marks_corrections;");
+  db.exec("DELETE FROM marks_sheet_revisions;");
+  db.exec("DELETE FROM marks_sheets;");
+  db.exec("DELETE FROM quarantined_legacy_marks;");
+  db.exec("DELETE FROM marks_audit_history;");
+  try { db.exec("DELETE FROM examination_publications;"); } catch {}
+  try { db.exec("DELETE FROM examination_schedules;"); } catch {}
+  try { db.exec("DELETE FROM student_subject_enrollments;"); } catch {}
+  try { db.exec("DELETE FROM assessment_policy_profiles;"); } catch {}
+  try { db.exec("DELETE FROM academic_staff_authorizations;"); } catch {}
   db.exec("DELETE FROM attendance_records;");
   db.exec("DELETE FROM attendance_sessions;");
   db.exec("DELETE FROM marks;");
@@ -20,7 +31,9 @@ export function runSeed() {
   db.exec("DELETE FROM users;");
   db.exec("DELETE FROM academic_years;");
   db.exec("DELETE FROM audit_logs;");
+  db.exec("PRAGMA foreign_keys = ON;");
 
+  // 2. Academic Year
   const yearStmt = db.prepare(`
     INSERT INTO academic_years (name, start_date, end_date, is_current)
     VALUES (?, ?, ?, ?)
@@ -28,7 +41,7 @@ export function runSeed() {
   yearStmt.run('2026', '2026-01-05', '2026-12-15', 1);
   const currentYear = db.prepare("SELECT id FROM academic_years WHERE name = '2026'").get() as { id: number };
 
-  // 2. Users
+  // 3. System Users & Passwords
   const salt = bcrypt.genSaltSync(10);
   const adminPass = bcrypt.hashSync('admin123', salt);
   const teacherPass = bcrypt.hashSync('teacher123', salt);
@@ -38,17 +51,31 @@ export function runSeed() {
     VALUES (?, ?, ?, ?, ?)
   `);
 
-  userStmt.run('admin', 'admin@skoolsys.edu', adminPass, 'Dr. Anura Bandara (Principal / Admin)', 'admin');
+  userStmt.run('admin', 'admin@skoolsys.edu', adminPass, 'Mr. A.L.M. Mukthar (Principal / Admin)', 'admin');
+  userStmt.run('vp_academic', 'vp.academic@skoolsys.edu', teacherPass, 'Mr. M.I.M. Nawas (VP Academic)', 'class_teacher');
+  userStmt.run('section_head_junior', 'sh.junior@skoolsys.edu', teacherPass, 'Mr. K.L.M. Farook (Section Head Grades 6-9)', 'class_teacher');
   userStmt.run('teacher_nimali', 'nimali.perera@skoolsys.edu', teacherPass, 'Mrs. Nimali Perera', 'class_teacher');
   userStmt.run('teacher_samantha', 'samantha.silva@skoolsys.edu', teacherPass, 'Mr. Samantha Silva', 'subject_teacher');
   userStmt.run('teacher_priya', 'priya.wickrama@skoolsys.edu', teacherPass, 'Ms. Priyanthi Wickramasinghe', 'subject_teacher');
 
   const adminUser = db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: number };
+  const vpUser = db.prepare("SELECT id FROM users WHERE username = 'vp_academic'").get() as { id: number };
+  const sectionHeadUser = db.prepare("SELECT id FROM users WHERE username = 'section_head_junior'").get() as { id: number };
   const teacherNimali = db.prepare("SELECT id FROM users WHERE username = 'teacher_nimali'").get() as { id: number };
   const teacherSamantha = db.prepare("SELECT id FROM users WHERE username = 'teacher_samantha'").get() as { id: number };
   const teacherPriya = db.prepare("SELECT id FROM users WHERE username = 'teacher_priya'").get() as { id: number };
 
-  // 3. Classes (Grades 6 to 13)
+  // 4. Academic Staff Authorizations (PR-005 Multi-Tier Leadership)
+  const authStmt = db.prepare(`
+    INSERT INTO academic_staff_authorizations (user_id, academic_year_id, auth_role, grade_band, is_active, granted_by_user_id)
+    VALUES (?, ?, ?, ?, 1, ?)
+  `);
+
+  authStmt.run(adminUser.id, currentYear.id, 'principal', 'all', adminUser.id);
+  authStmt.run(vpUser.id, currentYear.id, 'vice_principal_academic', 'all', adminUser.id);
+  authStmt.run(sectionHeadUser.id, currentYear.id, 'section_head', 'junior_6_9', adminUser.id);
+
+  // 5. Classes (Grades 6 to 13)
   const classStmt = db.prepare(`
     INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id)
     VALUES (?, ?, ?, ?, ?)
@@ -77,7 +104,7 @@ export function runSeed() {
   const grade8B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 8-B'").get() as { id: number };
   const grade11A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 11-A'").get() as { id: number };
 
-  // 4. Subjects
+  // 6. Subjects
   const subjectStmt = db.prepare(`
     INSERT INTO subjects (code, name, category, grade_level)
     VALUES (?, ?, ?, ?)
@@ -104,34 +131,35 @@ export function runSeed() {
   const ict = db.prepare("SELECT id FROM subjects WHERE code = 'ICT'").get() as { id: number };
   const hpe = db.prepare("SELECT id FROM subjects WHERE code = 'HPE'").get() as { id: number };
   const art = db.prepare("SELECT id FROM subjects WHERE code = 'ART'").get() as { id: number };
+  const comm = db.prepare("SELECT id FROM subjects WHERE code = 'COMM'").get() as { id: number };
 
   // Class subjects for Grade 8-A
   const classSubStmt = db.prepare(`INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)`);
-  [math, sci, eng, sin, hist, ict, hpe, art].forEach(s => {
+  [math, sci, eng, sin, hist, ict, hpe, art, comm].forEach(s => {
     classSubStmt.run(grade8A.id, s.id);
+  });
+  [math, sci, eng, sin, hist, ict, hpe, art].forEach(s => {
     classSubStmt.run(grade8B.id, s.id);
   });
 
-  // 5. Teacher Assignments
+  // 7. Teacher Assignments
   const assignStmt = db.prepare(`
     INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id)
     VALUES (?, ?, ?, ?, ?)
   `);
 
-  // Mrs. Nimali is class teacher of Grade 8-A and teaches English in 8-A
   assignStmt.run(teacherNimali.id, grade8A.id, null, 'class_teacher', currentYear.id);
   assignStmt.run(teacherNimali.id, grade8A.id, eng.id, 'subject_teacher', currentYear.id);
 
-  // Mr. Samantha Silva teaches Mathematics in 8-A, 8-B, 11-A
   assignStmt.run(teacherSamantha.id, grade8A.id, math.id, 'subject_teacher', currentYear.id);
+  assignStmt.run(teacherSamantha.id, grade8A.id, hist.id, 'subject_teacher', currentYear.id);
   assignStmt.run(teacherSamantha.id, grade8B.id, math.id, 'subject_teacher', currentYear.id);
   assignStmt.run(teacherSamantha.id, grade11A.id, math.id, 'subject_teacher', currentYear.id);
 
-  // Ms. Priyanthi teaches Science in 8-A, 8-B
   assignStmt.run(teacherPriya.id, grade8A.id, sci.id, 'subject_teacher', currentYear.id);
   assignStmt.run(teacherPriya.id, grade8B.id, sci.id, 'subject_teacher', currentYear.id);
 
-  // 6. Students & Enrollments (Realistic Grade 8-A roster)
+  // 8. Students & Enrollments (Realistic Grade 8-A roster)
   const studentData = [
     { adm: 'SCH-2024-001', name: 'Kasun Malinda Ranasinghe', call: 'Kasun', dob: '2012-03-14', gender: 'Male', gName: 'Sunil Ranasinghe', gRel: 'Father', phone: '0771234567', addr: 'No 45, Temple Road, Colombo 05' },
     { adm: 'SCH-2024-002', name: 'Tharushi Nilakshi Fernando', call: 'Tharushi', dob: '2012-05-22', gender: 'Female', gName: 'Kamal Fernando', gRel: 'Father', phone: '0712345678', addr: 'No 12/A, Station Lane, Dehiwala' },
@@ -179,7 +207,27 @@ export function runSeed() {
     enrollInsert.run(st.id, grade8A.id, currentYear.id, idx + 1);
   });
 
-  // 7. Attendance Sessions & Records (for the last 5 days)
+  // 9. Student-Subject Confirmed Enrolments (Core + Elective demo)
+  const sseInsert = db.prepare(`
+    INSERT INTO student_subject_enrollments (
+      student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at
+    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, '2026-01-15 08:00:00')
+  `);
+
+  createdStudents.forEach((studentId, idx) => {
+    // Core compulsory subjects for all
+    [math, sci, eng, sin, hist, ict, hpe].forEach(s => {
+      sseInsert.run(studentId, s.id, grade8A.id, currentYear.id, 'core_compulsory', adminUser.id);
+    });
+    // Elective subjects (Demonstrating elective-subject participation)
+    if (idx < 10) {
+      sseInsert.run(studentId, art.id, grade8A.id, currentYear.id, 'ol_basket_1', adminUser.id);
+    } else {
+      sseInsert.run(studentId, comm.id, grade8A.id, currentYear.id, 'ol_basket_1', adminUser.id);
+    }
+  });
+
+  // 10. Attendance Sessions & Records
   const sessionInsert = db.prepare(`
     INSERT INTO attendance_sessions (uuid, class_id, date, academic_year_id, taken_by_user_id, status, notes)
     VALUES (?, ?, ?, ?, ?, 'submitted', ?)
@@ -213,22 +261,128 @@ export function runSeed() {
     });
   });
 
-  // 8. Examinations
-  const examStmt = db.prepare(`
-    INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published)
-    VALUES (?, ?, ?, ?, ?, ?)
+  // 11. Assessment Policy Profiles (Approved & Provisional)
+  const policyInsert = db.prepare(`
+    INSERT INTO assessment_policy_profiles (
+      academic_year_id, grade_band, policy_code, title,
+      grading_scale_json, absence_rules_json, ranking_rules_json,
+      correction_window_days, is_approved_by_school, approved_by_user_id, approved_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 30, ?, ?, ?)
   `);
 
-  examStmt.run('Term 1 Assessment 2026', 1, currentYear.id, '2026-03-20', '2026-03-31', 1);
-  examStmt.run('Mid-Year Examination 2026', 2, currentYear.id, '2026-07-15', '2026-07-28', 0);
-  examStmt.run('Year-End Final Examination 2026', 3, currentYear.id, '2026-11-20', '2026-12-05', 0);
+  const gradingScales = JSON.stringify([
+    { gradeLetter: 'A', minScore: 75, maxScore: 100, description: 'Distinction' },
+    { gradeLetter: 'B', minScore: 65, maxScore: 74, description: 'Very Good' },
+    { gradeLetter: 'C', minScore: 50, maxScore: 64, description: 'Credit' },
+    { gradeLetter: 'S', minScore: 35, maxScore: 49, description: 'Pass' },
+    { gradeLetter: 'F', minScore: 0, maxScore: 34, description: 'Fail' }
+  ]);
+
+  const absenceRules = JSON.stringify({
+    absentTreatedAsZero: true,
+    medicalExcludedFromRank: true
+  });
+
+  const rankingRules = JSON.stringify({
+    includeElectives: true,
+    minSubjectsForRank: 6,
+    tieBreakingCriteria: 'aggregate_score'
+  });
+
+  policyInsert.run(
+    currentYear.id, 'junior_6_9', 'KCC-SEC-STD-2026-V1',
+    'Kattankudy Central College Standard Junior Secondary Policy',
+    gradingScales, absenceRules, rankingRules,
+    1, adminUser.id, '2026-01-10 09:00:00'
+  );
+
+  policyInsert.run(
+    currentYear.id, 'junior_6_9', 'KCC-PILOT-2026-V2',
+    'Kattankudy Central College Pilot Weighted Assessment Policy',
+    gradingScales, absenceRules, rankingRules,
+    0, null, null
+  );
+
+  const approvedPolicy = db.prepare("SELECT id FROM assessment_policy_profiles WHERE policy_code = 'KCC-SEC-STD-2026-V1'").get() as { id: number };
+
+  // 12. Examinations
+  const examStmt = db.prepare(`
+    INSERT INTO examinations (name, term, academic_year_id, grade_band, start_date, end_date, is_published, status, assessment_policy_id, publication_version)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  examStmt.run('Term 1 Assessment 2026', 1, currentYear.id, 'all', '2026-03-20', '2026-03-31', 0, 'approved', approvedPolicy.id, 0);
+  examStmt.run('Mid-Year Examination 2026', 2, currentYear.id, 'all', '2026-07-15', '2026-07-28', 0, 'scheduled', null, 0);
+  examStmt.run('Year-End Final Examination 2026', 3, currentYear.id, 'all', '2026-11-20', '2026-12-05', 0, 'draft', null, 0);
 
   const term1Exam = db.prepare("SELECT id FROM examinations WHERE name = 'Term 1 Assessment 2026'").get() as { id: number };
+  const midYearExam = db.prepare("SELECT id FROM examinations WHERE name = 'Mid-Year Examination 2026'").get() as { id: number };
 
-  // 9. Marks
+  // 13. Examination Schedules
+  const scheduleInsert = db.prepare(`
+    INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Approved schedules for Term 1
+  [math, sci, eng, sin, hist, ict, hpe, art, comm].forEach(s => {
+    scheduleInsert.run(term1Exam.id, grade8A.id, s.id, 1, 'approved', adminUser.id, '2026-03-10 10:00:00');
+  });
+
+  // Draft schedules for Mid-Year
+  [math, sci, eng].forEach(s => {
+    scheduleInsert.run(midYearExam.id, grade8A.id, s.id, 1, 'draft', null, null);
+  });
+
+  // 14. Marks & Marks Sheets with Varied Lifecycle States
+  const sheetInsert = db.prepare(`
+    INSERT INTO marks_sheets (
+      examination_id, class_id, subject_id, academic_year_id, teacher_id,
+      revision, status, submission_notes, submitted_at,
+      reviewed_by_user_id, reviewed_at, review_remarks,
+      approved_by_user_id, approved_at, approval_remarks
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Sheet 1: Math (Grade 8-A) -> APPROVED
+  sheetInsert.run(
+    term1Exam.id, grade8A.id, math.id, currentYear.id, teacherSamantha.id,
+    2, 'approved', 'Marks submitted after full internal checking', '2026-03-28 12:00:00',
+    sectionHeadUser.id, '2026-03-29 10:00:00', 'Endorsed for final sign-off',
+    adminUser.id, '2026-03-29 15:00:00', 'Approved by Principal'
+  );
+  const mathSheet = db.prepare("SELECT id FROM marks_sheets WHERE examination_id = ? AND subject_id = ?").get(term1Exam.id, math.id) as { id: number };
+
+  // Sheet 2: Science (Grade 8-A) -> REVIEWED (Awaiting Principal approval)
+  sheetInsert.run(
+    term1Exam.id, grade8A.id, sci.id, currentYear.id, teacherPriya.id,
+    1, 'reviewed', 'Science lab marks included', '2026-03-28 14:00:00',
+    sectionHeadUser.id, '2026-03-29 11:30:00', 'Endorsed by Section Head',
+    null, null, null
+  );
+  const sciSheet = db.prepare("SELECT id FROM marks_sheets WHERE examination_id = ? AND subject_id = ?").get(term1Exam.id, sci.id) as { id: number };
+
+  // Sheet 3: English (Grade 8-A) -> SUBMITTED (Awaiting Section Head review)
+  sheetInsert.run(
+    term1Exam.id, grade8A.id, eng.id, currentYear.id, teacherNimali.id,
+    1, 'submitted', 'All grammar and essay marks compiled', '2026-03-28 16:00:00',
+    null, null, null,
+    null, null, null
+  );
+  const engSheet = db.prepare("SELECT id FROM marks_sheets WHERE examination_id = ? AND subject_id = ?").get(term1Exam.id, eng.id) as { id: number };
+
+  // Sheet 4: History (Grade 8-A) -> DRAFT
+  sheetInsert.run(
+    term1Exam.id, grade8A.id, hist.id, currentYear.id, teacherSamantha.id,
+    1, 'draft', null, null,
+    null, null, null,
+    null, null, null
+  );
+
+  // 15. Student Marks Records
   const marksInsert = db.prepare(`
-    INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, max_score, grade_letter, status, entered_by_user_id)
-    VALUES (?, ?, ?, ?, ?, 100, ?, 'published', ?)
+    INSERT INTO marks (sheet_id, examination_id, class_id, subject_id, student_id, score, max_score, assessment_status, grade_letter, entered_by_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, 100, 'PRESENT', ?, ?)
   `);
 
   function calcGrade(score: number): string {
@@ -239,41 +393,111 @@ export function runSeed() {
     return 'F';
   }
 
-  // Populate marks for Mathematics, Science, and English
   const subjectsToScore = [
-    { sub: math, user: teacherSamantha.id, base: 78 },
-    { sub: sci, user: teacherPriya.id, base: 72 },
-    { sub: eng, user: teacherNimali.id, base: 82 }
+    { sub: math, sheetId: mathSheet.id, user: teacherSamantha.id, base: 78 },
+    { sub: sci, sheetId: sciSheet.id, user: teacherPriya.id, base: 72 },
+    { sub: eng, sheetId: engSheet.id, user: teacherNimali.id, base: 82 }
   ];
 
-  subjectsToScore.forEach(({ sub, user, base }) => {
+  subjectsToScore.forEach(({ sub, sheetId, user, base }) => {
     createdStudents.forEach((studentId, idx) => {
-      // Deterministic realistic variance
       const variance = ((idx * 7) % 35) - 15;
       let score = Math.min(98, Math.max(30, base + variance));
       const grade = calcGrade(score);
-      marksInsert.run(term1Exam.id, grade8A.id, sub.id, studentId, score, grade, user);
+      marksInsert.run(sheetId, term1Exam.id, grade8A.id, sub.id, studentId, score, grade, user);
     });
   });
 
-  // 10. Audit log entries
+  // 16. Post-Publication Corrections (Demonstrating Reissued report cards & negative states)
+  const firstStudentId = createdStudents[0];
+  const secondStudentId = createdStudents[1];
+  const thirdStudentId = createdStudents[2];
+
+  const correctionInsert = db.prepare(`
+    INSERT INTO marks_corrections (
+      mark_id, sheet_id, examination_id, student_id, subject_id,
+      requested_by_user_id, expected_previous_score, expected_previous_status,
+      requested_score, requested_status, correction_category, detailed_justification,
+      status, reviewed_by_user_id, reviewed_at, review_comments
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Approved Correction (Triggers Reissued Report Card on Student 1)
+  const st1Mark = db.prepare("SELECT id FROM marks WHERE student_id = ? AND subject_id = ? AND examination_id = ?").get(firstStudentId, math.id, term1Exam.id) as { id: number };
+  correctionInsert.run(
+    st1Mark.id, mathSheet.id, term1Exam.id, firstStudentId, math.id,
+    teacherSamantha.id, 78, 'PRESENT', 85, 'PRESENT',
+    'clerical_addition', 'Recalculation of Section B marks upon formal re-examination appeal',
+    'approved', adminUser.id, '2026-04-02 10:30:00', 'Approved following script inspection'
+  );
+
+  // Pending Correction
+  const st2Mark = db.prepare("SELECT id FROM marks WHERE student_id = ? AND subject_id = ? AND examination_id = ?").get(secondStudentId, sci.id, term1Exam.id) as { id: number };
+  correctionInsert.run(
+    st2Mark.id, mathSheet.id, term1Exam.id, secondStudentId, sci.id,
+    teacherPriya.id, 72, 'PRESENT', 79, 'PRESENT',
+    're_scrutiny', 'Formal appeal registered by parent regarding paper 2 question 4',
+    'pending', null, null, null
+  );
+
+  // Rejected Correction
+  const st3Mark = db.prepare("SELECT id FROM marks WHERE student_id = ? AND subject_id = ? AND examination_id = ?").get(thirdStudentId, eng.id, term1Exam.id) as { id: number };
+  correctionInsert.run(
+    st3Mark.id, mathSheet.id, term1Exam.id, thirdStudentId, eng.id,
+    teacherNimali.id, 82, 'PRESENT', 95, 'PRESENT',
+    'other', 'Requested additional discretionary marks',
+    'rejected', adminUser.id, '2026-04-05 14:15:00', 'Rejected: No arithmetic error found on original script'
+  );
+
+  // 17. Transition Term 1 to Published and Insert Immutable Publication Snapshot Record
+  db.prepare(`
+    UPDATE examinations
+    SET is_published = 1, status = 'published', assessment_policy_id = ?, publication_version = 1
+    WHERE id = ?
+  `).run(approvedPolicy.id, term1Exam.id);
+
+  const pubInsert = db.prepare(`
+    INSERT INTO examination_publications (
+      examination_id, publication_version, policy_profile_id, policy_version,
+      published_by_user_id, published_at, publication_snapshot_json, audit_hash
+    ) VALUES (?, 1, ?, 1, ?, '2026-04-01 12:00:00', ?, 'a1b2c3d4e5f67890123456789abcdef0')
+  `);
+
+  const mockSnapshot = JSON.stringify({
+    publishedAt: '2026-04-01T12:00:00.000Z',
+    publisher: { id: adminUser.id, username: 'admin', role: 'principal' },
+    policy: { id: approvedPolicy.id, policy_code: 'KCC-SEC-STD-2026-V1' },
+    classes: [{ classId: grade8A.id, className: 'Grade 8-A', studentCount: createdStudents.length }]
+  });
+
+  try {
+    pubInsert.run(term1Exam.id, approvedPolicy.id, adminUser.id, mockSnapshot);
+  } catch (err: any) {
+    console.log('Publication snapshot insert notice:', err.message);
+  }
+
+  // 18. Audit log entries
   const auditInsert = db.prepare(`
     INSERT INTO audit_logs (user_id, username, action, entity_type, entity_id, details)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  auditInsert.run(adminUser.id, 'admin', 'SYSTEM_INIT', 'System', '0', JSON.stringify({ message: 'Initial MVP system database setup and school seed completed.' }));
+  auditInsert.run(adminUser.id, 'admin', 'SYSTEM_INIT', 'System', '0', JSON.stringify({ message: 'SkoolSys 2.0 PR-005 Examination Management initial seed completed.' }));
   auditInsert.run(teacherNimali.id, 'teacher_nimali', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 8-A', recordsCount: createdStudents.length }));
-  auditInsert.run(teacherSamantha.id, 'teacher_samantha', 'MARKS_SUBMIT', 'marks', `${term1Exam.id}-MATH`, JSON.stringify({ class: 'Grade 8-A', subject: 'Mathematics', exam: 'Term 1 Assessment 2026' }));
+  auditInsert.run(adminUser.id, 'admin', 'EXAMINATION_PUBLISH', 'examinations', String(term1Exam.id), JSON.stringify({ exam: 'Term 1 Assessment 2026', policy: 'KCC-SEC-STD-2026-V1' }));
 
   console.log('✅ SkoolSys Database seeded successfully with:');
   console.log('   - 1 Academic Year (2026)');
-  console.log('   - 4 System Users (Admin, Class Teacher, Subject Teachers)');
+  console.log('   - 6 System Users (Principal, VP Academic, Section Head, Class Teacher, Subject Teachers)');
+  console.log('   - 3 Active Leadership Authorizations (Principal, VP, Section Head)');
   console.log('   - 18 Classes (Grades 6 to 13)');
   console.log('   - 12 Core & Secondary Subjects');
-  console.log('   - 20 Full Student Profiles enrolled in Grade 8-A');
-  console.log('   - 5 Days of Class Attendance records');
-  console.log('   - 3 Examination definitions & Full Term 1 marks for Math, Science, English');
+  console.log('   - 20 Students with Confirmed Subject Enrolments (Core + Elective)');
+  console.log('   - 2 Assessment Policy Profiles (Approved & Provisional)');
+  console.log('   - 3 Examinations across different lifecycle stages (Published, Scheduled, Draft)');
+  console.log('   - Approved & Draft Examination Schedules');
+  console.log('   - 4 Marks Sheets in Approved, Reviewed, Submitted, and Draft states');
+  console.log('   - 3 Post-Publication Corrections (Approved/Reissued, Pending, Rejected)');
 }
 
 if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {

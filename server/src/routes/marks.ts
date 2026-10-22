@@ -95,7 +95,10 @@ router.get('/sheet', requireAuth, (req, res) => {
   const rawRoster = db.prepare(`
     SELECT s.id as student_id, s.admission_no, s.full_name, s.calling_name,
            e.roll_number,
-           m.id as mark_id, m.score, m.is_absent, m.is_exempt, m.max_score, m.grade_letter, m.status as mark_status, m.updated_at
+           m.id as mark_id, m.score,
+           CASE WHEN m.assessment_status = 'ABSENT' THEN 1 ELSE 0 END as is_absent,
+           CASE WHEN m.assessment_status = 'EXEMPT' THEN 1 ELSE 0 END as is_exempt,
+           m.max_score, m.grade_letter, m.assessment_status as mark_status, m.updated_at
     FROM enrollments e
     JOIN students s ON e.student_id = s.id
     LEFT JOIN marks m ON m.student_id = s.id AND m.examination_id = ? AND m.subject_id = ? AND m.class_id = ?
@@ -315,7 +318,10 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
   // Get marks for all subjects assigned to this class in this academic year
   const classSubjects = db.prepare(`
     SELECT sub.id as subject_id, sub.code as subject_code, sub.name as subject_name, sub.category,
-           m.score, m.is_absent, m.is_exempt, m.max_score, m.grade_letter, m.status as mark_status,
+           m.score,
+           CASE WHEN m.assessment_status = 'ABSENT' THEN 1 ELSE 0 END as is_absent,
+           CASE WHEN m.assessment_status = 'EXEMPT' THEN 1 ELSE 0 END as is_exempt,
+           m.max_score, m.grade_letter, m.assessment_status as mark_status,
            u.full_name as teacher_name
     FROM class_subjects cs
     JOIN subjects sub ON cs.subject_id = sub.id
@@ -323,8 +329,18 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
     LEFT JOIN teacher_assignments ta ON ta.class_id = cs.class_id AND ta.subject_id = sub.id AND ta.academic_year_id = ?
     LEFT JOIN users u ON ta.teacher_id = u.id
     WHERE cs.class_id = ?
+      AND (
+        NOT EXISTS (
+          SELECT 1 FROM student_subject_enrollments sse_check
+          WHERE sse_check.student_id = ? AND sse_check.academic_year_id = ? AND sse_check.enrollment_status = 'confirmed'
+        )
+        OR EXISTS (
+          SELECT 1 FROM student_subject_enrollments sse
+          WHERE sse.student_id = ? AND sse.academic_year_id = ? AND sse.subject_id = sub.id AND sse.enrollment_status = 'confirmed'
+        )
+      )
     ORDER BY sub.category ASC, sub.name ASC
-  `).all(studentId, examId, exam.academic_year_id, student.class_id) as any[];
+  `).all(studentId, examId, exam.academic_year_id, student.class_id, studentId, exam.academic_year_id, studentId, exam.academic_year_id) as any[];
 
   // Attendance summary strictly bound to the examination's academic year
   const attendance = db.prepare(`
@@ -623,6 +639,606 @@ router.get('/sheets/:id/revisions/:revision', requireAuth, (req, res) => {
   }
 });
 
+// PR-005 Examination Workspace: List scoped marks sheets with filters
+router.get('/sheets', requireAuth, (req, res) => {
+  try {
+    const user = req.user!;
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      res.status(401).json({ error: 'User account is deactivated or inactive.', code: 'USER_DEACTIVATED' });
+      return;
+    }
+
+    const { examinationId, classId, subjectId, status } = req.query;
+
+    let query = `
+      SELECT ms.*,
+             c.name as class_name, c.grade as class_grade,
+             sub.name as subject_name, sub.code as subject_code, sub.category as subject_category,
+             e.name as exam_name, e.term as exam_term, e.is_published as exam_is_published, e.status as exam_status,
+             ay.name as academic_year_name,
+             u_teacher.full_name as teacher_name, u_teacher.username as teacher_username,
+             u_reviewer.full_name as reviewer_name,
+             u_approver.full_name as approver_name,
+             (SELECT COUNT(*) FROM marks m WHERE m.sheet_id = ms.id) as marks_count,
+             (SELECT COUNT(*) FROM marks m WHERE m.sheet_id = ms.id AND m.assessment_status = 'NOT_ASSESSED') as unassessed_count
+      FROM marks_sheets ms
+      JOIN classes c ON ms.class_id = c.id
+      JOIN subjects sub ON ms.subject_id = sub.id
+      JOIN examinations e ON ms.examination_id = e.id
+      JOIN academic_years ay ON ms.academic_year_id = ay.id
+      LEFT JOIN users u_teacher ON ms.teacher_id = u_teacher.id
+      LEFT JOIN users u_reviewer ON ms.reviewed_by_user_id = u_reviewer.id
+      LEFT JOIN users u_approver ON ms.approved_by_user_id = u_approver.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (examinationId) {
+      query += ' AND ms.examination_id = ?';
+      params.push(Number(examinationId));
+    }
+    if (classId) {
+      query += ' AND ms.class_id = ?';
+      params.push(Number(classId));
+    }
+    if (subjectId) {
+      query += ' AND ms.subject_id = ?';
+      params.push(Number(subjectId));
+    }
+    if (status) {
+      query += ' AND ms.status = ?';
+      params.push(String(status));
+    }
+
+    const activeAuths = getActiveStaffAuthorizations(user.id);
+    const isWholeExamLeadership = activeAuths.some(a => ['principal', 'vice_principal_academic'].includes(a.auth_role) && a.grade_band === 'all');
+
+    if (!isWholeExamLeadership) {
+      const scopeOrs: string[] = [];
+
+      for (const auth of activeAuths) {
+        if (['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(auth.auth_role)) {
+          if (auth.grade_band === 'all') {
+            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id})`);
+          } else if (auth.grade_band === 'junior_6_9') {
+            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id} AND c.grade BETWEEN 6 AND 9)`);
+          } else if (auth.grade_band === 'ol_10_11') {
+            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id} AND c.grade BETWEEN 10 AND 11)`);
+          } else if (auth.grade_band === 'al_12_13') {
+            scopeOrs.push(`(ms.academic_year_id = ${auth.academic_year_id} AND c.grade BETWEEN 12 AND 13)`);
+          }
+        }
+      }
+
+      scopeOrs.push(`EXISTS (
+        SELECT 1 FROM teacher_assignments ta
+        WHERE ta.teacher_id = ${user.id} AND ta.class_id = ms.class_id AND (ta.subject_id = ms.subject_id OR ta.assignment_type = 'class_teacher')
+          AND ta.academic_year_id = ms.academic_year_id
+      )`);
+      scopeOrs.push(`EXISTS (
+        SELECT 1 FROM classes cls
+        WHERE cls.id = ms.class_id AND cls.class_teacher_id = ${user.id}
+      )`);
+
+      if (user.role === 'admin') {
+        scopeOrs.push('(e.is_published = 1)');
+      }
+
+      if (scopeOrs.length > 0) {
+        query += ` AND (${scopeOrs.join(' OR ')})`;
+      } else {
+        res.json({ sheets: [] });
+        return;
+      }
+    }
+
+    query += ' ORDER BY e.id DESC, c.grade ASC, c.name ASC, sub.name ASC';
+
+    const sheets = db.prepare(query).all(...params);
+    res.json({ sheets });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PR-005 Gate 5: Examination Schedules Management
+router.get('/examinations/:id/schedules', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const user = req.user!;
+
+    const exam = db.prepare(`
+      SELECT e.*, ay.name as academic_year_name
+      FROM examinations e
+      LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
+      WHERE e.id = ?
+    `).get(examinationId) as any;
+
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    const isPublished = exam.is_published === 1 || exam.status === 'published';
+
+    if (!isPublished) {
+      const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+      const isLeadership = activeAuths.some(a =>
+        ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role)
+      );
+      const hasTeachingAssignment = db.prepare(`
+        SELECT 1 FROM teacher_assignments WHERE teacher_id = ? AND academic_year_id = ? LIMIT 1
+      `).get(user.id, exam.academic_year_id);
+      const isClassTeacher = db.prepare(`
+        SELECT 1 FROM classes WHERE class_teacher_id = ? AND academic_year_id = ? LIMIT 1
+      `).get(user.id, exam.academic_year_id);
+
+      if (!isLeadership && !hasTeachingAssignment && !isClassTeacher) {
+        res.status(403).json({
+          error: 'Access denied: Examination schedule details are confidential prior to publication.',
+          code: 'UNPUBLISHED_RESULTS_LOCKED'
+        });
+        return;
+      }
+    }
+
+    const schedules = db.prepare(`
+      SELECT es.*,
+             c.name as class_name, c.grade as class_grade,
+             sub.name as subject_name, sub.code as subject_code, sub.category as subject_category,
+             u_app.full_name as approved_by_name, u_app.username as approved_by_username,
+             ms.id as sheet_id, ms.status as sheet_status, ms.revision as sheet_revision
+      FROM examination_schedules es
+      JOIN classes c ON es.class_id = c.id
+      JOIN subjects sub ON es.subject_id = sub.id
+      LEFT JOIN users u_app ON es.approved_by_user_id = u_app.id
+      LEFT JOIN marks_sheets ms ON ms.examination_id = es.examination_id AND ms.class_id = es.class_id AND ms.subject_id = es.subject_id
+      WHERE es.examination_id = ?
+      ORDER BY c.grade ASC, c.name ASC, sub.name ASC
+    `).all(examinationId) as any[];
+
+    const total = schedules.length;
+    const approved = schedules.filter(s => s.status === 'approved').length;
+    const draft = schedules.filter(s => s.status === 'draft').length;
+    const required = schedules.filter(s => s.is_required === 1).length;
+    const optional = schedules.filter(s => s.is_required === 0).length;
+    const sheetsCreated = schedules.filter(s => s.sheet_id != null).length;
+    const sheetsApproved = schedules.filter(s => s.sheet_status === 'approved').length;
+    const completenessPercentage = total > 0 ? Math.round((approved / total) * 100) : 0;
+
+    res.json({
+      examination: exam,
+      schedules,
+      summary: {
+        total,
+        approved,
+        draft,
+        required,
+        optional,
+        sheetsCreated,
+        sheetsApproved,
+        isFullyApproved: total > 0 && approved === total,
+        completenessPercentage
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/examinations/:id/schedules', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const { classId, subjectId, isRequired = true } = req.body;
+    const user = req.user!;
+
+    if (!classId || !subjectId) {
+      res.status(400).json({ error: 'classId and subjectId are required.' });
+      return;
+    }
+
+    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(examinationId) as any;
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    if (exam.is_published === 1 || exam.status === 'published') {
+      res.status(409).json({
+        error: 'Cannot modify examination schedule after examination has been published.',
+        code: 'EXAMINATION_LOCKED'
+      });
+      return;
+    }
+
+    const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(Number(classId)) as any;
+    if (!cls) {
+      res.status(404).json({ error: 'Class not found.' });
+      return;
+    }
+
+    if (cls.academic_year_id !== exam.academic_year_id) {
+      res.status(400).json({
+        error: 'Class academic year does not match examination academic year.',
+        code: 'ACADEMIC_YEAR_MISMATCH'
+      });
+      return;
+    }
+
+    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+    const isAuthorizedLeadership = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, cls.grade))
+    );
+
+    if (!isAuthorizedLeadership) {
+      res.status(403).json({
+        error: 'Access denied: Scheduling examinations requires an active Principal, VP Academic, or Section Head appointment.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
+    const classSubject = db.prepare('SELECT id FROM class_subjects WHERE class_id = ? AND subject_id = ?').get(Number(classId), Number(subjectId));
+    if (!classSubject) {
+      res.status(400).json({
+        error: 'Subject is not registered as an active curriculum offering for this class in class_subjects.',
+        code: 'INVALID_CLASS_SUBJECT_OFFERING'
+      });
+      return;
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, created_at)
+      VALUES (?, ?, ?, ?, 'draft', datetime('now'))
+      ON CONFLICT(examination_id, class_id, subject_id) DO UPDATE SET
+        is_required = excluded.is_required,
+        status = 'draft',
+        approved_by_user_id = NULL,
+        approved_at = NULL
+    `);
+
+    const result = stmt.run(examinationId, Number(classId), Number(subjectId), isRequired ? 1 : 0);
+    const scheduleId = result.lastInsertRowid ? Number(result.lastInsertRowid) : (db.prepare('SELECT id FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(examinationId, Number(classId), Number(subjectId)) as any)?.id;
+
+    logAudit(user.id, user.username, 'EXAMINATION_SCHEDULE_CREATE', 'examination_schedules', scheduleId, { examinationId, classId, subjectId, isRequired }, req.ip);
+
+    res.status(201).json({ success: true, scheduleId, status: 'draft' });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+router.post('/examinations/:id/schedules/approve', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const { scheduleIds } = req.body || {};
+    const user = req.user!;
+
+    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(examinationId) as any;
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    if (exam.is_published === 1 || exam.status === 'published') {
+      res.status(409).json({
+        error: 'Cannot modify examination schedule after examination has been published.',
+        code: 'EXAMINATION_LOCKED'
+      });
+      return;
+    }
+
+    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+    const leadershipRoles = activeAuths.filter(a => ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role));
+    if (leadershipRoles.length === 0) {
+      res.status(403).json({
+        error: 'Access denied: Approving examination schedules requires an active Principal, VP Academic, or Section Head appointment.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
+    let targetSchedulesQuery = `
+      SELECT es.*, c.grade
+      FROM examination_schedules es
+      JOIN classes c ON es.class_id = c.id
+      WHERE es.examination_id = ? AND es.status = 'draft'
+    `;
+    const params: any[] = [examinationId];
+
+    if (Array.isArray(scheduleIds) && scheduleIds.length > 0) {
+      const placeholders = scheduleIds.map(() => '?').join(',');
+      targetSchedulesQuery += ` AND es.id IN (${placeholders})`;
+      params.push(...scheduleIds.map(Number));
+    }
+
+    const draftItems = db.prepare(targetSchedulesQuery).all(...params) as any[];
+    if (draftItems.length === 0) {
+      res.json({ success: true, approvedCount: 0, message: 'No draft schedule items found for approval.' });
+      return;
+    }
+
+    for (const item of draftItems) {
+      const canApproveItem = leadershipRoles.some(a =>
+        a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, item.grade)
+      );
+      if (!canApproveItem) {
+        res.status(403).json({
+          error: `Access denied: You do not possess leadership authority over grade ${item.grade} schedule items.`,
+          code: 'INSUFFICIENT_AUTHORIZATION'
+        });
+        return;
+      }
+    }
+
+    const approveStmt = db.prepare(`
+      UPDATE examination_schedules
+      SET status = 'approved',
+          approved_by_user_id = ?,
+          approved_at = datetime('now')
+      WHERE id = ?
+    `);
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      for (const item of draftItems) {
+        approveStmt.run(user.id, item.id);
+      }
+      db.exec('COMMIT;');
+    } catch (dbErr) {
+      db.exec('ROLLBACK;');
+      throw dbErr;
+    }
+
+    logAudit(user.id, user.username, 'EXAMINATION_SCHEDULE_APPROVE', 'examinations', examinationId, {
+      approvedCount: draftItems.length,
+      scheduleIds: draftItems.map(d => d.id)
+    }, req.ip);
+
+    res.json({ success: true, approvedCount: draftItems.length });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+router.delete('/examinations/:id/schedules/:scheduleId', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const scheduleId = Number(req.params.scheduleId);
+    const user = req.user!;
+
+    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(examinationId) as any;
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    if (exam.is_published === 1 || exam.status === 'published') {
+      res.status(409).json({
+        error: 'Cannot modify examination schedule after examination has been published.',
+        code: 'EXAMINATION_LOCKED'
+      });
+      return;
+    }
+
+    const schedule = db.prepare(`
+      SELECT es.*, c.grade
+      FROM examination_schedules es
+      JOIN classes c ON es.class_id = c.id
+      WHERE es.id = ? AND es.examination_id = ?
+    `).get(scheduleId, examinationId) as any;
+
+    if (!schedule) {
+      res.status(404).json({ error: 'Schedule item not found.' });
+      return;
+    }
+
+    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+    const isAuthorized = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role) &&
+      (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, schedule.grade))
+    );
+
+    if (!isAuthorized) {
+      res.status(403).json({
+        error: 'Access denied: You are not authorized to delete this schedule item.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
+    const sheet = db.prepare(`
+      SELECT id, status FROM marks_sheets
+      WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+    `).get(examinationId, schedule.class_id, schedule.subject_id) as any;
+
+    if (sheet && ['submitted', 'reviewed', 'approved'].includes(sheet.status)) {
+      res.status(409).json({
+        error: `Cannot delete schedule item: An active marks sheet exists in status '${sheet.status}'. Revert or return the marks sheet before removing the schedule offering.`,
+        code: 'ACTIVE_MARKS_SHEET_EXISTS'
+      });
+      return;
+    }
+
+    db.prepare('DELETE FROM examination_schedules WHERE id = ?').run(scheduleId);
+    logAudit(user.id, user.username, 'EXAMINATION_SCHEDULE_DELETE', 'examination_schedules', scheduleId, { examinationId, scheduleId }, req.ip);
+
+    res.json({ success: true, message: 'Schedule item removed.' });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
+});
+
+// PR-005 Gate 5: Pre-publication Readiness Inspection Checklist
+router.get('/examinations/:id/publication-readiness', requireAuth, (req, res) => {
+  try {
+    const examinationId = Number(req.params.id);
+    const user = req.user!;
+
+    const exam = db.prepare(`
+      SELECT e.*, ay.name as academic_year_name
+      FROM examinations e
+      LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
+      WHERE e.id = ?
+    `).get(examinationId) as any;
+
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    const blockers: string[] = [];
+
+    // 1. Examination Schedules Check
+    const schedules = db.prepare(`
+      SELECT es.*, c.name as class_name, c.grade as class_grade, s.name as subject_name
+      FROM examination_schedules es
+      JOIN classes c ON es.class_id = c.id
+      JOIN subjects s ON es.subject_id = s.id
+      WHERE es.examination_id = ?
+    `).all(examinationId) as any[];
+
+    const hasSchedule = schedules.length > 0;
+    if (!hasSchedule) {
+      blockers.push('No examination schedules defined. All participating class-subject offerings must be scheduled.');
+    }
+
+    const unapprovedSchedules = schedules.filter(s => s.status !== 'approved' || !s.approved_by_user_id);
+    const scheduleApproved = hasSchedule && unapprovedSchedules.length === 0;
+    if (hasSchedule && !scheduleApproved) {
+      blockers.push(`${unapprovedSchedules.length} schedule item(s) are in draft or lack authorized leadership approval provenance.`);
+    }
+
+    // 2. Marks Sheets Approval Check
+    let allSheetsApproved = false;
+    let approvedSheetsCount = 0;
+    if (hasSchedule) {
+      const sheets = db.prepare(`
+        SELECT ms.*
+        FROM marks_sheets ms
+        WHERE ms.examination_id = ?
+      `).all(examinationId) as any[];
+
+      const approvedSheetMap = new Set<string>(
+        sheets.filter(s => s.status === 'approved' && s.approved_by_user_id).map(s => `${s.class_id}:${s.subject_id}`)
+      );
+
+      const missingOrUnapproved: string[] = [];
+      for (const s of schedules) {
+        if (!approvedSheetMap.has(`${s.class_id}:${s.subject_id}`)) {
+          missingOrUnapproved.push(`${s.class_name} - ${s.subject_name}`);
+        }
+      }
+
+      approvedSheetsCount = approvedSheetMap.size;
+      allSheetsApproved = missingOrUnapproved.length === 0;
+      if (!allSheetsApproved) {
+        blockers.push(`${missingOrUnapproved.length} required marks sheet(s) are missing or not yet in approved status: ${missingOrUnapproved.slice(0, 3).join(', ')}${missingOrUnapproved.length > 3 ? '...' : ''}.`);
+      }
+    }
+
+    // 3. Student Subject Enrolment Confirmation Check
+    const unconfirmedEnrolmentsRow = db.prepare(`
+      SELECT COUNT(*) as cnt
+      FROM marks m
+      WHERE m.examination_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM student_subject_enrollments sse
+          WHERE sse.student_id = m.student_id
+            AND sse.subject_id = m.subject_id
+            AND sse.academic_year_id = ?
+            AND sse.enrollment_status = 'confirmed'
+        )
+    `).get(examinationId, exam.academic_year_id) as { cnt: number };
+
+    const unconfirmedCount = Number(unconfirmedEnrolmentsRow?.cnt || 0);
+    const enrolmentsConfirmed = unconfirmedCount === 0;
+    if (!enrolmentsConfirmed) {
+      blockers.push(`${unconfirmedCount} mark record(s) belong to students without confirmed student-subject enrolment.`);
+    }
+
+    // 4. Approved Applicable Assessment Policy Profile
+    const examGradeBand = exam.grade_band || 'all';
+    let policy: any = null;
+    if (exam.assessment_policy_id) {
+      policy = db.prepare('SELECT * FROM assessment_policy_profiles WHERE id = ?').get(exam.assessment_policy_id);
+    } else {
+      policy = db.prepare(`
+        SELECT * FROM assessment_policy_profiles
+        WHERE academic_year_id = ?
+          AND is_approved_by_school = 1
+          AND (grade_band = ? OR ? = 'all' OR grade_band = 'all')
+        ORDER BY version DESC, id DESC
+        LIMIT 1
+      `).get(exam.academic_year_id, examGradeBand, examGradeBand);
+    }
+
+    const policyApproved = policy != null && policy.is_approved_by_school === 1;
+    if (!policyApproved) {
+      blockers.push('No approved assessment policy profile found for this examination and academic year.');
+    }
+
+    // 5. Legacy Quarantine Check
+    const quarantineCountRow = db.prepare(`
+      SELECT COUNT(*) as cnt
+      FROM marks_sheets
+      WHERE examination_id = ? AND status IN ('legacy_unmoderated', 'quarantined')
+    `).get(examinationId) as { cnt: number };
+    const quarantineMarksRow = db.prepare(`
+      SELECT COUNT(*) as cnt
+      FROM quarantined_legacy_marks
+      WHERE examination_id = ?
+    `).get(examinationId) as { cnt: number };
+
+    const legacyQuarantineClean = (quarantineCountRow?.cnt || 0) === 0 && (quarantineMarksRow?.cnt || 0) === 0;
+    if (!legacyQuarantineClean) {
+      blockers.push('Unresolved quarantined or unmoderated marks sheets exist for this examination.');
+    }
+
+    // 6. User Publisher Authorization Check
+    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+    const publisherAuthorized = activeAuths.some(a =>
+      ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
+      (a.grade_band === 'all' || a.grade_band === examGradeBand)
+    );
+    if (!publisherAuthorized) {
+      blockers.push('Current user does not have Principal or VP Academic publishing authorization.');
+    }
+
+    const isReady = blockers.length === 0;
+
+    res.json({
+      examination: exam,
+      isReady,
+      isPublished: exam.is_published === 1 || exam.status === 'published',
+      blockers,
+      checks: {
+        hasSchedule,
+        scheduleApproved,
+        allSheetsApproved,
+        enrolmentsConfirmed,
+        policyApproved,
+        legacyQuarantineClean,
+        publisherAuthorized
+      },
+      details: {
+        totalSchedules: schedules.length,
+        approvedSchedules: schedules.length - unapprovedSchedules.length,
+        approvedSheets: approvedSheetsCount,
+        unconfirmedEnrolments: unconfirmedCount,
+        policy: policy ? { id: policy.id, title: policy.title, policyCode: policy.policy_code, isApproved: policy.is_approved_by_school === 1 } : null
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PR-005 Gate 4B: Official Examination-Wide Publication
 router.post('/examinations/:id/publish', requireAuth, (req, res) => {
   try {
@@ -683,12 +1299,13 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
       }
     }
 
-    // 3. Scoped Authorization for Published Examination (FIX 02 Requirements 1, 2, 3, 4, 5)
+    // 3. Scoped Authorization for Published Examination (Gate 5 Phase 0)
     const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
     const examGradeBand = exam.grade_band || 'all';
 
-    // Whole-exam leadership: Principal, VP Academic, or system admin
-    const isWholeExamLeadership = user.role === 'admin' || activeAuths.some(a =>
+    // Whole-exam leadership: Requires documented, active leadership appointment (Principal / VP Academic)
+    // A plain admin role without an active academic leadership appointment does not receive whole-exam confidential results.
+    const isWholeExamLeadership = activeAuths.some(a =>
       ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
       (a.grade_band === 'all' || a.grade_band === examGradeBand)
     );
@@ -698,14 +1315,23 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
       .filter(a => ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role))
       .map(a => a.grade_band);
 
-    // Teacher class assignments in this academic year
+    // Teacher class assignments in this academic year (both subject teachers and direct class teachers)
     const teacherAssignments = db.prepare(`
       SELECT DISTINCT class_id, subject_id, assignment_type
       FROM teacher_assignments
       WHERE teacher_id = ? AND academic_year_id = ?
     `).all(user.id, exam.academic_year_id) as any[];
 
-    const assignedClassIds = new Set(teacherAssignments.map(ta => ta.class_id));
+    const directClasses = db.prepare(`
+      SELECT id as class_id
+      FROM classes
+      WHERE class_teacher_id = ? AND academic_year_id = ?
+    `).all(user.id, exam.academic_year_id) as any[];
+
+    const assignedClassIds = new Set<number>([
+      ...teacherAssignments.map(ta => ta.class_id),
+      ...directClasses.map(dc => dc.class_id)
+    ]);
 
     // If neither whole-exam leadership, nor leadership band, nor assigned teacher -> 403 Forbidden
     if (!isWholeExamLeadership && leadershipBands.length === 0 && assignedClassIds.size === 0) {
@@ -736,13 +1362,20 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
       return;
     }
 
-    // 4. Data Scoping & Filtering (Requirement 2 & 5)
+    // 4. Data Scoping & Filtering (Gate 5 Phase 0: Fail Closed on Malformed Snapshot)
     let filteredPublication = { ...publication };
     if (!isWholeExamLeadership && publication.publication_snapshot_json) {
       try {
         const snapshot = JSON.parse(publication.publication_snapshot_json);
-        const originalClasses = snapshot.classes || [];
-        const originalSheets = snapshot.sheetSnapshots || [];
+        if (!snapshot || typeof snapshot !== 'object') {
+          res.status(500).json({
+            error: 'Security failure: Malformed publication snapshot payload.',
+            code: 'MALFORMED_PUBLICATION_SNAPSHOT'
+          });
+          return;
+        }
+        const originalClasses = Array.isArray(snapshot.classes) ? snapshot.classes : [];
+        const originalSheets = Array.isArray(snapshot.sheetSnapshots) ? snapshot.sheetSnapshots : [];
 
         const allowedClassIdSet = new Set<number>();
         for (const cls of originalClasses) {
@@ -769,7 +1402,13 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
         snapshot.classes = filteredClasses;
         snapshot.sheetSnapshots = filteredSheets;
         filteredPublication.publication_snapshot_json = JSON.stringify(snapshot);
-      } catch {}
+      } catch (err: any) {
+        res.status(500).json({
+          error: 'Security failure: Unable to safely filter publication snapshot for authorized scope. Access denied.',
+          code: 'MALFORMED_PUBLICATION_SNAPSHOT'
+        });
+        return;
+      }
     }
 
     res.json({

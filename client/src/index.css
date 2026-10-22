@@ -1046,3 +1046,171 @@ h1, h2, h3, h4, h5, h6 {
     min-width: auto;
   }
 }
+
+/* ==========================================================================
+   PR-005 Examination Management Workspace Styles
+   ========================================================================== */
+
+.workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.workspace-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  position: relative;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.workspace-tab-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-subtle);
+}
+
+.workspace-tab-btn.active {
+  color: var(--primary);
+  background: var(--bg-surface);
+  border-bottom: 2px solid var(--primary);
+  margin-bottom: -2px;
+}
+
+.workspace-tab-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.workspace-tab-btn.active .workspace-tab-badge {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* Watermark Container & Overlay */
+.watermark-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.watermark-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 2.1rem;
+  font-weight: 900;
+  color: rgba(220, 38, 38, 0.12);
+  pointer-events: none;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  z-index: 5;
+  user-select: none;
+  border: 4px dashed rgba(220, 38, 38, 0.2);
+  padding: 1.25rem 2.5rem;
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+/* Checklist Cards */
+.readiness-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  margin-bottom: 0.65rem;
+  transition: all var(--transition-fast);
+}
+
+.readiness-item.ready {
+  border-color: var(--present-border);
+  background: var(--present-bg);
+}
+
+.readiness-item.blocked {
+  border-color: var(--absent-border);
+  background: var(--absent-bg);
+}
+
+/* Examination Lifecycle Stepper */
+.exam-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  gap: 0.5rem;
+}
+
+.stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stepper-step.completed {
+  color: var(--present);
+}
+
+.stepper-step.current {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.stepper-indicator {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  border: 2px solid currentColor;
+}
+
+/* Print Overrides for A4 Student Report Cards */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  .watermark-overlay {
+    color: rgba(220, 38, 38, 0.22) !important;
+    border-color: rgba(220, 38, 38, 0.3) !important;
+  }
+  .print-report-card {
+    border: 2px solid #222 !important;
+    padding: 24px !important;
+    background: white !important;
+    color: #000 !important;
+    page-break-inside: avoid;
+  }
+}

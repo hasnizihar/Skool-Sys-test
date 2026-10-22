@@ -10,6 +10,7 @@ import {
   dropStudentEnrollment,
   EnrollmentCategory
 } from '../services/studentEnrollmentService.js';
+import { getActiveStaffAuthorizations } from '../services/academicAuthorizationService.js';
 
 const router = Router();
 
@@ -117,14 +118,118 @@ router.get('/classes/:id/subjects', requireAuth, (req, res) => {
 
 // Examinations
 router.get('/examinations', requireAuth, (req, res) => {
-  const exams = db.prepare(`
-    SELECT e.*, ay.name as academic_year_name
+  const { academic_year_id, term, status } = req.query;
+  let query = `
+    SELECT e.*, ay.name as academic_year_name,
+           (SELECT COUNT(*) FROM examination_schedules es WHERE es.examination_id = e.id) as scheduled_count,
+           (SELECT COUNT(*) FROM examination_schedules es WHERE es.examination_id = e.id AND es.status = 'approved') as approved_schedules_count,
+           (SELECT COUNT(*) FROM marks_sheets ms WHERE ms.examination_id = e.id) as sheets_count,
+           (SELECT COUNT(*) FROM marks_sheets ms WHERE ms.examination_id = e.id AND ms.status = 'approved') as approved_sheets_count
     FROM examinations e
     LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
-    ORDER BY e.term ASC, e.id DESC
-  `).all();
+    WHERE 1=1
+  `;
+  const params: any[] = [];
 
+  if (academic_year_id) {
+    query += ' AND e.academic_year_id = ?';
+    params.push(Number(academic_year_id));
+  }
+  if (term) {
+    query += ' AND e.term = ?';
+    params.push(Number(term));
+  }
+  if (status) {
+    query += ' AND e.status = ?';
+    params.push(String(status));
+  }
+
+  query += ' ORDER BY e.term ASC, e.id DESC';
+
+  const exams = db.prepare(query).all(...params);
   res.json({ examinations: exams });
+});
+
+// Create Examination (Admin or authorized leadership)
+router.post('/examinations', requireAuth, (req, res) => {
+  try {
+    const { name, term, academic_year_id, start_date, end_date, grade_band = 'all', exam_type = 'term' } = req.body;
+    if (!name || !term || !academic_year_id) {
+      res.status(400).json({ error: 'Examination name, term (1, 2, 3), and academic_year_id are required.' });
+      return;
+    }
+
+    const user = req.user!;
+    const activeAuths = getActiveStaffAuthorizations(user.id, Number(academic_year_id));
+    const isAuthorized = user.role === 'admin' || activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role)
+    );
+
+    if (!isAuthorized) {
+      res.status(403).json({ error: 'Access denied: Creating examinations requires admin role or academic leadership appointment.' });
+      return;
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, grade_band, exam_type, status, is_published)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 0)
+    `);
+
+    const result = stmt.run(name, Number(term), Number(academic_year_id), start_date || null, end_date || null, grade_band, exam_type);
+    const examId = Number(result.lastInsertRowid);
+
+    logAudit(user.id, user.username, 'EXAMINATION_CREATE', 'examinations', examId, { name, term, academic_year_id, grade_band, exam_type }, req.ip);
+
+    res.status(201).json({ success: true, id: examId });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update Examination (if not published)
+router.put('/examinations/:id', requireAuth, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(id) as any;
+    if (!exam) {
+      res.status(404).json({ error: 'Examination not found.' });
+      return;
+    }
+
+    if (exam.is_published === 1) {
+      res.status(409).json({ error: 'Cannot modify examination after it has been published.' });
+      return;
+    }
+
+    const user = req.user!;
+    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+    const isAuthorized = user.role === 'admin' || activeAuths.some(a =>
+      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role)
+    );
+
+    if (!isAuthorized) {
+      res.status(403).json({ error: 'Access denied: Modifying examinations requires admin role or academic leadership appointment.' });
+      return;
+    }
+
+    const { name, start_date, end_date, grade_band, exam_type, status } = req.body;
+    db.prepare(`
+      UPDATE examinations
+      SET name = COALESCE(?, name),
+          start_date = COALESCE(?, start_date),
+          end_date = COALESCE(?, end_date),
+          grade_band = COALESCE(?, grade_band),
+          exam_type = COALESCE(?, exam_type),
+          status = COALESCE(?, status)
+      WHERE id = ?
+    `).run(name || null, start_date || null, end_date || null, grade_band || null, exam_type || null, status || null, id);
+
+    logAudit(user.id, user.username, 'EXAMINATION_UPDATE', 'examinations', id, req.body, req.ip);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Create Class (Admin)

@@ -65,11 +65,18 @@ export function getUserAssignments(userId: number) {
     }
   });
 
+  const authorizations = db.prepare(`
+    SELECT asa.id, asa.user_id, asa.academic_year_id, asa.auth_role, asa.grade_band, asa.granted_at, asa.revoked_at
+    FROM academic_staff_authorizations asa
+    WHERE asa.user_id = ? AND asa.revoked_at IS NULL
+  `).all(userId) as any[];
+
   return {
     assignments: classAssignments,
     assignedClassIds: Array.from(assignedClassIds),
     classTeacherClassIds: Array.from(classTeacherClassIds),
-    isClassTeacherFor: Array.from(classTeacherClassIds)
+    isClassTeacherFor: Array.from(classTeacherClassIds),
+    authorizations
   };
 }
 

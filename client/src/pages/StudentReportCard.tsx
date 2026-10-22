@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { School, Printer, X, Award, CheckCircle, TrendingUp } from 'lucide-react';
+import {
+  School,
+  Printer,
+  X,
+  Award,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  ShieldAlert,
+  FileCheck,
+  TrendingUp,
+  UserCheck
+} from 'lucide-react';
 import { api } from '../api/client';
 
 interface StudentReportCardProps {
@@ -15,6 +27,7 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
 }) => {
   const [reportData, setReportData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadReport();
@@ -23,10 +36,12 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
   const loadReport = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.getStudentReportCard(studentId, examId);
       setReportData(res);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load student report card:', err);
+      setError(err.message || 'Failed to generate terminal report card.');
     } finally {
       setLoading(false);
     }
@@ -44,63 +59,208 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
       }}
     >
       <div className="side-panel-right">
-        <div className="modal-header btn-no-print" style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-subtle)' }}>
+        {/* Modal Top Bar */}
+        <div
+          className="modal-header btn-no-print"
+          style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-subtle)' }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Award size={22} style={{ color: 'var(--primary)' }} />
             <div>
-              <h3 style={{ fontSize: '1.15rem' }}>Student Terminal Report Card</h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Official Examination Results Sheet</p>
+              <h3 style={{ fontSize: '1.15rem' }}>
+                {reportData?.is_published
+                  ? 'Official Student Terminal Report Card'
+                  : 'Provisional Leadership Preview — Report Card'}
+              </h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Kattankudy Central College • Academic Examination Records
+              </p>
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button onClick={handlePrint} className="btn btn-primary btn-sm">
-              <Printer size={15} /> Print Card
-            </button>
-            <button onClick={onClose} className="btn btn-secondary btn-icon btn-sm" title="Close Panel">
+            {reportData && !error && (
+              <button onClick={handlePrint} className="btn btn-primary btn-sm">
+                <Printer size={15} /> Print (A4)
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="btn btn-secondary btn-icon btn-sm"
+              title="Close Panel"
+            >
               <X size={18} />
             </button>
           </div>
         </div>
 
+        {/* Modal Body */}
         <div className="modal-body" style={{ padding: '1.75rem' }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '3rem' }}>
-
-              Generating terminal report card...
+            <div style={{ textAlign: 'center', padding: '3.5rem' }}>
+              <div
+                className="animate-spin"
+                style={{
+                  width: 32,
+                  height: 32,
+                  border: '3px solid var(--border-color)',
+                  borderTopColor: 'var(--primary)',
+                  borderRadius: '50%',
+                  margin: '0 auto 1rem'
+                }}
+              />
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                Generating authenticated student terminal report card...
+              </p>
+            </div>
+          ) : error ? (
+            <div
+              style={{
+                padding: '1.5rem',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--absent-bg)',
+                border: '1px solid var(--absent-border)',
+                color: 'var(--absent)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+                <ShieldAlert size={20} />
+                <strong style={{ fontSize: '1rem' }}>Confidentiality or Access Restriction</strong>
+              </div>
+              <p style={{ fontSize: '0.875rem', margin: 0, lineHeight: 1.5 }}>{error}</p>
+              <div style={{ marginTop: '1rem' }}>
+                <button onClick={onClose} className="btn btn-secondary btn-sm">
+                  Close Window
+                </button>
+              </div>
             </div>
           ) : reportData ? (
-            <div className="print-report-card">
-              {/* Official School Header */}
+            <div className={`print-report-card watermark-container ${!reportData.is_published ? 'has-watermark' : ''}`}>
+              {/* Watermark overlay for unpublished preview */}
+              {!reportData.is_published && (
+                <div className="watermark-overlay" aria-hidden="true">
+                  UNPUBLISHED — CONFIDENTIAL LEADERSHIP PREVIEW
+                </div>
+              )}
+
+              {/* Provisional Notice Banner (screen view) */}
+              {!reportData.is_published && (
+                <div
+                  className="btn-no-print"
+                  style={{
+                    background: 'var(--late-bg)',
+                    border: '1px solid var(--late-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.85rem 1rem',
+                    marginBottom: '1.25rem',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                    fontSize: '0.825rem',
+                    color: 'var(--late)'
+                  }}
+                >
+                  <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <strong>Provisional Leadership Preview (Unpublished)</strong>
+                    <div style={{ marginTop: '0.2rem', color: 'var(--text-main)' }}>
+                      {reportData.provisional_notice ||
+                        'This report card contains unverified/unpublished examination results intended solely for internal academic leadership review.'}
+                    </div>
+                    {reportData.confidentiality_watermark && (
+                      <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                        Previewed by {reportData.confidentiality_watermark.previewed_by_name} on{' '}
+                        {new Date(reportData.confidentiality_watermark.previewed_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Reissued Notice Banner */}
+              {reportData.is_reissued && (
+                <div
+                  style={{
+                    background: 'var(--accent-light)',
+                    border: '1px solid var(--accent)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.75rem 1rem',
+                    marginBottom: '1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.75rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <FileCheck size={18} style={{ color: 'var(--accent)' }} />
+                    <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--accent-hover)' }}>
+                      Official Reissued Examination Report Card
+                    </span>
+                  </div>
+                  <span
+                    className="badge"
+                    style={{ background: 'var(--accent)', color: 'white', fontSize: '0.7rem' }}
+                  >
+                    Post-Publication Corrections Applied
+                  </span>
+                </div>
+              )}
+
+              {/* School Formal Header */}
               <div
                 style={{
                   textAlign: 'center',
                   borderBottom: '2px solid var(--text-main)',
                   paddingBottom: '1rem',
-                  marginBottom: '1.5rem'
+                  marginBottom: '1.25rem'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginBottom: '0.35rem' }}>
-                  <School size={28} />
-                  <h2 style={{ fontSize: '1.45rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Central Model College — Colombo
-                  </h2>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  Ministry of Education Approved • Grades 6 to 13
-                </p>
                 <div
                   style={{
-                    display: 'inline-block',
-                    background: 'var(--bg-subtle)',
-                    padding: '0.3rem 1rem',
-                    borderRadius: 'var(--radius-full)',
-                    fontWeight: 700,
-                    fontSize: '0.9rem',
-                    marginTop: '0.5rem'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.75rem',
+                    marginBottom: '0.35rem'
                   }}
                 >
-                  {reportData.exam?.name} • Academic Year {reportData.student?.academic_year || '2026'}
+                  <School size={30} style={{ color: 'var(--primary)' }} />
+                  <div>
+                    <h2
+                      style={{
+                        fontSize: '1.4rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        margin: 0
+                      }}
+                    >
+                      Kattankudy Central College
+                    </h2>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      National School • Batticaloa Central Educational Zone
+                    </div>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginTop: '0.5rem',
+                    padding: '0.3rem 0.85rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--bg-subtle)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.825rem',
+                    fontWeight: 700
+                  }}
+                >
+                  <span>{reportData.exam?.name}</span>
+                  <span>•</span>
+                  <span>Term {reportData.exam?.term}</span>
+                  <span>•</span>
+                  <span>Academic Year {reportData.student?.academic_year || '2026'}</span>
                 </div>
               </div>
 
@@ -108,57 +268,144 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '0.75rem',
-                  padding: '1rem',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '0.65rem 1.25rem',
+                  padding: '1rem 1.25rem',
                   background: 'var(--bg-subtle)',
                   borderRadius: 'var(--radius-md)',
-                  marginBottom: '1.5rem',
-                  fontSize: '0.875rem'
+                  marginBottom: '1.25rem',
+                  fontSize: '0.85rem',
+                  border: '1px solid var(--border-color)'
                 }}
               >
-                <div><strong>Admission Number:</strong> {reportData.student?.admission_no}</div>
-                <div><strong>Class:</strong> {reportData.student?.class_name}</div>
-                <div><strong>Student Full Name:</strong> {reportData.student?.full_name}</div>
-                <div><strong>Calling Name:</strong> {reportData.student?.calling_name}</div>
-                <div><strong>Class Teacher:</strong> {reportData.student?.class_teacher_name || 'Mrs. Nimali Perera'}</div>
-                <div><strong>Attendance Record:</strong> {reportData.attendance?.attendancePercentage}% ({reportData.attendance?.presentDays}/{reportData.attendance?.totalSchoolDays} Days)</div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Admission Number:</span>{' '}
+                  <strong style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)' }}>
+                    {reportData.student?.admission_no}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Class & Roll:</span>{' '}
+                  <strong>
+                    {reportData.student?.class_name} (Roll #{reportData.student?.roll_number || '—'})
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Student Name:</span>{' '}
+                  <strong>{reportData.student?.full_name}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Calling Name:</span>{' '}
+                  <strong>{reportData.student?.calling_name || '—'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Class Teacher:</span>{' '}
+                  <strong>{reportData.student?.class_teacher_name || 'Assigned Staff'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Attendance:</span>{' '}
+                  <strong>
+                    {reportData.attendance?.status === 'Recorded'
+                      ? `${reportData.attendance?.attendancePercentage}% (${reportData.attendance?.presentDays}/${reportData.attendance?.totalSchoolDays} Days)`
+                      : 'Attendance Not Recorded'}
+                  </strong>
+                </div>
               </div>
 
-              {/* Subject Results Table */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 100 }}>Code</th>
-                      <th>Subject Name</th>
-                      <th>Category</th>
-                      <th style={{ textAlign: 'center', width: 90 }}>Marks (100)</th>
-                      <th style={{ textAlign: 'center', width: 80 }}>Grade</th>
-                      <th>Instructor</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reportData.subjects?.map((sub: any) => (
-                      <tr key={sub.subject_id}>
-                        <td><strong>{sub.subject_code}</strong></td>
-                        <td>{sub.subject_name}</td>
-                        <td><span className="badge" style={{ background: 'var(--bg-subtle)' }}>{sub.category}</span></td>
-                        <td style={{ textAlign: 'center', fontWeight: 700 }}>
-                          {sub.is_absent ? 'AB' : sub.score !== null ? sub.score : '-'}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span className={`grade-badge grade-${sub.grade_letter?.toLowerCase() || 's'}`}>
-                            {sub.grade_letter}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                          {sub.teacher_name || 'Staff'}
-                        </td>
+              {/* Results Table (Participating Subjects Only) */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '0.5rem'
+                  }}
+                >
+                  <h4 style={{ margin: 0, fontSize: '0.95rem' }}>Academic Performance by Subject</h4>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Participating subjects: {reportData.subjects?.length || 0}
+                  </span>
+                </div>
+
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 80 }}>Code</th>
+                        <th>Subject Name</th>
+                        <th style={{ width: 100 }}>Category</th>
+                        <th style={{ textAlign: 'center', width: 90 }}>Raw Score</th>
+                        <th style={{ textAlign: 'center', width: 80 }}>Norm %</th>
+                        <th style={{ textAlign: 'center', width: 70 }}>Grade</th>
+                        <th style={{ width: 120 }}>Instructor</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {reportData.subjects?.map((sub: any) => {
+                        const isAbsent = Boolean(sub.is_absent);
+                        const isExempt = Boolean(sub.is_exempt);
+                        const displayScore = isAbsent
+                          ? 'AB'
+                          : isExempt
+                          ? 'EX'
+                          : sub.score !== null && sub.score !== undefined
+                          ? `${sub.score}/${sub.max_score || 100}`
+                          : '—';
+
+                        const gradeLetter = sub.grade_letter || '—';
+                        const gradeClass = gradeLetter ? `grade-${gradeLetter.toLowerCase()}` : '';
+
+                        return (
+                          <tr key={sub.subject_id}>
+                            <td>
+                              <strong>{sub.subject_code}</strong>
+                            </td>
+                            <td>{sub.subject_name}</td>
+                            <td>
+                              <span
+                                className="badge"
+                                style={{
+                                  background: 'var(--bg-subtle)',
+                                  fontSize: '0.7rem',
+                                  textTransform: 'capitalize'
+                                }}
+                              >
+                                {sub.category?.replace(/_/g, ' ') || 'General'}
+                              </span>
+                            </td>
+                            <td
+                              style={{
+                                textAlign: 'center',
+                                fontWeight: 700,
+                                color: isAbsent ? 'var(--absent)' : 'inherit'
+                              }}
+                            >
+                              {displayScore}
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 600 }}>
+                              {sub.normalized_percentage !== undefined && sub.normalized_percentage !== null
+                                ? `${sub.normalized_percentage}%`
+                                : isAbsent
+                                ? '0%'
+                                : sub.score !== null
+                                ? `${sub.score}%`
+                                : '—'}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span className={`grade-badge ${gradeClass}`}>
+                                {isAbsent ? 'AB' : gradeLetter}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
+                              {sub.teacher_name || 'Faculty Staff'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Term Summary Statistics */}
@@ -166,88 +413,178 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(4, 1fr)',
-                  gap: '1rem',
+                  gap: '0.75rem',
                   padding: '1rem',
                   border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)',
-                  marginBottom: '1.5rem',
-                  textAlign: 'center'
+                  marginBottom: '1.25rem',
+                  textAlign: 'center',
+                  background: 'var(--bg-surface)'
                 }}
               >
                 <div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Score</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{reportData.performance?.totalScore}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Term Average</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    {reportData.performance?.average}%
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>
+                    {reportData.performance?.totalScore !== null
+                      ? reportData.performance?.totalScore
+                      : '—'}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Class Rank</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--present)' }}>
-                    {reportData.performance?.rank}
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Policy Weighted Avg</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary)' }}>
+                    {reportData.performance?.average !== null
+                      ? `${reportData.performance?.average}%`
+                      : '—'}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Attendance</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>
-                    {reportData.attendance?.attendancePercentage}%
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Official Class Rank</div>
+                  <div
+                    style={{
+                      fontSize: '1.35rem',
+                      fontWeight: 800,
+                      color: reportData.performance?.rank ? 'var(--present)' : 'var(--text-muted)'
+                    }}
+                  >
+                    {reportData.performance?.rank !== null && reportData.performance?.rank !== undefined
+                      ? `#${reportData.performance?.rank}`
+                      : '—'}
+                  </div>
+                  {!reportData.is_published && (
+                    <div style={{ fontSize: '0.65rem', color: 'var(--late)' }}>
+                      Rank deferred to publication
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Attendance Rate</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>
+                    {reportData.attendance?.attendancePercentage !== null
+                      ? `${reportData.attendance?.attendancePercentage}%`
+                      : 'N/A'}
                   </div>
                 </div>
               </div>
 
-              {/* Grading Legend & Signatures */}
+              {/* Policy Provenance & Grading Legend */}
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
+                  padding: '0.75rem 1rem',
+                  background: 'var(--bg-subtle)',
+                  borderRadius: 'var(--radius-sm)',
                   fontSize: '0.75rem',
                   color: 'var(--text-muted)',
-                  borderTop: '1px solid var(--border-color)',
-                  paddingTop: '0.75rem',
-                  marginBottom: '2rem'
+                  border: '1px solid var(--border-color)',
+                  marginBottom: '1.5rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem'
                 }}
               >
                 <div>
-                  <strong>Grading System:</strong> A: 75–100 (Distinction) • B: 65–74 (Very Good) • C: 50–64 (Credit) • S: 35–49 (Pass) • F: 0–34 (Fail)
+                  <strong>Grading Scale:</strong> A (75–100 Distinction) • B (65–74 Very Good) • C (50–64 Credit) • S (35–49 Pass) • F (0–34 Fail)
                 </div>
+                {reportData.policy && (
+                  <div>
+                    <strong>Governing Policy:</strong> {reportData.policy.title || reportData.policy.policy_code} (v{reportData.policy.version})
+                  </div>
+                )}
               </div>
 
+              {/* Approved Corrections Audit Trail (if reissued) */}
+              {reportData.is_reissued && reportData.corrections_history?.length > 0 && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h5 style={{ fontSize: '0.825rem', marginBottom: '0.4rem', color: 'var(--accent-hover)' }}>
+                    Approved Corrections History (Post-Publication Reissue)
+                  </h5>
+                  <div className="table-responsive">
+                    <table className="data-table" style={{ fontSize: '0.775rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Subject</th>
+                          <th>Previous Mark</th>
+                          <th>Corrected Mark</th>
+                          <th>Category</th>
+                          <th>Justification</th>
+                          <th>Approved By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportData.corrections_history.map((c: any) => (
+                          <tr key={c.id}>
+                            <td><strong>{c.subject_name}</strong></td>
+                            <td style={{ color: 'var(--text-muted)' }}>
+                              {c.expected_previous_score !== null ? c.expected_previous_score : c.expected_previous_status}
+                            </td>
+                            <td style={{ color: 'var(--present)', fontWeight: 700 }}>
+                              {c.corrected_score !== null ? c.corrected_score : c.corrected_status}
+                            </td>
+                            <td>{c.correction_category}</td>
+                            <td>{c.detailed_justification}</td>
+                            <td>{c.approved_by_name || 'Principal'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Official Signatures */}
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  marginTop: '3rem',
+                  marginTop: '2.5rem',
                   paddingTop: '1rem'
                 }}
               >
-                <div style={{ textAlign: 'center', width: '200px', borderTop: '1px dashed var(--text-muted)', paddingTop: '0.5rem' }}>
+                <div
+                  style={{
+                    textAlign: 'center',
+                    width: '210px',
+                    borderTop: '1px dashed var(--text-muted)',
+                    paddingTop: '0.5rem'
+                  }}
+                >
                   <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Class Teacher's Signature</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{reportData.student?.class_teacher_name || 'Mrs. Nimali Perera'}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {reportData.student?.class_teacher_name || 'Class Teacher'}
+                  </div>
                 </div>
 
-                <div style={{ textAlign: 'center', width: '200px', borderTop: '1px dashed var(--text-muted)', paddingTop: '0.5rem' }}>
+                <div
+                  style={{
+                    textAlign: 'center',
+                    width: '210px',
+                    borderTop: '1px dashed var(--text-muted)',
+                    paddingTop: '0.5rem'
+                  }}
+                >
                   <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Principal's Signature</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Dr. Anura Bandara</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Mr. A.L.M. Mukthar / Principal
+                  </div>
                 </div>
               </div>
             </div>
-          ) : (
-            <p>Report data unavailable.</p>
-          )}
+          ) : null}
         </div>
 
+        {/* Modal Footer (Screen View) */}
         <div className="modal-footer btn-no-print">
           <button onClick={onClose} className="btn btn-secondary">
             Close Panel
           </button>
-          <button onClick={handlePrint} className="btn btn-primary">
-            <Printer size={15} /> Print Report Card
-          </button>
+          {reportData && !error && (
+            <button onClick={handlePrint} className="btn btn-primary">
+              <Printer size={15} /> Print Official A4 Card
+            </button>
+          )}
         </div>
-
       </div>
     </div>
   );
