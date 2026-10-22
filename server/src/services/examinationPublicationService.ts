@@ -207,15 +207,85 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       throw err;
     }
 
-    // 7. Marks Sheets & Examination Schedule Verification (G4S-01 Finding B)
-    // Check if an explicit examination-wide class/subject schedule exists
+    // 7. Authoritative Examination Schedule & Provenance Verification (FIX 01)
     const scheduledItems = db.prepare(`
-      SELECT es.class_id, es.subject_id, es.is_required, c.name as class_name, s.name as subject_name
+      SELECT es.*, c.name as class_name, c.grade as class_grade, c.academic_year_id as class_academic_year_id,
+             s.name as subject_name, s.code as subject_code
       FROM examination_schedules es
       JOIN classes c ON es.class_id = c.id
       JOIN subjects s ON es.subject_id = s.id
       WHERE es.examination_id = ?
     `).all(examinationId) as any[];
+
+    // 1. Mandatory nonempty examination schedule
+    if (scheduledItems.length === 0) {
+      const err = new Error(
+        'Publication declined: Examination does not have an authoritative examination schedule defined. All participating class-subject combinations must be scheduled and school-approved before publication.'
+      );
+      (err as any).statusCode = 400;
+      (err as any).code = 'MISSING_EXAMINATION_SCHEDULE';
+      throw err;
+    }
+
+    // 2. Schedule approval & provenance check (authorized academic leadership)
+    for (const item of scheduledItems) {
+      if (item.status !== 'approved' || !item.approved_by_user_id) {
+        const err = new Error(
+          `Publication declined: Examination schedule item ${item.class_name} - ${item.subject_name} is unapproved or lacks authorized leadership provenance.`
+        );
+        (err as any).statusCode = 400;
+        (err as any).code = 'UNAPPROVED_EXAMINATION_SCHEDULE';
+        throw err;
+      }
+      const approverAuths = getActiveStaffAuthorizations(item.approved_by_user_id, exam.academic_year_id);
+      const isAuthorizedApprover = approverAuths.some(a =>
+        ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role) &&
+        (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, item.class_grade))
+      );
+      if (!isAuthorizedApprover) {
+        const err = new Error(
+          `Publication declined: Examination schedule item ${item.class_name} - ${item.subject_name} was approved by user ${item.approved_by_user_id} who lacks authorized leadership appointment covering grade ${item.class_grade} for academic year ${exam.academic_year_id}.`
+        );
+        (err as any).statusCode = 403;
+        (err as any).code = 'UNAUTHORIZED_SCHEDULE_APPROVER';
+        throw err;
+      }
+    }
+
+    // 3. Academic year, class offering, and roster verification
+    for (const item of scheduledItems) {
+      if (item.class_academic_year_id && item.class_academic_year_id !== exam.academic_year_id) {
+        const err = new Error(
+          `Publication declined: Scheduled class ${item.class_name} belongs to academic year ${item.class_academic_year_id}, which does not match examination academic year ${exam.academic_year_id}.`
+        );
+        (err as any).statusCode = 400;
+        (err as any).code = 'SCHEDULE_CLASS_YEAR_MISMATCH';
+        throw err;
+      }
+
+      const offering = db.prepare('SELECT 1 FROM class_subjects WHERE class_id = ? AND subject_id = ?').get(item.class_id, item.subject_id);
+      if (!offering) {
+        const err = new Error(
+          `Publication declined: Subject ${item.subject_name} (${item.subject_code}) is not offered by class ${item.class_name}. Examination scope cannot schedule unoffered subjects.`
+        );
+        (err as any).statusCode = 400;
+        (err as any).code = 'INVALID_SCHEDULE_SUBJECT_OFFERING';
+        throw err;
+      }
+
+      const rosterCheck = db.prepare(`
+        SELECT COUNT(*) as cnt FROM enrollments
+        WHERE class_id = ? AND academic_year_id = ? AND status = 'enrolled'
+      `).get(item.class_id, exam.academic_year_id) as { cnt: number };
+      if (Number(rosterCheck?.cnt || 0) === 0) {
+        const err = new Error(
+          `Publication declined: Scheduled class ${item.class_name} has no enrolled students in academic year ${exam.academic_year_id}.`
+        );
+        (err as any).statusCode = 400;
+        (err as any).code = 'EMPTY_CLASS_ROSTER';
+        throw err;
+      }
+    }
 
     // Find all applicable marks sheets for this examination
     const sheets = db.prepare(`
@@ -226,20 +296,29 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       WHERE ms.examination_id = ?
     `).all(examinationId) as any[];
 
-    // If explicit schedule is defined, assert that all required scheduled sheets exist and are approved
-    if (scheduledItems.length > 0) {
-      const missingRequired = scheduledItems.filter(req =>
-        req.is_required === 1 && !sheets.some(s => s.class_id === req.class_id && s.subject_id === req.subject_id)
+    // Ensure all required scheduled sheets exist
+    const missingRequired = scheduledItems.filter(req =>
+      req.is_required === 1 && !sheets.some(s => s.class_id === req.class_id && s.subject_id === req.subject_id)
+    );
+    if (missingRequired.length > 0) {
+      const missingSummary = missingRequired.map(m => `${m.class_name} - ${m.subject_name}`).join(', ');
+      const err = new Error(
+        `Publication declined: Missing required examination marks sheets: ${missingSummary}. All scheduled examination sheets must be submitted and approved.`
       );
-      if (missingRequired.length > 0) {
-        const missingSummary = missingRequired.map(m => `${m.class_name} - ${m.subject_name}`).join(', ');
-        const err = new Error(
-          `Publication declined: Missing required examination marks sheets: ${missingSummary}. All scheduled examination sheets must be submitted and approved.`
-        );
-        (err as any).statusCode = 400;
-        (err as any).code = 'MISSING_REQUIRED_SHEETS';
-        throw err;
-      }
+      (err as any).statusCode = 400;
+      (err as any).code = 'MISSING_REQUIRED_SHEETS';
+      throw err;
+    }
+
+    // Ensure no unscheduled marks sheets exist in this examination
+    const unscheduledSheet = sheets.find(s => !scheduledItems.some(req => req.class_id === s.class_id && req.subject_id === s.subject_id));
+    if (unscheduledSheet) {
+      const err = new Error(
+        `Publication declined: Marks sheet for ${unscheduledSheet.class_name} - ${unscheduledSheet.subject_name} is not part of the authoritative examination schedule.`
+      );
+      (err as any).statusCode = 400;
+      (err as any).code = 'UNSCHEDULED_SHEET_FOUND';
+      throw err;
     }
 
     if (sheets.length === 0) {

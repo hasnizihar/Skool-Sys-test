@@ -152,6 +152,16 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
     approveAssessmentPolicyProfile(corePolicyRes.policy.id, { id: principalPereraUserId, username: 'g4_perera', role: 'admin' } as any);
     approvedPolicyId = corePolicyRes.policy.id;
 
+    // Seed authorized examination schedule
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examTerm1Id, class8AId, subjectMathId, principalPereraUserId);
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examTerm1Id, class8AId, subjectSciId, principalPereraUserId);
+
     // Seed approved sheets and marks
     const sheetMathRes = db.prepare(`
       INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
@@ -689,7 +699,12 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
       VALUES ('G4R-01 Missing Enrolment Exam', 2, ?, '2026-06-01', '2026-06-15', 0, 'scheduled', 'junior_6_9')
     `).run(year2026Id).lastInsertRowid);
 
-    // 2. Create sheet
+    // 2. Create sheet and schedule
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examG4R1Id, class8AId, subjectMathId, principalPereraUserId);
+
     const sheetG4R1Id = Number(db.prepare(`
       INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
       VALUES (?, ?, ?, ?, ?, 1, 'approved', ?, datetime('now'))
@@ -754,6 +769,15 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
       INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
       VALUES ('G4R-01b Elective Exam', 3, ?, '2026-09-01', '2026-09-15', 0, 'scheduled', 'junior_6_9')
     `).run(year2026Id).lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 0, 'approved', ?, datetime('now'))
+    `).run(examElectiveId, class8AId, subTamilId, principalPereraUserId);
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 0, 'approved', ?, datetime('now'))
+    `).run(examElectiveId, class8AId, subSinhalaId, principalPereraUserId);
 
     const sheetTamilId = Number(db.prepare(`
       INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)
@@ -953,8 +977,19 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
 
     const examArithId = Number(db.prepare(`
       INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
-      VALUES ('G4R-05 Arithmetic Exam', 1, ?, '2026-03-01', '2026-03-15', 1, 'published', 'junior_6_9')
+      VALUES ('G4R-05 Arithmetic Exam', 1, ?, '2026-03-01', '2026-03-15', 0, 'draft', 'junior_6_9')
     `).run(year2026Id).lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examArithId, classArithId, subjectMathId, principalPereraUserId);
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examArithId, classArithId, subjectSciId, principalPereraUserId);
+
+    db.prepare("UPDATE examinations SET is_published = 1, status = 'published' WHERE id = ?").run(examArithId);
 
     // Mark entries:
     // Student A: Mathematics 85, Science 10
@@ -1119,6 +1154,11 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
       INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published, status, grade_band)
       VALUES ('G4R-07 Revoke Safety Exam', 1, ?, '2026-02-01', '2026-02-15', 0, 'scheduled', 'junior_6_9')
     `).run(year2026Id).lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(examRevokeId, class8AId, subjectMathId, principalPereraUserId);
 
     const sheetRevokeId = Number(db.prepare(`
       INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, approved_by_user_id, approved_at)

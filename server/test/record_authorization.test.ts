@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupIsolatedTestDb, teardownIsolatedTestDb, TestFixtureData } from './helpers/testDb.js';
 import { startTestServer, TestServerInstance } from './helpers/testServer.js';
-import { closeDatabase } from '../src/db/database.js';
+import { db, closeDatabase } from '../src/db/database.js';
 
 describe('PR-003: Record-Level Permissions & Scoped Authorization Tests', () => {
   let fixtures: TestFixtureData;
@@ -49,6 +49,40 @@ describe('PR-003: Record-Level Permissions & Scoped Authorization Tests', () => 
       })
     });
     subjectTeacherToken = (await stLogin.json()).token;
+
+    // Seed approved policy and schedule for Exam 1 so report cards calculate correctly
+    const polId = Number(db.prepare(`
+      INSERT INTO assessment_policy_profiles (
+        academic_year_id, grade_band, policy_code, title, version,
+        is_approved_by_school, approved_by_user_id, approved_at,
+        grading_scale_json, subject_weights_json, ranking_rules_json, absence_rules_json
+      ) VALUES (
+        1, 'junior_6_9', 'POL-TEST-001', 'Test Assessment Policy', 1,
+        1, ?, datetime('now'),
+        '[{"grade":"A","minPercentage":75},{"grade":"F","minPercentage":0}]',
+        '{}',
+        '{"rankingMethod":"competition","tieHandling":"equal_rank_skip_next"}',
+        '{"absentHandling":"zero","medicalHandling":"exclude"}'
+      )
+    `).run(fixtures.adminUser.id).lastInsertRowid);
+
+    db.prepare('UPDATE examinations SET is_published = 0 WHERE id = 1').run();
+
+    db.prepare(`
+      INSERT OR REPLACE INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (1, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(fixtures.testClassA.id, fixtures.testSubjectMath.id, fixtures.adminUser.id);
+    db.prepare(`
+      INSERT OR REPLACE INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+      VALUES (1, ?, ?, 1, 'approved', ?, datetime('now'))
+    `).run(fixtures.testClassB.id, fixtures.testSubjectMath.id, fixtures.adminUser.id);
+
+    db.prepare('UPDATE examinations SET is_published = 1, status = \'published\', assessment_policy_id = ? WHERE id = 1').run(polId);
+
+    db.prepare(`
+      INSERT OR REPLACE INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at)
+      VALUES (?, ?, ?, 1, 'confirmed', 'core_compulsory', ?, datetime('now'))
+    `).run(fixtures.studentB.id, fixtures.testSubjectMath.id, fixtures.testClassB.id, fixtures.adminUser.id);
   });
 
   after(async () => {

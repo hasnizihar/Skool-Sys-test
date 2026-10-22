@@ -174,8 +174,8 @@ describe('PR-005 Gate 4S Final Closeout: Comprehensive Regression Suite', { conc
       db.prepare("INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status) VALUES (?, ?, ?, 2, 'enrolled')").run(studentBId, class8AId, year2026Id);
 
       // Define Examination Schedule: Required subjects for 8A in this exam are Math and Science ONLY (Music and Art are NOT scheduled)
-      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required) VALUES (?, ?, ?, 1)").run(examG4S01Id, class8AId, subjectMathId);
-      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required) VALUES (?, ?, ?, 1)").run(examG4S01Id, class8AId, subjectSciId);
+      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at) VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))").run(examG4S01Id, class8AId, subjectMathId, principalUserId);
+      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at) VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))").run(examG4S01Id, class8AId, subjectSciId, principalUserId);
     });
 
     test('Finding B Negative: Publication rejects when a required scheduled sheet is missing with zero state changes', async () => {
@@ -267,6 +267,9 @@ describe('PR-005 Gate 4S Final Closeout: Comprehensive Regression Suite', { conc
         INSERT INTO examinations (name, academic_year_id, term, start_date, end_date, assessment_policy_id, grade_band, status)
         VALUES ('2026 Exam Blocked', ?, 2, '2026-06-01', '2026-06-15', ?, 'junior_6_9', 'approved')
       `).run(year2026Id, policyApprovedId).lastInsertRowid);
+
+      // Schedule for Math
+      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at) VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))").run(examBlockId, class8AId, subjectMathId, principalUserId);
 
       // Sheet for Math
       const sheet = Number(db.prepare(`
@@ -674,9 +677,9 @@ describe('PR-005 Gate 4S Final Closeout: Comprehensive Regression Suite', { conc
       `).run(year2026Id, polWeightedId).lastInsertRowid);
 
       // Define schedule for 3 subjects
-      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required) VALUES (?, ?, ?, 1)").run(examArithId, classArithId, subjectMathId);
-      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required) VALUES (?, ?, ?, 1)").run(examArithId, classArithId, subjectSciId);
-      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required) VALUES (?, ?, ?, 1)").run(examArithId, classArithId, subjectArtId);
+      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at) VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))").run(examArithId, classArithId, subjectMathId, principalUserId);
+      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at) VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))").run(examArithId, classArithId, subjectSciId, principalUserId);
+      db.prepare("INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at) VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))").run(examArithId, classArithId, subjectArtId, principalUserId);
 
       // Create marks sheets for the 3 subjects
       sheetArithMath = Number(db.prepare("INSERT INTO marks_sheets (examination_id, class_id, subject_id, teacher_id, academic_year_id, status) VALUES (?, ?, ?, ?, ?, 'approved')").run(examArithId, classArithId, subjectMathId, teacherUserId2026, year2026Id).lastInsertRowid);
@@ -807,10 +810,37 @@ describe('PR-005 Gate 4S Final Closeout: Comprehensive Regression Suite', { conc
       db.prepare("INSERT INTO attendance_records (session_id, student_id, status) VALUES (?, ?, 'present')").run(sess, studentAId);
 
       // Historical Exam in 2025
+      const histPolicyId = Number(db.prepare(`
+        INSERT INTO assessment_policy_profiles (
+          academic_year_id, grade_band, policy_code, title, version,
+          is_approved_by_school, approved_by_user_id, approved_at,
+          grading_scale_json, subject_weights_json, ranking_rules_json, absence_rules_json
+        ) VALUES (
+          ?, 'junior_6_9', 'POL-2025-HIST', '2025 Historical Policy', 1,
+          1, ?, datetime('now'),
+          '[{"grade":"A","minPercentage":75},{"grade":"F","minPercentage":0}]',
+          '{}',
+          '{"rankingMethod":"competition","tieHandling":"equal_rank_skip_next"}',
+          '{"absentHandling":"zero","medicalHandling":"exclude"}'
+        )
+      `).run(year2025Id, principalUserId).lastInsertRowid);
+
       histExamId = Number(db.prepare(`
-        INSERT INTO examinations (name, academic_year_id, term, start_date, end_date, grade_band, status, is_published)
-        VALUES ('2025 Historical Term 1', ?, 1, '2025-05-01', '2025-05-10', 'junior_6_9', 'published', 1)
-      `).run(year2025Id).lastInsertRowid);
+        INSERT INTO examinations (name, academic_year_id, term, start_date, end_date, assessment_policy_id, grade_band, status, is_published)
+        VALUES ('2025 Historical Term 1', ?, 1, '2025-05-01', '2025-05-10', ?, 'junior_6_9', 'draft', 0)
+      `).run(year2025Id, histPolicyId).lastInsertRowid);
+
+      db.prepare(`
+        INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, approved_by_user_id, approved_at)
+        VALUES (?, ?, ?, 1, 'approved', ?, datetime('now'))
+      `).run(histExamId, class7AId, subjectMathId, principalUserId);
+
+      db.prepare("UPDATE examinations SET is_published = 1, status = 'published' WHERE id = ?").run(histExamId);
+
+      db.prepare(`
+        INSERT OR REPLACE INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at)
+        VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'))
+      `).run(studentAId, subjectMathId, class7AId, year2025Id, principalUserId);
 
       const histSheetId = Number(db.prepare(`
         INSERT INTO marks_sheets (examination_id, class_id, subject_id, teacher_id, academic_year_id, status)

@@ -211,9 +211,39 @@ export function initDatabase() {
       class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
       subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
       is_required INTEGER NOT NULL DEFAULT 1 CHECK(is_required IN (0, 1)),
+      status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('draft', 'approved')),
+      approved_by_user_id INTEGER REFERENCES users(id),
+      approved_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(examination_id, class_id, subject_id)
     );
+
+    CREATE TRIGGER IF NOT EXISTS trg_prevent_exam_schedule_insert_after_publish
+    BEFORE INSERT ON examination_schedules
+    BEGIN
+      SELECT CASE
+        WHEN (SELECT is_published FROM examinations WHERE id = NEW.examination_id) = 1
+        THEN RAISE(ABORT, 'Cannot modify examination schedule after examination has been published.')
+      END;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_prevent_exam_schedule_update_after_publish
+    BEFORE UPDATE ON examination_schedules
+    BEGIN
+      SELECT CASE
+        WHEN (SELECT is_published FROM examinations WHERE id = OLD.examination_id) = 1
+        THEN RAISE(ABORT, 'Cannot modify examination schedule after examination has been published.')
+      END;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_prevent_exam_schedule_delete_after_publish
+    BEFORE DELETE ON examination_schedules
+    BEGIN
+      SELECT CASE
+        WHEN (SELECT is_published FROM examinations WHERE id = OLD.examination_id) = 1
+        THEN RAISE(ABORT, 'Cannot modify examination schedule after examination has been published.')
+      END;
+    END;
 
     CREATE INDEX IF NOT EXISTS idx_students_admission ON students(admission_no);
     CREATE INDEX IF NOT EXISTS idx_enrollments_class ON enrollments(class_id, academic_year_id);
@@ -231,6 +261,17 @@ export function initDatabase() {
   } catch {
     // Column already exists
   }
+
+  // Safe column migrations for examination_schedules in existing databases
+  try {
+    db.exec("ALTER TABLE examination_schedules ADD COLUMN status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('draft', 'approved'));");
+  } catch {}
+  try {
+    db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_by_user_id INTEGER REFERENCES users(id);');
+  } catch {}
+  try {
+    db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_at TEXT;');
+  } catch {}
 
   // Safe migration 004: Attendance integrity, revisions & receipts
   // Inspect whether migration 004 is needed

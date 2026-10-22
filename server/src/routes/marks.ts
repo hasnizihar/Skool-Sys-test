@@ -366,35 +366,83 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
   let isReissued = false;
 
   if (isPublished) {
+    // 1. Resolve effective approved assessment policy (FIX 03 Requirements 1 & 2)
     let resolvedPol: any = undefined;
-    if (exam.assessment_policy_id) {
-      try {
-        const pol = getAssessmentPolicyProfile(exam.assessment_policy_id);
-        resolvedPol = pol;
-        policyMetadata = {
-          id: pol.id,
-          policy_code: pol.policy_code,
-          title: pol.title,
-          version: pol.version,
-          is_approved_by_school: pol.is_approved_by_school,
-          subject_weights: pol.subject_weights,
-          ranking_rules: pol.ranking_rules
-        };
-      } catch {}
+    let targetPolicyId = exam.assessment_policy_id;
+
+    if (!targetPolicyId) {
+      const pubRecord = db.prepare('SELECT policy_profile_id FROM examination_publications WHERE examination_id = ? ORDER BY publication_version DESC LIMIT 1').get(examId) as any;
+      if (pubRecord?.policy_profile_id) {
+        targetPolicyId = pubRecord.policy_profile_id;
+      }
+    }
+
+    if (!targetPolicyId) {
+      res.status(500).json({
+        error: 'Official report-card generation failed: No approved assessment policy profile associated with this published examination.',
+        code: 'MISSING_OFFICIAL_POLICY'
+      });
+      return;
     }
 
     try {
+      const pol = getAssessmentPolicyProfile(targetPolicyId);
+      if (!pol || pol.is_approved_by_school !== 1) {
+        res.status(500).json({
+          error: `Official report-card generation failed: Associated assessment policy '${pol?.policy_code || targetPolicyId}' is unapproved or provisional.`,
+          code: 'UNAPPROVED_POLICY'
+        });
+        return;
+      }
+      resolvedPol = pol;
+      policyMetadata = {
+        id: pol.id,
+        policy_code: pol.policy_code,
+        title: pol.title,
+        version: pol.version,
+        is_approved_by_school: pol.is_approved_by_school,
+        subject_weights: pol.subject_weights,
+        ranking_rules: pol.ranking_rules
+      };
+    } catch (polErr: any) {
+      res.status(500).json({
+        error: `Official report-card generation failed: Unable to load assessment policy: ${polErr.message}`,
+        code: polErr.code || 'MISSING_OFFICIAL_POLICY'
+      });
+      return;
+    }
+
+    // 2. Compute official policy results (DO NOT silently swallow errors, DO NOT fallback to raw calculations)
+    try {
       const classCalc = calculateClassResults(examId, student.class_id, resolvedPol);
       const stuResult = classCalc.students.find(s => s.studentId === studentId);
-      if (stuResult) {
-        totalScore = stuResult.totalScore;
-        gradedCount = stuResult.gradedSubjectsCount;
-        average = stuResult.averagePercentage;
-        if (stuResult.rank !== null && stuResult.rank !== undefined) {
-          officialRank = stuResult.rank;
+      if (!stuResult) {
+        res.status(500).json({
+          error: 'Official report-card generation failed: Student results could not be reconciled in official class calculations.',
+          code: 'CALCULATION_RECONCILIATION_FAILED'
+        });
+        return;
+      }
+      totalScore = stuResult.totalScore;
+      gradedCount = stuResult.gradedSubjectsCount;
+      average = stuResult.averagePercentage;
+      officialRank = stuResult.rank ?? null;
+
+      for (const sub of classSubjects) {
+        const polSub = stuResult.subjectGrades[sub.subject_id];
+        if (polSub) {
+          sub.grade_letter = polSub.gradeLetter;
+          sub.normalized_percentage = polSub.percentage;
+          sub.assessment_status = polSub.assessmentStatus;
         }
       }
-    } catch {}
+    } catch (calcErr: any) {
+      res.status(500).json({
+        error: `Official report-card calculation failed: ${calcErr.message}`,
+        code: calcErr.code || 'CALCULATION_FAILED'
+      });
+      return;
+    }
 
     approvedCorrections = db.prepare(`
       SELECT mc.id, mc.subject_id, s.name as subject_name, s.code as subject_code,
@@ -594,10 +642,22 @@ router.post('/examinations/:id/publish', requireAuth, (req, res) => {
   }
 });
 
-// PR-005 Gate 4B: Retrieve Publication Summary & Audit Snapshot
+// PR-005 Gate 4B / FIX 02: Retrieve Publication Summary & Audit Snapshot
 router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
   try {
     const examinationId = Number(req.params.id);
+    const user = req.user!;
+
+    // 1. Live active user account check on EVERY request (Requirement 1 & 4)
+    const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
+    if (!activeUser || activeUser.is_active !== 1) {
+      res.status(401).json({
+        error: 'Authentication failed: User account is deactivated or inactive.',
+        code: 'USER_DEACTIVATED'
+      });
+      return;
+    }
+
     const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(examinationId) as any;
     if (!exam) {
       res.status(404).json({ error: 'Examination not found.' });
@@ -606,10 +666,10 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
 
     const isPublished = exam.is_published === 1 || exam.status === 'published';
 
-    // Confidentiality gate for unpublished examinations (G3S-AUD-02)
+    // 2. Unpublished Confidentiality Gate (Requirement 6)
     if (!isPublished) {
       const isLeadership = hasAcademicStaffRole(
-        req.user!.id,
+        user.id,
         ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
         exam.academic_year_id,
         undefined
@@ -623,6 +683,39 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
       }
     }
 
+    // 3. Scoped Authorization for Published Examination (FIX 02 Requirements 1, 2, 3, 4, 5)
+    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
+    const examGradeBand = exam.grade_band || 'all';
+
+    // Whole-exam leadership: Principal, VP Academic, or system admin
+    const isWholeExamLeadership = user.role === 'admin' || activeAuths.some(a =>
+      ['principal', 'vice_principal_academic'].includes(a.auth_role) &&
+      (a.grade_band === 'all' || a.grade_band === examGradeBand)
+    );
+
+    // Section Head / Exam Coordinator with limited band
+    const leadershipBands = activeAuths
+      .filter(a => ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'].includes(a.auth_role))
+      .map(a => a.grade_band);
+
+    // Teacher class assignments in this academic year
+    const teacherAssignments = db.prepare(`
+      SELECT DISTINCT class_id, subject_id, assignment_type
+      FROM teacher_assignments
+      WHERE teacher_id = ? AND academic_year_id = ?
+    `).all(user.id, exam.academic_year_id) as any[];
+
+    const assignedClassIds = new Set(teacherAssignments.map(ta => ta.class_id));
+
+    // If neither whole-exam leadership, nor leadership band, nor assigned teacher -> 403 Forbidden
+    if (!isWholeExamLeadership && leadershipBands.length === 0 && assignedClassIds.size === 0) {
+      res.status(403).json({
+        error: 'Access denied: You do not possess record-scoped authorization for this examination in this academic year.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
+      return;
+    }
+
     const publication = db.prepare(`
       SELECT ep.*, u.username as published_by_username, u.full_name as published_by_name,
              app.policy_code, app.title as policy_title
@@ -634,10 +727,55 @@ router.get('/examinations/:id/publication-summary', requireAuth, (req, res) => {
       LIMIT 1
     `).get(examinationId) as any;
 
+    if (!publication) {
+      res.json({
+        examination: exam,
+        is_published: isPublished,
+        publication: null
+      });
+      return;
+    }
+
+    // 4. Data Scoping & Filtering (Requirement 2 & 5)
+    let filteredPublication = { ...publication };
+    if (!isWholeExamLeadership && publication.publication_snapshot_json) {
+      try {
+        const snapshot = JSON.parse(publication.publication_snapshot_json);
+        const originalClasses = snapshot.classes || [];
+        const originalSheets = snapshot.sheetSnapshots || [];
+
+        const allowedClassIdSet = new Set<number>();
+        for (const cls of originalClasses) {
+          const classGrade = cls.classGrade || (db.prepare('SELECT grade FROM classes WHERE id = ?').get(cls.classId) as any)?.grade;
+          const coveredByBand = leadershipBands.some(band =>
+            band === 'all' || doesBandCoverGrade(band, classGrade)
+          );
+          if (coveredByBand || assignedClassIds.has(cls.classId)) {
+            allowedClassIdSet.add(cls.classId);
+          }
+        }
+
+        if (allowedClassIdSet.size === 0) {
+          res.status(403).json({
+            error: 'Access denied: No classes in this examination match your authorized teaching or leadership scope.',
+            code: 'INSUFFICIENT_AUTHORIZATION'
+          });
+          return;
+        }
+
+        const filteredClasses = originalClasses.filter((c: any) => allowedClassIdSet.has(c.classId));
+        const filteredSheets = originalSheets.filter((s: any) => allowedClassIdSet.has(s.classId));
+
+        snapshot.classes = filteredClasses;
+        snapshot.sheetSnapshots = filteredSheets;
+        filteredPublication.publication_snapshot_json = JSON.stringify(snapshot);
+      } catch {}
+    }
+
     res.json({
       examination: exam,
       is_published: isPublished,
-      publication: publication || null
+      publication: filteredPublication
     });
   } catch (err: any) {
     const status = err.statusCode || 400;

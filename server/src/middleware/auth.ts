@@ -223,7 +223,10 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     }
 
     if (!user.is_active || user.is_active === 0) {
-      res.status(401).json({ error: 'Authentication failed. Account has been deactivated.' });
+      res.status(401).json({
+        error: 'Authentication failed. Account has been deactivated.',
+        code: 'USER_DEACTIVATED'
+      });
       return;
     }
 

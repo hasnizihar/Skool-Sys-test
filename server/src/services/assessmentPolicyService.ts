@@ -621,34 +621,14 @@ export function calculateClassResults(
     ORDER BY e.roll_number ASC, s.admission_no ASC
   `).all(classId) as any[];
 
-  // 3. G4S-01: Get examined class subjects for this examination
-  // If examination_schedules defines explicit class-subject roster for this exam, use it;
-  // otherwise, discover examined subjects from submitted marks sheets.
-  // NEVER fall back to all class_subjects (do not fabricate examination participation from class membership).
-  let classSubjects = db.prepare(`
+  // 3. FIX 01: Get examined class subjects strictly from approved examination_schedules
+  // Never infer examination coverage solely from marks sheets or marks that happen to exist.
+  const classSubjects = db.prepare(`
     SELECT DISTINCT es.subject_id, s.code as subject_code, s.name as subject_name
     FROM examination_schedules es
     JOIN subjects s ON es.subject_id = s.id
-    WHERE es.examination_id = ? AND es.class_id = ?
+    WHERE es.examination_id = ? AND es.class_id = ? AND (es.status = 'approved' OR es.status IS NULL)
   `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
-
-  if (classSubjects.length === 0) {
-    classSubjects = db.prepare(`
-      SELECT DISTINCT ms.subject_id, s.code as subject_code, s.name as subject_name
-      FROM marks_sheets ms
-      JOIN subjects s ON ms.subject_id = s.id
-      WHERE ms.examination_id = ? AND ms.class_id = ?
-    `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
-  }
-
-  if (classSubjects.length === 0) {
-    classSubjects = db.prepare(`
-      SELECT DISTINCT m.subject_id, s.code as subject_code, s.name as subject_name
-      FROM marks m
-      JOIN subjects s ON m.subject_id = s.id
-      WHERE m.examination_id = ? AND m.class_id = ?
-    `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
-  }
 
   const subjectIds = classSubjects.map(cs => cs.subject_id);
   const subjectCodeMap = new Map<number, string>(classSubjects.map(cs => [cs.subject_id, cs.subject_code]));
@@ -860,7 +840,7 @@ export function calculateClassResults(
     }
   }
 
-  const isOfficialEligible = unverifiedCount === 0 && unassessedCount === 0;
+  const isOfficialEligible = classSubjects.length > 0 && unverifiedCount === 0 && unassessedCount === 0;
 
   return {
     classId,
