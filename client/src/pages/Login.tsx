@@ -15,7 +15,8 @@ import {
   FlaskConical,
   ArrowRight,
   ClipboardCheck,
-  KeyRound
+  KeyRound,
+  Award
 } from 'lucide-react';
 import { api, setAuthSession } from '../api/client';
 
@@ -39,15 +40,39 @@ interface DemoAccount {
 const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     roleTitle: 'Administrator / Principal',
-    name: 'Dr. Anura Bandara',
+    name: 'Mr. A.L.M. Mukthar',
     username: 'admin',
     password: 'admin123',
-    roleTag: 'Admin (Full Access)',
-    scope: 'All 13 Tables, Academic Years, Classes, User Accounts & Security',
+    roleTag: 'Principal & Admin',
+    scope: 'All 13 Tables, Academic Years, Examination Publishing & Security',
     icon: Shield,
     color: 'var(--primary)',
     bgColor: 'var(--primary-light)',
     borderColor: 'rgba(67, 56, 202, 0.25)'
+  },
+  {
+    roleTitle: 'Vice Principal (Academic)',
+    name: 'Mr. M.I.M. Nawas',
+    username: 'vp_academic',
+    password: 'teacher123',
+    roleTag: 'VP Academic',
+    scope: 'Academic Policy, School-Wide Moderation & Examination Approvals',
+    icon: Award,
+    color: '#8b5cf6',
+    bgColor: '#f5f3ff',
+    borderColor: 'rgba(139, 92, 246, 0.25)'
+  },
+  {
+    roleTitle: 'Section Head (Grades 6–9)',
+    name: 'Mr. K.L.M. Farook',
+    username: 'section_head_junior',
+    password: 'teacher123',
+    roleTag: 'Section Head',
+    scope: 'Junior Section Moderation, Marks Endorsement & Review',
+    icon: ClipboardCheck,
+    color: '#0284c7',
+    bgColor: '#f0f9ff',
+    borderColor: 'rgba(2, 132, 199, 0.25)'
   },
   {
     roleTitle: 'Class Teacher (Grade 8-A)',
@@ -66,20 +91,20 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     name: 'Mr. Samantha Silva',
     username: 'teacher_samantha',
     password: 'teacher123',
-    roleTag: 'Math Teacher',
-    scope: 'Grade 8-A, 8-B, 11-A Mathematics Marks Entry & Term Reports',
+    roleTag: 'Math Specialist',
+    scope: 'Grade 8-A & 11-A Mathematics Marks Entry & Term Reports',
     icon: Calculator,
     color: 'var(--secondary)',
     bgColor: 'var(--secondary-light)',
     borderColor: 'rgba(13, 148, 136, 0.25)'
   },
   {
-    roleTitle: 'Science Subject Teacher',
+    roleTitle: 'Science & ICT Subject Teacher',
     name: 'Ms. Priya Wickramasinghe',
     username: 'teacher_priya',
     password: 'teacher123',
-    roleTag: 'Science Teacher',
-    scope: 'Grade 8-A, 8-B Science Marks Entry & Term Reports',
+    roleTag: 'Science & ICT',
+    scope: 'Grade 8-A Science & ICT Marks Entry & Term Reports',
     icon: FlaskConical,
     color: 'var(--accent)',
     bgColor: 'var(--accent-light)',

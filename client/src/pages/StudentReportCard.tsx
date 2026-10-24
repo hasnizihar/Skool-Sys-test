@@ -30,10 +30,16 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadReport();
+    if (studentId && examId) {
+      loadReport();
+    } else {
+      setLoading(false);
+      setError('No examination selected or available.');
+    }
   }, [studentId, examId]);
 
   const loadReport = async () => {
+    if (!studentId || !examId) return;
     try {
       setLoading(true);
       setError(null);

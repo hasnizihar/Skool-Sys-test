@@ -82,7 +82,13 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
       if (res.marks && res.marks.length > 0) {
         setSelectedExamId(res.marks[0].examination_id);
       } else {
-        setSelectedExamId(1);
+        try {
+          const exRes = await api.getExaminations();
+          const pubExam = (exRes.examinations || []).find((e: any) => e.is_published === 1) || exRes.examinations?.[0];
+          setSelectedExamId(pubExam?.id || null);
+        } catch {
+          setSelectedExamId(null);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load student record details.');
