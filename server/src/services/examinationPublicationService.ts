@@ -356,6 +356,42 @@ export function publishExamination(params: PublishExaminationParams): PublishExa
       }
     }
 
+    // 7.4 Authoritative Maximum Score Consistency Check (FIX 01)
+    // Invariant: Every sheet and student mark MUST match the authoritative schedule maximum score
+    for (const s of sheets) {
+      const schedItem = scheduledItems.find(req => req.class_id === s.class_id && req.subject_id === s.subject_id);
+      const authoritativeMax = schedItem?.max_score
+        ? Number(schedItem.max_score)
+        : (exam.max_score ? Number(exam.max_score) : 100.0);
+
+      if (Number(s.max_score) !== authoritativeMax) {
+        const err = new Error(
+          `Publication declined: Maximum score inconsistency detected for ${s.class_name} - ${s.subject_name}. Sheet maximum (${s.max_score}) does not match authoritative schedule maximum (${authoritativeMax}).`
+        );
+        (err as any).statusCode = 409;
+        (err as any).code = 'MAX_SCORE_INCONSISTENCY';
+        throw err;
+      }
+
+      const invalidMarks = db.prepare(`
+        SELECT id, student_id, score, max_score, assessment_status
+        FROM marks
+        WHERE sheet_id = ? AND (
+          max_score != ? OR
+          (score IS NOT NULL AND (score < 0.0 OR score > ?))
+        )
+      `).all(s.id, authoritativeMax, authoritativeMax) as any[];
+
+      if (invalidMarks.length > 0) {
+        const err = new Error(
+          `Publication declined: Maximum score inconsistency detected in marks for ${s.class_name} - ${s.subject_name}. ${invalidMarks.length} student mark record(s) have conflicting max_score or scores exceeding authoritative maximum (${authoritativeMax}).`
+        );
+        (err as any).statusCode = 409;
+        (err as any).code = 'MAX_SCORE_INCONSISTENCY';
+        throw err;
+      }
+    }
+
     // G4R-01: Positive confirmed enrolment check across all marks in this examination
     const unconfirmedMarkCheck = db.prepare(`
       SELECT COUNT(*) as cnt

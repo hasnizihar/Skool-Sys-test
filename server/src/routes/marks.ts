@@ -132,27 +132,17 @@ router.get('/sheet', requireAuth, (req, res) => {
 
   // Authoritative max score:
   // 1. Existing marks_sheets container or existing marks on this sheet
+  // 1. Schedule-defined max score for this class and subject (Authoritative)
   let authoritativeMaxScore: number | null = null;
-  if (sheet?.max_score && Number(sheet.max_score) !== 100.0) {
-    authoritativeMaxScore = Number(sheet.max_score);
-  }
-  const existingMax = rawRoster.find(r => r.max_score !== null && r.max_score !== undefined)?.max_score;
-  if (!authoritativeMaxScore && existingMax !== undefined && existingMax !== null) {
-    authoritativeMaxScore = Number(existingMax);
-  }
-
-  // 2. Schedule-defined max score for this class and subject
-  if (!authoritativeMaxScore) {
-    const sched = db.prepare(`
-      SELECT max_score FROM examination_schedules
-      WHERE examination_id = ? AND class_id = ? AND subject_id = ?
-    `).get(eId, cId, sId) as any;
-    if (sched?.max_score) {
-      authoritativeMaxScore = Number(sched.max_score);
-    }
+  const sched = db.prepare(`
+    SELECT max_score FROM examination_schedules
+    WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+  `).get(eId, cId, sId) as any;
+  if (sched?.max_score) {
+    authoritativeMaxScore = Number(sched.max_score);
   }
 
-  // 3. Policy-defined max score (from subject_weights_json or grading_scale_json)
+  // 2. Policy-defined max score (from subject_weights_json or grading_scale_json)
   if (!authoritativeMaxScore && policy) {
     try {
       if (policy.subject_weights_json) {
@@ -171,9 +161,22 @@ router.get('/sheet', requireAuth, (req, res) => {
     } catch {}
   }
 
-  // 4. Examination-level configured max_score, otherwise sheet max_score, otherwise 100.0
+  // 3. Examination-level configured max_score, otherwise sheet max_score, otherwise 100.0
   if (!authoritativeMaxScore) {
     authoritativeMaxScore = exam.max_score ? Number(exam.max_score) : (sheet?.max_score ? Number(sheet.max_score) : 100.0);
+  }
+
+  // If draft sheet has no recorded student marks, synchronize sheet max_score atomically
+  if (sheet && sheet.status === 'draft' && Number(sheet.max_score) !== authoritativeMaxScore) {
+    const recordedMarks = db.prepare(`
+      SELECT COUNT(*) as count FROM marks
+      WHERE sheet_id = ? AND (score IS NOT NULL OR assessment_status != 'NOT_ASSESSED')
+    `).get(sheet.id) as { count: number };
+    if (recordedMarks.count === 0) {
+      db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE id = ?").run(authoritativeMaxScore, sheet.id);
+      db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE sheet_id = ?").run(authoritativeMaxScore, sheet.id);
+      sheet.max_score = authoritativeMaxScore;
+    }
   }
 
   // Enhance roster with student-specific subject eligibility tags and authoritative max_score
@@ -181,7 +184,9 @@ router.get('/sheet', requireAuth, (req, res) => {
     const elig = isStudentEligibleForSubject(r.student_id, sId, yearId);
     return {
       ...r,
-      max_score: r.max_score !== null && r.max_score !== undefined ? Number(r.max_score) : authoritativeMaxScore,
+      max_score: (r.max_score !== null && r.max_score !== undefined && r.score !== null)
+        ? Number(r.max_score)
+        : authoritativeMaxScore,
       is_eligible_for_draft: elig.isEligibleForDraft,
       is_officially_confirmed: elig.isOfficiallyConfirmed,
       enrollment_status: elig.status || 'not_enrolled',
@@ -289,7 +294,7 @@ router.post('/sheet', requireAuth, (req, res) => {
       return {
         studentId: Number(m.student_id ?? m.studentId),
         score,
-        maxScore: m.maxScore !== undefined && m.maxScore !== null ? Number(m.maxScore) : 100.0,
+        maxScore: m.maxScore !== undefined && m.maxScore !== null ? Number(m.maxScore) : undefined,
         assessmentStatus: assessmentStatus as 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED',
         remarks: m.remarks
       };
@@ -999,16 +1004,40 @@ router.post('/examinations/:id/schedules', requireAuth, (req, res) => {
       return;
     }
 
-    const existingSubmitted = db.prepare(`
-      SELECT COUNT(*) as count FROM marks_sheets
-      WHERE examination_id = ? AND class_id = ? AND subject_id = ? AND status IN ('submitted', 'reviewed', 'approved', 'published')
-    `).get(examinationId, Number(classId), Number(subjectId)) as { count: number };
-    if (existingSubmitted && existingSubmitted.count > 0) {
-      res.status(409).json({
-        error: 'Cannot modify maximum score for a schedule item after marks sheets have been submitted or published.',
-        code: 'MARKS_ALREADY_SUBMITTED'
-      });
-      return;
+    const existingSheet = db.prepare(`
+      SELECT id, status, max_score, revision
+      FROM marks_sheets
+      WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+    `).get(examinationId, Number(classId), Number(subjectId)) as any;
+
+    if (existingSheet) {
+      if (['submitted', 'reviewed', 'approved', 'published'].includes(existingSheet.status)) {
+        if (targetMax !== Number(existingSheet.max_score)) {
+          res.status(409).json({
+            error: 'Cannot modify maximum score for a schedule item after marks sheets have been submitted, approved, or published.',
+            code: 'MARKS_ALREADY_SUBMITTED'
+          });
+          return;
+        }
+      } else {
+        const recordedMarks = db.prepare(`
+          SELECT COUNT(*) as count FROM marks
+          WHERE sheet_id = ? AND (score IS NOT NULL OR assessment_status != 'NOT_ASSESSED')
+        `).get(existingSheet.id) as { count: number };
+
+        if (recordedMarks && recordedMarks.count > 0 && targetMax !== Number(existingSheet.max_score)) {
+          res.status(409).json({
+            error: 'Cannot modify maximum score for a schedule item after student marks have been recorded. Changing maximum marks after marks are recorded is strictly prohibited to prevent stale marks reinterpretation.',
+            code: 'MARKS_ALREADY_RECORDED'
+          });
+          return;
+        }
+
+        if (targetMax !== Number(existingSheet.max_score)) {
+          db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE id = ?").run(targetMax, existingSheet.id);
+          db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE sheet_id = ?").run(targetMax, existingSheet.id);
+        }
+      }
     }
 
     const stmt = db.prepare(`
@@ -1262,6 +1291,14 @@ router.get('/examinations/:id/publication-readiness', requireAuth, (req, res) =>
       allSheetsApproved = missingOrUnapproved.length === 0;
       if (!allSheetsApproved) {
         blockers.push(`${missingOrUnapproved.length} required marks sheet(s) are missing or not yet in approved status: ${missingOrUnapproved.slice(0, 3).join(', ')}${missingOrUnapproved.length > 3 ? '...' : ''}.`);
+      }
+
+      // Max score consistency check between approved schedules and marks sheets
+      for (const s of schedules) {
+        const ms = sheets.find(sheet => sheet.class_id === s.class_id && sheet.subject_id === s.subject_id);
+        if (ms && s.max_score && Number(ms.max_score) !== Number(s.max_score)) {
+          blockers.push(`Maximum score mismatch in ${s.class_name} - ${s.subject_name}: sheet maximum (${ms.max_score}) does not match schedule maximum (${s.max_score}).`);
+        }
       }
     }
 

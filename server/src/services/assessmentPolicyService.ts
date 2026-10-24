@@ -624,14 +624,17 @@ export function calculateClassResults(
   // 3. FIX 01: Get examined class subjects strictly from approved examination_schedules
   // Never infer examination coverage solely from marks sheets or marks that happen to exist.
   const classSubjects = db.prepare(`
-    SELECT DISTINCT es.subject_id, s.code as subject_code, s.name as subject_name
+    SELECT DISTINCT es.subject_id, es.max_score, s.code as subject_code, s.name as subject_name
     FROM examination_schedules es
     JOIN subjects s ON es.subject_id = s.id
     WHERE es.examination_id = ? AND es.class_id = ? AND (es.status = 'approved' OR es.status IS NULL)
-  `).all(examinationId, classId) as { subject_id: number; subject_code: string; subject_name: string }[];
+  `).all(examinationId, classId) as { subject_id: number; max_score: number | null; subject_code: string; subject_name: string }[];
 
   const subjectIds = classSubjects.map(cs => cs.subject_id);
   const subjectCodeMap = new Map<number, string>(classSubjects.map(cs => [cs.subject_id, cs.subject_code]));
+  const schedMaxMap = new Map<number, number>(
+    classSubjects.map(cs => [cs.subject_id, cs.max_score ? Number(cs.max_score) : (examInfo?.max_score ? Number(examInfo.max_score) : 100.0)])
+  );
 
   // 4. G4S-01: Scoped enrolment verification
   let unverifiedCount = 0;
@@ -728,7 +731,7 @@ export function calculateClassResults(
         unassessedCount++;
         subjectGrades[subId] = {
           score: null,
-          maxScore: 100.0,
+          maxScore: schedMaxMap.get(subId) || 100.0,
           percentage: null,
           gradeLetter: '-',
           assessmentStatus: 'NOT_ASSESSED'
@@ -748,10 +751,11 @@ export function calculateClassResults(
         weight = 1.0;
       }
 
-      const gradeRes = calculateSubjectGrade(m.score, m.max_score || 100.0, m.assessment_status, policy);
+      const authMax = (m.max_score !== null && m.max_score !== undefined) ? Number(m.max_score) : (schedMaxMap.get(subId) || 100.0);
+      const gradeRes = calculateSubjectGrade(m.score, authMax, m.assessment_status, policy);
       subjectGrades[subId] = {
         score: m.score,
-        maxScore: m.max_score || 100.0,
+        maxScore: authMax,
         percentage: gradeRes.normalizedPercentage,
         gradeLetter: gradeRes.gradeLetter,
         assessmentStatus: m.assessment_status

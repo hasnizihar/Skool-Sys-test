@@ -204,8 +204,8 @@ router.put('/examinations/:id', requireAuth, (req, res) => {
       return;
     }
 
-    if (exam.is_published === 1) {
-      res.status(409).json({ error: 'Cannot modify examination after it has been published.' });
+    if (exam.is_published === 1 || exam.status === 'published') {
+      res.status(409).json({ error: 'Cannot modify examination after it has been published.', code: 'EXAMINATION_LOCKED' });
       return;
     }
 
@@ -234,10 +234,31 @@ router.put('/examinations/:id', requireAuth, (req, res) => {
       `).get(id) as { count: number };
       if (submittedSheets && submittedSheets.count > 0 && candidateMax !== Number(exam.max_score)) {
         res.status(409).json({
-          error: 'Cannot modify maximum score after marks sheets have been submitted or published.',
+          error: 'Cannot modify maximum score after marks sheets have been submitted, approved, or published.',
           code: 'MARKS_ALREADY_SUBMITTED'
         });
         return;
+      }
+
+      const recordedMarks = db.prepare(`
+        SELECT COUNT(*) as count FROM marks m
+        JOIN marks_sheets ms ON m.sheet_id = ms.id
+        WHERE ms.examination_id = ? AND (m.score IS NOT NULL OR m.assessment_status != 'NOT_ASSESSED')
+      `).get(id) as { count: number };
+      if (recordedMarks && recordedMarks.count > 0 && candidateMax !== Number(exam.max_score)) {
+        res.status(409).json({
+          error: 'Cannot modify maximum score after student marks have been recorded.',
+          code: 'MARKS_ALREADY_RECORDED'
+        });
+        return;
+      }
+
+      // Synchronize empty draft sheets and schedules matching the old examination default max_score
+      if (candidateMax !== Number(exam.max_score)) {
+        const oldMax = Number(exam.max_score);
+        db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE examination_id = ? AND max_score = ?").run(candidateMax, id, oldMax);
+        db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE examination_id = ? AND max_score = ?").run(candidateMax, id, oldMax);
+        db.prepare("UPDATE examination_schedules SET max_score = ? WHERE examination_id = ? AND max_score = ?").run(candidateMax, id, oldMax);
       }
       targetMax = candidateMax;
     }

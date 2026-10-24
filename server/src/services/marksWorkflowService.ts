@@ -97,6 +97,7 @@ export interface MarkEntryInput {
   score?: number | null;
   assessmentStatus?: 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED';
   maxScore?: number;
+  max_score?: number;
   remarks?: string;
 }
 
@@ -262,6 +263,25 @@ export function getMarksSheetDetails(sheetId: number, user: AuthUser): any {
       (err as any).statusCode = 403;
       (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
       throw err;
+    }
+  }
+
+  // Resolve authoritative max score from schedule or exam
+  const schedRow = db.prepare('SELECT max_score FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(sheet.examination_id, sheet.class_id, sheet.subject_id) as any;
+  const examRow = db.prepare('SELECT max_score FROM examinations WHERE id = ?').get(sheet.examination_id) as any;
+  const authoritativeMaxScore = schedRow?.max_score
+    ? Number(schedRow.max_score)
+    : (examRow?.max_score ? Number(examRow.max_score) : (sheet.max_score ? Number(sheet.max_score) : 100.0));
+
+  if (sheet.status === 'draft' && Number(sheet.max_score) !== authoritativeMaxScore) {
+    const recordedMarks = db.prepare(`
+      SELECT COUNT(*) as count FROM marks
+      WHERE sheet_id = ? AND (score IS NOT NULL OR assessment_status != 'NOT_ASSESSED')
+    `).get(sheet.id) as { count: number };
+    if (recordedMarks.count === 0) {
+      db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE id = ?").run(authoritativeMaxScore, sheet.id);
+      db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE sheet_id = ?").run(authoritativeMaxScore, sheet.id);
+      sheet.max_score = authoritativeMaxScore;
     }
   }
 
@@ -436,12 +456,34 @@ export function saveDraftMarks(params: {
       remarks?: string;
     }> = [];
 
-    // Resolve authoritative max score for sheet: sheet -> schedule -> exam -> default 100.0
+    // Resolve authoritative max score for sheet: schedule -> exam -> sheet -> default 100.0
     const schedRow = db.prepare('SELECT max_score FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(sheet.examination_id, sheet.class_id, sheet.subject_id) as any;
     const examRow = db.prepare('SELECT max_score FROM examinations WHERE id = ?').get(sheet.examination_id) as any;
-    const authoritativeMaxScore = (sheet.max_score && Number(sheet.max_score) !== 100.0)
-      ? Number(sheet.max_score)
-      : (schedRow?.max_score ? Number(schedRow.max_score) : (examRow?.max_score ? Number(examRow.max_score) : 100.0));
+    const authoritativeMaxScore = schedRow?.max_score
+      ? Number(schedRow.max_score)
+      : (examRow?.max_score ? Number(examRow.max_score) : (sheet.max_score ? Number(sheet.max_score) : 100.0));
+
+    // Invariant: Reject mismatches between sheet and authoritative schedule if marks exist
+    if (Number(sheet.max_score) !== authoritativeMaxScore) {
+      const recordedCount = db.prepare(`
+        SELECT COUNT(*) as count FROM marks
+        WHERE sheet_id = ? AND (score IS NOT NULL OR assessment_status != 'NOT_ASSESSED')
+      `).get(sheet.id) as { count: number };
+
+      if (recordedCount.count > 0) {
+        const err = new Error(
+          `Maximum score inconsistency: sheet maximum (${sheet.max_score}) does not match authoritative schedule maximum (${authoritativeMaxScore}). Modification rejected.`
+        );
+        (err as any).statusCode = 409;
+        (err as any).code = 'MAX_SCORE_MISMATCH';
+        throw err;
+      } else {
+        // Empty draft sheet: synchronize atomically
+        db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE id = ?").run(authoritativeMaxScore, sheet.id);
+        db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE sheet_id = ?").run(authoritativeMaxScore, sheet.id);
+        sheet.max_score = authoritativeMaxScore;
+      }
+    }
 
     for (const m of marks) {
       const studentId = Number(m.studentId);
@@ -481,6 +523,7 @@ export function saveDraftMarks(params: {
       }
 
       // Canonical score and assessment_status validation against authoritativeMaxScore
+      // Teacher input m.maxScore cannot override authoritativeMaxScore
       const maxScore = authoritativeMaxScore;
 
       let assessmentStatus = m.assessmentStatus || 'PRESENT';
@@ -501,16 +544,19 @@ export function saveDraftMarks(params: {
         if (isNaN(numScore)) {
           const err = new Error(`Score '${m.score}' for student ID ${studentId} is not a valid number.`);
           (err as any).statusCode = 400;
+          (err as any).code = 'INVALID_SCORE';
           throw err;
         }
         if (numScore < 0.0 || numScore > maxScore) {
           const err = new Error(`Score ${numScore} for student ID ${studentId} is out of bounds [0, ${maxScore}].`);
           (err as any).statusCode = 400;
+          (err as any).code = 'SCORE_OUT_OF_BOUNDS';
           throw err;
         }
         if (Math.round(numScore * 10) / 10 !== numScore) {
           const err = new Error(`Score ${numScore} for student ID ${studentId} exceeds allowed 1-decimal precision; exceeds single-decimal precision. Silent rounding or truncation is strictly prohibited.`);
           (err as any).statusCode = 400;
+          (err as any).code = 'INVALID_SCORE_PRECISION';
           throw err;
         }
         assessmentStatus = 'PRESENT';
@@ -1242,11 +1288,33 @@ export function saveOrSubmitLegacyMarksSheet(params: {
       newRevision = sheet.revision + 1;
     }
 
-    // Resolve authoritative max score for sheet: sheet -> schedule -> exam -> default 100.0
+    // Resolve authoritative max score for sheet: schedule -> exam -> sheet -> default 100.0
     const schedRow = db.prepare('SELECT max_score FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(examId, classId, subjectId) as any;
-    const authoritativeMaxScore = (sheet?.max_score && Number(sheet.max_score) !== 100.0)
-      ? Number(sheet.max_score)
-      : (schedRow?.max_score ? Number(schedRow.max_score) : (examRow?.max_score ? Number(examRow.max_score) : 100.0));
+    const authoritativeMaxScore = schedRow?.max_score
+      ? Number(schedRow.max_score)
+      : (examRow?.max_score ? Number(examRow.max_score) : (sheet?.max_score ? Number(sheet.max_score) : 100.0));
+
+    // Invariant: Reject mismatches between sheet and authoritative schedule if marks exist
+    if (sheet && Number(sheet.max_score) !== authoritativeMaxScore) {
+      const recordedCount = db.prepare(`
+        SELECT COUNT(*) as count FROM marks
+        WHERE sheet_id = ? AND (score IS NOT NULL OR assessment_status != 'NOT_ASSESSED')
+      `).get(sheet.id) as { count: number };
+
+      if (recordedCount.count > 0) {
+        const err = new Error(
+          `Maximum score inconsistency: sheet maximum (${sheet.max_score}) does not match authoritative schedule maximum (${authoritativeMaxScore}). Modification rejected.`
+        );
+        (err as any).statusCode = 409;
+        (err as any).code = 'MAX_SCORE_MISMATCH';
+        throw err;
+      } else {
+        // Empty draft sheet: synchronize atomically
+        db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE id = ?").run(authoritativeMaxScore, sheet.id);
+        db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE sheet_id = ?").run(authoritativeMaxScore, sheet.id);
+        sheet.max_score = authoritativeMaxScore;
+      }
+    }
 
     // 6. Pre-validate student membership, positive subject eligibility, remarks type, and scores
     const validatedMarks: Array<{
