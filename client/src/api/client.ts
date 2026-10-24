@@ -112,7 +112,7 @@ export const api = {
   // Examination Schedules
   getExaminationSchedules: (examId: number) =>
     apiFetch(`/api/marks/examinations/${examId}/schedules`),
-  addExaminationSchedule: (examId: number, payload: { classId: number; subjectId: number; isRequired?: boolean }) =>
+  addExaminationSchedule: (examId: number, payload: { classId: number; subjectId: number; isRequired?: boolean; maxScore?: number; max_score?: number }) =>
     apiFetch(`/api/marks/examinations/${examId}/schedules`, { method: 'POST', body: JSON.stringify(payload) }),
   approveExaminationSchedules: (examId: number, payload: { scheduleIds?: number[] } = {}) =>
     apiFetch(`/api/marks/examinations/${examId}/schedules/approve`, { method: 'POST', body: JSON.stringify(payload) }),

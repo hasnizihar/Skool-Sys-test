@@ -207,6 +207,7 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
         subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
         academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
         teacher_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+        max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0),
         revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
         status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN (
           'draft',
@@ -244,6 +245,10 @@ export function runMigration005(db: DatabaseSync): Migration005Result {
         UNIQUE(sheet_id, revision)
       );
     `);
+
+    try {
+      db.exec('ALTER TABLE marks_sheets ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
+    } catch {}
 
     // Step G: Create quarantined_legacy_marks table
     db.exec(`

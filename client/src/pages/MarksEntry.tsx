@@ -91,6 +91,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   const [newScheduleClassId, setNewScheduleClassId] = useState<number | ''>('');
   const [newScheduleSubjectId, setNewScheduleSubjectId] = useState<number | ''>('');
   const [newScheduleIsRequired, setNewScheduleIsRequired] = useState(true);
+  const [newScheduleMaxScore, setNewScheduleMaxScore] = useState<number | ''>(100);
   const [scheduleActionError, setScheduleActionError] = useState<string | null>(null);
 
   // Tab: Review & Approvals state
@@ -160,6 +161,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   const [examModalGradeBand, setExamModalGradeBand] = useState<string>('all');
   const [examModalStartDate, setExamModalStartDate] = useState('');
   const [examModalEndDate, setExamModalEndDate] = useState('');
+  const [examModalMaxScore, setExamModalMaxScore] = useState<number>(100);
   const [savingExam, setSavingExam] = useState(false);
 
   // Selected student for report card modal
@@ -308,7 +310,11 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       setRoster(res.roster || []);
       setStats(res.stats || null);
       setActiveSheet(res.sheet || null);
-      const authoritativeMax = res.maxScore ? Number(res.maxScore) : (res.roster?.[0]?.max_score ? Number(res.roster[0].max_score) : 100);
+      const authoritativeMax = res.maxScore
+        ? Number(res.maxScore)
+        : (res.sheet?.max_score
+            ? Number(res.sheet.max_score)
+            : (res.roster?.[0]?.max_score ? Number(res.roster[0].max_score) : 100));
       setSheetMaxScore(authoritativeMax);
       setSheetPolicy(res.policy || null);
 
@@ -686,11 +692,13 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       await api.addExaminationSchedule(selectedExamId, {
         classId: Number(newScheduleClassId),
         subjectId: Number(newScheduleSubjectId),
-        isRequired: newScheduleIsRequired
+        isRequired: newScheduleIsRequired,
+        maxScore: Number(newScheduleMaxScore) || 100
       });
       setShowAddScheduleModal(false);
       setNewScheduleClassId('');
       setNewScheduleSubjectId('');
+      setNewScheduleMaxScore(100);
       loadSchedules(selectedExamId);
     } catch (err: any) {
       setScheduleActionError(err.message || 'Failed to add subject schedule.');
@@ -852,10 +860,12 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
         term: Number(examModalTerm),
         grade_band: examModalGradeBand,
         start_date: examModalStartDate || undefined,
-        end_date: examModalEndDate || undefined
+        end_date: examModalEndDate || undefined,
+        maxScore: Number(examModalMaxScore) || 100
       });
       setShowExamModal(false);
       setExamModalName('');
+      setExamModalMaxScore(100);
       loadLookups();
       alert('Examination created successfully!');
     } catch (err: any) {
@@ -2698,6 +2708,24 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                   </select>
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label">Authoritative Maximum Marks (e.g. 50, 100, 200)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="1000"
+                    className="form-input"
+                    value={newScheduleMaxScore}
+                    onChange={(e) => setNewScheduleMaxScore(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="100"
+                    required
+                  />
+                  <small style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.75rem' }}>
+                    Authoritative assessment maximum score. Pre-configures the marks sheet before teachers enter scores.
+                  </small>
+                </div>
+
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <input
                     type="checkbox"
@@ -3142,6 +3170,24 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                     <option value="grade_10_11">Senior Secondary / O-Level (Grades 10–11)</option>
                     <option value="grade_12_13">Collegiate / A-Level (Grades 12–13)</option>
                   </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Examination Default Maximum Marks</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="1000"
+                    className="form-input"
+                    value={examModalMaxScore}
+                    onChange={(e) => setExamModalMaxScore(Number(e.target.value))}
+                    placeholder="100"
+                    required
+                  />
+                  <small style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.75rem' }}>
+                    Default authoritative maximum score for all assessment schedules in this examination (e.g. 50, 100, 200).
+                  </small>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

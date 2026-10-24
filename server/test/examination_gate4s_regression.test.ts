@@ -853,9 +853,9 @@ describe('PR-005 Gate 4S Final Closeout: Comprehensive Regression Suite', { conc
 
     test('Promoted student historical report card strictly binds to 2025 academic year, grade 7, and historical class', async () => {
       // Student A is now promoted to Class 8A in 2026 (from previous test setup)
-      // Call GET /api/marks/student-report/:studentId/:examId with admin token
+      // Call GET /api/marks/student-report/:studentId/:examId with authorized principal token
       const res = await testServer.request(`/api/marks/student-report/${studentAId}/${histExamId}`, {
-        headers: { Authorization: `Bearer ${adminToken}` }
+        headers: { Authorization: `Bearer ${principalToken}` }
       });
 
       assert.equal(res.status, 200);
@@ -868,6 +868,14 @@ describe('PR-005 Gate 4S Final Closeout: Comprehensive Regression Suite', { conc
       assert.equal(data.exam.academic_year_id, year2025Id, 'Exam Academic Year ID must be 2025');
       assert.equal(data.attendance.totalSchoolDays, 1, 'Attendance must strictly reflect 2025');
       assert.equal(data.attendance.presentDays, 1);
+
+      // FIX B: Plain admin without academic leadership appointment in 2025 must receive 403
+      const adminRes = await testServer.request(`/api/marks/student-report/${studentAId}/${histExamId}`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.equal(adminRes.status, 403);
+      const adminErr = await adminRes.json();
+      assert.equal(adminErr.code, 'INSUFFICIENT_AUTHORIZATION');
     });
 
     test('Negative: Out-of-scope staff (assigned only to 2026 promoted class) is forbidden from 2025 historical report card', async () => {

@@ -153,9 +153,17 @@ router.get('/examinations', requireAuth, (req, res) => {
 // Create Examination (Admin or authorized leadership)
 router.post('/examinations', requireAuth, (req, res) => {
   try {
-    const { name, term, academic_year_id, start_date, end_date, grade_band = 'all', exam_type = 'term' } = req.body;
+    const { name, term, academic_year_id, start_date, end_date, grade_band = 'all', exam_type = 'term', max_score, maxScore } = req.body;
     if (!name || !term || !academic_year_id) {
       res.status(400).json({ error: 'Examination name, term (1, 2, 3), and academic_year_id are required.' });
+      return;
+    }
+
+    const targetMax = max_score !== undefined
+      ? Number(max_score)
+      : (maxScore !== undefined ? Number(maxScore) : 100.0);
+    if (isNaN(targetMax) || targetMax <= 0 || targetMax > 1000) {
+      res.status(400).json({ error: 'Invalid max_score: must be a positive number in range (0, 1000].' });
       return;
     }
 
@@ -171,16 +179,16 @@ router.post('/examinations', requireAuth, (req, res) => {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, grade_band, exam_type, status, is_published)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 0)
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, grade_band, exam_type, max_score, status, is_published)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0)
     `);
 
-    const result = stmt.run(name, Number(term), Number(academic_year_id), start_date || null, end_date || null, grade_band, exam_type);
+    const result = stmt.run(name, Number(term), Number(academic_year_id), start_date || null, end_date || null, grade_band, exam_type, targetMax);
     const examId = Number(result.lastInsertRowid);
 
-    logAudit(user.id, user.username, 'EXAMINATION_CREATE', 'examinations', examId, { name, term, academic_year_id, grade_band, exam_type }, req.ip);
+    logAudit(user.id, user.username, 'EXAMINATION_CREATE', 'examinations', examId, { name, term, academic_year_id, grade_band, exam_type, maxScore: targetMax }, req.ip);
 
-    res.status(201).json({ success: true, id: examId });
+    res.status(201).json({ success: true, id: examId, examinationId: examId, maxScore: targetMax });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -212,7 +220,28 @@ router.put('/examinations/:id', requireAuth, (req, res) => {
       return;
     }
 
-    const { name, start_date, end_date, grade_band, exam_type, status } = req.body;
+    const { name, start_date, end_date, grade_band, exam_type, status, max_score, maxScore } = req.body;
+    let targetMax = exam.max_score || 100.0;
+    if (max_score !== undefined || maxScore !== undefined) {
+      const candidateMax = max_score !== undefined ? Number(max_score) : Number(maxScore);
+      if (isNaN(candidateMax) || candidateMax <= 0 || candidateMax > 1000) {
+        res.status(400).json({ error: 'Invalid max_score: must be a positive number in range (0, 1000].' });
+        return;
+      }
+      const submittedSheets = db.prepare(`
+        SELECT COUNT(*) as count FROM marks_sheets
+        WHERE examination_id = ? AND status IN ('submitted', 'reviewed', 'approved', 'published')
+      `).get(id) as { count: number };
+      if (submittedSheets && submittedSheets.count > 0 && candidateMax !== Number(exam.max_score)) {
+        res.status(409).json({
+          error: 'Cannot modify maximum score after marks sheets have been submitted or published.',
+          code: 'MARKS_ALREADY_SUBMITTED'
+        });
+        return;
+      }
+      targetMax = candidateMax;
+    }
+
     db.prepare(`
       UPDATE examinations
       SET name = COALESCE(?, name),
@@ -220,9 +249,10 @@ router.put('/examinations/:id', requireAuth, (req, res) => {
           end_date = COALESCE(?, end_date),
           grade_band = COALESCE(?, grade_band),
           exam_type = COALESCE(?, exam_type),
-          status = COALESCE(?, status)
+          status = COALESCE(?, status),
+          max_score = ?
       WHERE id = ?
-    `).run(name || null, start_date || null, end_date || null, grade_band || null, exam_type || null, status || null, id);
+    `).run(name || null, start_date || null, end_date || null, grade_band || null, exam_type || null, status || null, targetMax, id);
 
     logAudit(user.id, user.username, 'EXAMINATION_UPDATE', 'examinations', id, req.body, req.ip);
 

@@ -83,6 +83,11 @@ describe('PR-003: Record-Level Permissions & Scoped Authorization Tests', () => 
       INSERT OR REPLACE INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at)
       VALUES (?, ?, ?, 1, 'confirmed', 'core_compulsory', ?, datetime('now'))
     `).run(fixtures.studentB.id, fixtures.testSubjectMath.id, fixtures.testClassB.id, fixtures.adminUser.id);
+
+    db.prepare(`
+      INSERT OR REPLACE INTO academic_staff_authorizations (user_id, academic_year_id, auth_role, grade_band, is_active, granted_by_user_id)
+      VALUES (?, 1, 'principal', 'all', 1, ?)
+    `).run(fixtures.adminUser.id, fixtures.adminUser.id);
   });
 
   after(async () => {
@@ -400,13 +405,34 @@ describe('PR-003: Record-Level Permissions & Scoped Authorization Tests', () => 
       assert.equal(res.status, 403);
     });
 
-    it('administrator can view report card for any student (200)', async () => {
+    it('administrator with academic leadership authorization (Principal) can view report card for any student (200)', async () => {
       const res = await server.request(`/api/marks/student-report/${fixtures.studentB.id}/1`, {
         headers: { Authorization: `Bearer ${adminToken}` }
       });
       assert.equal(res.status, 200);
       const data = await res.json();
       assert.equal(data.student.id, fixtures.studentB.id);
+    });
+
+    it('FIX B: plain administrator without academic leadership appointment is rejected (403)', async () => {
+      const hash = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(fixtures.adminUser.id) as any;
+      db.prepare(`
+        INSERT INTO users (username, email, password_hash, full_name, role, is_active)
+        VALUES ('plain_it_admin', 'it_admin@test.local', ?, 'Plain IT Admin', 'admin', 1)
+      `).run(hash.password_hash);
+      const plainAdminLogin = await server.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'plain_it_admin', password: fixtures.adminUser.password })
+      });
+      const plainAdminToken = (await plainAdminLogin.json()).token;
+
+      const res = await server.request(`/api/marks/student-report/${fixtures.studentB.id}/1`, {
+        headers: { Authorization: `Bearer ${plainAdminToken}` }
+      });
+      assert.equal(res.status, 403);
+      const data = await res.json();
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
     });
   });
 });

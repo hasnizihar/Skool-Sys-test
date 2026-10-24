@@ -211,4 +211,133 @@ describe('G5F-01: Demo Seeding Data-Loss Protection & Safety Verification', () =
     const fkPragma = (db.prepare('PRAGMA foreign_keys;').get() as any)?.foreign_keys;
     assert.strictEqual(fkPragma, 1, 'PRAGMA foreign_keys must remain active after seed.');
   });
+
+  it('10. FIX A: Refuses to overwrite an unmarked database containing ONLY audit records (audit_logs)', () => {
+    process.env.CONFIRM_DISPOSABLE_SEED = '1';
+    process.env.ALLOW_DISPOSABLE_SEED = '1';
+
+    const auditOnlyDbPath = path.join(os.tmpdir(), `skoolsys_audit_only_${Date.now()}.db`);
+    try {
+      const testDb = switchDatabase(auditOnlyDbPath);
+      testDb.exec(`
+        CREATE TABLE audit_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
+          username TEXT,
+          action TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT,
+          details TEXT,
+          ip_address TEXT,
+          timestamp TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO audit_logs (username, action, entity_type, entity_id, details)
+        VALUES ('kcc_principal', 'CRITICAL_SECURITY_EVENT', 'system', 'sys_1', 'Valuable security audit entry');
+      `);
+
+      assert.throws(
+        () => validateSeedSafety(auditOnlyDbPath),
+        (err: any) =>
+          err.message.includes('[SEED BLOCKED]') &&
+          err.message.includes('audit_logs') &&
+          err.message.includes('lacks the verified disposable fixture marker')
+      );
+
+      // Verify audit record was untouched
+      const audit = testDb.prepare("SELECT details FROM audit_logs WHERE action = 'CRITICAL_SECURITY_EVENT'").get() as any;
+      assert.strictEqual(audit.details, 'Valuable security audit entry');
+    } finally {
+      closeDatabase();
+      try {
+        if (fs.existsSync(auditOnlyDbPath)) fs.unlinkSync(auditOnlyDbPath);
+      } catch {}
+      switchDatabase(tempDbPath);
+    }
+  });
+
+  it('11. FIX A: Refuses to overwrite an unmarked database containing ONLY examination records (examinations)', () => {
+    process.env.CONFIRM_DISPOSABLE_SEED = '1';
+    process.env.ALLOW_DISPOSABLE_SEED = '1';
+
+    const examOnlyDbPath = path.join(os.tmpdir(), `skoolsys_exam_only_${Date.now()}.db`);
+    try {
+      const testDb = switchDatabase(examOnlyDbPath);
+      testDb.exec(`
+        CREATE TABLE examinations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          term INTEGER NOT NULL,
+          start_date TEXT,
+          end_date TEXT,
+          max_score REAL DEFAULT 100,
+          is_published INTEGER DEFAULT 0
+        );
+        INSERT INTO examinations (name, term, start_date, end_date, max_score)
+        VALUES ('KCC Real Mid-Year Examination 2026', 2, '2026-06-01', '2026-06-15', 200);
+      `);
+
+      assert.throws(
+        () => validateSeedSafety(examOnlyDbPath),
+        (err: any) =>
+          err.message.includes('[SEED BLOCKED]') &&
+          err.message.includes('examinations') &&
+          err.message.includes('lacks the verified disposable fixture marker')
+      );
+
+      // Verify examination record was untouched
+      const exam = testDb.prepare("SELECT name, max_score FROM examinations WHERE term = 2").get() as any;
+      assert.strictEqual(exam.name, 'KCC Real Mid-Year Examination 2026');
+      assert.strictEqual(exam.max_score, 200);
+    } finally {
+      closeDatabase();
+      try {
+        if (fs.existsSync(examOnlyDbPath)) fs.unlinkSync(examOnlyDbPath);
+      } catch {}
+      switchDatabase(tempDbPath);
+    }
+  });
+
+  it('12. FIX A: Refuses to overwrite an unmarked database containing ONLY marks data (marks)', () => {
+    process.env.CONFIRM_DISPOSABLE_SEED = '1';
+    process.env.ALLOW_DISPOSABLE_SEED = '1';
+
+    const marksOnlyDbPath = path.join(os.tmpdir(), `skoolsys_marks_only_${Date.now()}.db`);
+    try {
+      const testDb = switchDatabase(marksOnlyDbPath);
+      testDb.exec(`
+        CREATE TABLE marks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          examination_id INTEGER NOT NULL,
+          class_id INTEGER NOT NULL,
+          subject_id INTEGER NOT NULL,
+          student_id INTEGER NOT NULL,
+          score REAL,
+          max_score REAL DEFAULT 100,
+          grade_letter TEXT,
+          status TEXT DEFAULT 'submitted'
+        );
+        INSERT INTO marks (examination_id, class_id, subject_id, student_id, score, max_score, grade_letter)
+        VALUES (101, 201, 301, 401, 89.5, 100, 'A');
+      `);
+
+      assert.throws(
+        () => validateSeedSafety(marksOnlyDbPath),
+        (err: any) =>
+          err.message.includes('[SEED BLOCKED]') &&
+          err.message.includes('marks') &&
+          err.message.includes('lacks the verified disposable fixture marker')
+      );
+
+      // Verify mark was untouched
+      const mark = testDb.prepare("SELECT score, grade_letter FROM marks WHERE student_id = 401").get() as any;
+      assert.strictEqual(mark.score, 89.5);
+      assert.strictEqual(mark.grade_letter, 'A');
+    } finally {
+      closeDatabase();
+      try {
+        if (fs.existsSync(marksOnlyDbPath)) fs.unlinkSync(marksOnlyDbPath);
+      } catch {}
+      switchDatabase(tempDbPath);
+    }
+  });
 });

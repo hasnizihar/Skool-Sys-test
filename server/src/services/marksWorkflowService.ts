@@ -196,10 +196,20 @@ export function ensureMarksSheet(examinationId: number, classId: number, subject
   // Truthful teacher attribution: Keep NULL if unassigned; NEVER fabricate user.id
   const teacherId = assignment?.teacher_id || null;
 
+  // Resolve authoritative max score from schedule or examination
+  const schedRow = db.prepare(`
+    SELECT max_score FROM examination_schedules
+    WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+  `).get(examinationId, classId, subjectId) as any;
+  const examRow = db.prepare('SELECT max_score FROM examinations WHERE id = ?').get(examinationId) as any;
+  const initialMaxScore = schedRow?.max_score
+    ? Number(schedRow.max_score)
+    : (examRow?.max_score ? Number(examRow.max_score) : 100.0);
+
   const res = db.prepare(`
-    INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, 'draft', datetime('now'), datetime('now'))
-  `).run(examinationId, classId, subjectId, yearId, teacherId);
+    INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, max_score, revision, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 1, 'draft', datetime('now'), datetime('now'))
+  `).run(examinationId, classId, subjectId, yearId, teacherId, initialMaxScore);
 
   return db.prepare('SELECT * FROM marks_sheets WHERE id = ?').get(Number(res.lastInsertRowid));
 }
@@ -310,6 +320,8 @@ export function getMarksSheetDetails(sheetId: number, user: AuthUser): any {
       academic_year_id: sheet.academic_year_id,
       teacher_id: sheet.teacher_id,
       teacher_name: sheet.teacher_name,
+      max_score: sheet.max_score ? Number(sheet.max_score) : 100.0,
+      maxScore: sheet.max_score ? Number(sheet.max_score) : 100.0,
       revision: sheet.revision,
       status: sheet.status,
       submission_notes: sheet.submission_notes,
@@ -424,6 +436,13 @@ export function saveDraftMarks(params: {
       remarks?: string;
     }> = [];
 
+    // Resolve authoritative max score for sheet: sheet -> schedule -> exam -> default 100.0
+    const schedRow = db.prepare('SELECT max_score FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(sheet.examination_id, sheet.class_id, sheet.subject_id) as any;
+    const examRow = db.prepare('SELECT max_score FROM examinations WHERE id = ?').get(sheet.examination_id) as any;
+    const authoritativeMaxScore = (sheet.max_score && Number(sheet.max_score) !== 100.0)
+      ? Number(sheet.max_score)
+      : (schedRow?.max_score ? Number(schedRow.max_score) : (examRow?.max_score ? Number(examRow.max_score) : 100.0));
+
     for (const m of marks) {
       const studentId = Number(m.studentId);
       if (!studentId || isNaN(studentId)) {
@@ -461,13 +480,8 @@ export function saveDraftMarks(params: {
         throw err;
       }
 
-      // Canonical score and assessment_status validation
-      const maxScore = m.maxScore !== undefined && m.maxScore !== null ? Number(m.maxScore) : 100.0;
-      if (isNaN(maxScore) || maxScore <= 0.0 || maxScore > 1000.0) {
-        const err = new Error(`Invalid maxScore ${m.maxScore} for student ${studentId}: must be in range (0, 1000].`);
-        (err as any).statusCode = 400;
-        throw err;
-      }
+      // Canonical score and assessment_status validation against authoritativeMaxScore
+      const maxScore = authoritativeMaxScore;
 
       let assessmentStatus = m.assessmentStatus || 'PRESENT';
       let score: number | null = null;
@@ -514,14 +528,15 @@ export function saveDraftMarks(params: {
       });
     }
 
-    // 6. Conditional CAS UPDATE on marks_sheets to increment revision
+    // 6. Conditional CAS UPDATE on marks_sheets to increment revision and persist authoritative max_score
     const newRevision = sheet.revision + 1;
     const sheetUpdateRes = db.prepare(`
       UPDATE marks_sheets SET
         revision = ?,
+        max_score = ?,
         updated_at = datetime('now')
       WHERE id = ? AND revision = ?
-    `).run(newRevision, sheetId, baseRevision);
+    `).run(newRevision, authoritativeMaxScore, sheetId, baseRevision);
 
     if (sheetUpdateRes.changes !== 1) {
       const err = new Error('Concurrent modification detected during sheet revision update.');
@@ -1117,7 +1132,7 @@ export function saveOrSubmitLegacyMarksSheet(params: {
 
     // 2. Class and Exam verification
     const classRow = db.prepare('SELECT id, academic_year_id FROM classes WHERE id = ?').get(classId) as any;
-    const examRow = db.prepare('SELECT id, academic_year_id, is_published, status FROM examinations WHERE id = ?').get(examId) as any;
+    const examRow = db.prepare('SELECT id, academic_year_id, max_score, is_published, status FROM examinations WHERE id = ?').get(examId) as any;
 
     if (!classRow || !examRow) {
       const err = new Error('Class or Examination not found.');
@@ -1179,11 +1194,20 @@ export function saveOrSubmitLegacyMarksSheet(params: {
     let newRevision: number;
 
     if (!sheet) {
+      // Resolve authoritative max score from schedule or examination
+      const schedRow = db.prepare(`
+        SELECT max_score FROM examination_schedules
+        WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+      `).get(examId, classId, subjectId) as any;
+      const initialMaxScore = schedRow?.max_score
+        ? Number(schedRow.max_score)
+        : (examRow?.max_score ? Number(examRow.max_score) : 100.0);
+
       // Create new sheet container INSIDE this transaction
       const insertRes = db.prepare(`
-        INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, revision, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, 'draft', datetime('now'), datetime('now'))
-      `).run(examId, classId, subjectId, yearId, user.id);
+        INSERT INTO marks_sheets (examination_id, class_id, subject_id, academic_year_id, teacher_id, max_score, revision, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 'draft', datetime('now'), datetime('now'))
+      `).run(examId, classId, subjectId, yearId, user.id, initialMaxScore);
 
       sheetId = Number(insertRes.lastInsertRowid);
       effectiveBaseRev = 1;
@@ -1217,6 +1241,12 @@ export function saveOrSubmitLegacyMarksSheet(params: {
 
       newRevision = sheet.revision + 1;
     }
+
+    // Resolve authoritative max score for sheet: sheet -> schedule -> exam -> default 100.0
+    const schedRow = db.prepare('SELECT max_score FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(examId, classId, subjectId) as any;
+    const authoritativeMaxScore = (sheet?.max_score && Number(sheet.max_score) !== 100.0)
+      ? Number(sheet.max_score)
+      : (schedRow?.max_score ? Number(schedRow.max_score) : (examRow?.max_score ? Number(examRow.max_score) : 100.0));
 
     // 6. Pre-validate student membership, positive subject eligibility, remarks type, and scores
     const validatedMarks: Array<{
@@ -1269,7 +1299,8 @@ export function saveOrSubmitLegacyMarksSheet(params: {
       // Score precision, bounds, and absent/exempt validation
       let assessmentStatus = m.assessmentStatus || 'PRESENT';
       let score: number | null = null;
-      const maxScore = m.maxScore !== undefined && m.maxScore !== null ? Number(m.maxScore) : 100.0;
+      // Teacher input m.maxScore cannot override authoritativeMaxScore
+      const maxScore = authoritativeMaxScore;
 
       if (['ABSENT', 'MEDICAL', 'EXEMPT', 'NOT_ASSESSED'].includes(assessmentStatus)) {
         if (m.score !== null && m.score !== undefined && m.score !== ('' as any)) {
@@ -1377,12 +1408,13 @@ export function saveOrSubmitLegacyMarksSheet(params: {
     // 8. Conditional CAS UPDATE on marks_sheets
     const sheetUpdateRes = db.prepare(`
       UPDATE marks_sheets SET
+        max_score = ?,
         revision = ?,
         status = ?,
         submitted_at = ${targetStatus === 'submitted' ? "datetime('now')" : 'submitted_at'},
         updated_at = datetime('now')
       WHERE id = ? AND revision = ?
-    `).run(newRevision, targetStatus, sheetId, effectiveBaseRev);
+    `).run(authoritativeMaxScore, newRevision, targetStatus, sheetId, effectiveBaseRev);
 
     if (sheetUpdateRes.changes !== 1) {
       const err = new Error('Concurrent modification detected during sheet revision update.');

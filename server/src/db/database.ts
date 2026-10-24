@@ -105,22 +105,33 @@ export function hasDisposableMarker(targetDb: DatabaseSync = db): boolean {
   }
 }
 
-export function isDatabasePopulated(targetDb: DatabaseSync = db): boolean {
+export function getPopulatedApplicationTables(targetDb: DatabaseSync = db): string[] {
   try {
-    const userTable = targetDb.prepare("SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='users'").get() as any;
-    if (userTable?.count > 0) {
-      const userCount = (targetDb.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0;
-      if (userCount > 0) return true;
+    const tables = targetDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_skoolsys_disposable_marker'"
+    ).all() as Array<{ name: string }>;
+
+    const populated: string[] = [];
+    for (const table of tables) {
+      if (!/^[a-zA-Z0-9_]+$/.test(table.name)) continue;
+      try {
+        const row = targetDb.prepare(`SELECT 1 FROM "${table.name}" LIMIT 1`).get();
+        if (row) {
+          populated.push(table.name);
+        }
+      } catch {
+        // Table may be inaccessible or virtual, continue
+      }
     }
-    const studentTable = targetDb.prepare("SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='students'").get() as any;
-    if (studentTable?.count > 0) {
-      const studentCount = (targetDb.prepare('SELECT COUNT(*) as count FROM students').get() as any)?.count || 0;
-      if (studentCount > 0) return true;
-    }
-    return false;
+    return populated;
   } catch {
-    return false;
+    return [];
   }
+}
+
+export function isDatabasePopulated(targetDb: DatabaseSync = db): boolean {
+  const populated = getPopulatedApplicationTables(targetDb);
+  return populated.length > 0;
 }
 
 export function initDatabase() {
@@ -238,6 +249,7 @@ export function initDatabase() {
       academic_year_id INTEGER REFERENCES academic_years(id),
       start_date TEXT,
       end_date TEXT,
+      max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0),
       is_published INTEGER DEFAULT 0
     );
 
@@ -275,6 +287,7 @@ export function initDatabase() {
       examination_id INTEGER NOT NULL REFERENCES examinations(id) ON DELETE CASCADE,
       class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
       subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+      max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0),
       is_required INTEGER NOT NULL DEFAULT 1 CHECK(is_required IN (0, 1)),
       status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('draft', 'approved')),
       approved_by_user_id INTEGER REFERENCES users(id),
@@ -336,6 +349,19 @@ export function initDatabase() {
   } catch {}
   try {
     db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_at TEXT;');
+  } catch {}
+  try {
+    db.exec('ALTER TABLE examination_schedules ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
+  } catch {}
+
+  // Safe column migrations for examinations in existing databases
+  try {
+    db.exec('ALTER TABLE examinations ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
+  } catch {}
+
+  // Safe column migrations for marks_sheets in existing databases
+  try {
+    db.exec('ALTER TABLE marks_sheets ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
   } catch {}
 
   // Safe migration 004: Attendance integrity, revisions & receipts

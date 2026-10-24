@@ -79,9 +79,18 @@ router.get('/sheet', requireAuth, (req, res) => {
       return;
     }
   } else {
-    // PUBLISHED: Standard published access (admin, assigned teacher, or scoped leadership)
-    if (req.user!.role !== 'admin' && !canViewMarksSheet(req.user!, cId, sId) && !isLeadership) {
-      res.status(403).json({ error: 'Access denied. You are not assigned to view marks for this class or subject.' });
+    // PUBLISHED: Plain administrator role bypass REMOVED (FIX B).
+    // Access strictly requires active teaching assignment (subject or class teacher) OR in-scope academic leadership.
+    const isClassTeacher = db.prepare(`
+      SELECT id FROM teacher_assignments
+      WHERE class_id = ? AND academic_year_id = ? AND teacher_id = ? AND assignment_type = 'class_teacher'
+    `).get(cId, yearId, req.user!.id);
+
+    if (!activeAssignment && !isClassTeacher && !isLeadership) {
+      res.status(403).json({
+        error: 'Access denied: You are not authorized to view marks for this class or subject.',
+        code: 'INSUFFICIENT_AUTHORIZATION'
+      });
       return;
     }
   }
@@ -106,18 +115,6 @@ router.get('/sheet', requireAuth, (req, res) => {
     ORDER BY e.roll_number ASC, s.admission_no ASC
   `).all(eId, sId, cId, cId) as any[];
 
-  // Enhance roster with student-specific subject eligibility tags
-  const roster = rawRoster.map(r => {
-    const elig = isStudentEligibleForSubject(r.student_id, sId, yearId);
-    return {
-      ...r,
-      is_eligible_for_draft: elig.isEligibleForDraft,
-      is_officially_confirmed: elig.isOfficiallyConfirmed,
-      enrollment_status: elig.status || 'not_enrolled',
-      enrollment_category: elig.category || null
-    };
-  });
-
   // G6-03: Resolve authoritative assessment policy and maximum score
   let policy: any = null;
   if (exam.assessment_policy_id) {
@@ -134,11 +131,28 @@ router.get('/sheet', requireAuth, (req, res) => {
   }
 
   // Authoritative max score:
-  // 1. Existing marks on this sheet
+  // 1. Existing marks_sheets container or existing marks on this sheet
+  let authoritativeMaxScore: number | null = null;
+  if (sheet?.max_score && Number(sheet.max_score) !== 100.0) {
+    authoritativeMaxScore = Number(sheet.max_score);
+  }
   const existingMax = rawRoster.find(r => r.max_score !== null && r.max_score !== undefined)?.max_score;
-  let authoritativeMaxScore = existingMax !== undefined && existingMax !== null ? Number(existingMax) : null;
+  if (!authoritativeMaxScore && existingMax !== undefined && existingMax !== null) {
+    authoritativeMaxScore = Number(existingMax);
+  }
 
-  // 2. Policy-defined max score (from subject_weights_json or grading_scale_json)
+  // 2. Schedule-defined max score for this class and subject
+  if (!authoritativeMaxScore) {
+    const sched = db.prepare(`
+      SELECT max_score FROM examination_schedules
+      WHERE examination_id = ? AND class_id = ? AND subject_id = ?
+    `).get(eId, cId, sId) as any;
+    if (sched?.max_score) {
+      authoritativeMaxScore = Number(sched.max_score);
+    }
+  }
+
+  // 3. Policy-defined max score (from subject_weights_json or grading_scale_json)
   if (!authoritativeMaxScore && policy) {
     try {
       if (policy.subject_weights_json) {
@@ -157,10 +171,23 @@ router.get('/sheet', requireAuth, (req, res) => {
     } catch {}
   }
 
-  // 3. Fallback to exam max_score if present, otherwise 100.0
+  // 4. Examination-level configured max_score, otherwise sheet max_score, otherwise 100.0
   if (!authoritativeMaxScore) {
-    authoritativeMaxScore = exam.max_score ? Number(exam.max_score) : 100.0;
+    authoritativeMaxScore = exam.max_score ? Number(exam.max_score) : (sheet?.max_score ? Number(sheet.max_score) : 100.0);
   }
+
+  // Enhance roster with student-specific subject eligibility tags and authoritative max_score
+  const roster = rawRoster.map(r => {
+    const elig = isStudentEligibleForSubject(r.student_id, sId, yearId);
+    return {
+      ...r,
+      max_score: r.max_score !== null && r.max_score !== undefined ? Number(r.max_score) : authoritativeMaxScore,
+      is_eligible_for_draft: elig.isEligibleForDraft,
+      is_officially_confirmed: elig.isOfficiallyConfirmed,
+      enrollment_status: elig.status || 'not_enrolled',
+      enrollment_category: elig.category || null
+    };
+  });
 
   // Statistics (normalized against authoritativeMaxScore)
   let validScores: number[] = [];
@@ -262,7 +289,7 @@ router.post('/sheet', requireAuth, (req, res) => {
       return {
         studentId: Number(m.student_id ?? m.studentId),
         score,
-        maxScore: m.max_score ? Number(m.max_score) : (m.maxScore ? Number(m.maxScore) : (req.body.maxScore ? Number(req.body.maxScore) : 100.0)),
+        maxScore: m.maxScore !== undefined && m.maxScore !== null ? Number(m.maxScore) : 100.0,
         assessmentStatus: assessmentStatus as 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED',
         remarks: m.remarks
       };
@@ -353,8 +380,9 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       return;
     }
   } else {
-    // For published exams, require admin, in-scope academic leadership,
-    // or assigned class/subject teacher for this class in this academic year
+    // For published exams: Plain administrator role bypass REMOVED (FIX B).
+    // Access strictly requires active in-scope academic leadership,
+    // OR assigned class/subject teacher for this class in this academic year.
     const isLeadership = hasAcademicStaffRole(
       user.id,
       ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'],
@@ -367,9 +395,9 @@ router.get('/student-report/:studentId/:examId', requireAuth, (req, res) => {
       WHERE teacher_id = ? AND class_id = ? AND academic_year_id = ?
     `).get(user.id, student.class_id, exam.academic_year_id);
 
-    if (user.role !== 'admin' && !isLeadership && !isAssignedTeacher) {
+    if (!isLeadership && !isAssignedTeacher) {
       res.status(403).json({
-        error: 'Access denied. You are not assigned to this student\'s class for this academic year.',
+        error: 'Access denied: You are not authorized to view this student report card. Access requires in-scope academic leadership or an assigned teaching role for this class.',
         code: 'INSUFFICIENT_AUTHORIZATION'
       });
       return;
@@ -902,7 +930,7 @@ router.get('/examinations/:id/schedules', requireAuth, (req, res) => {
 router.post('/examinations/:id/schedules', requireAuth, (req, res) => {
   try {
     const examinationId = Number(req.params.id);
-    const { classId, subjectId, isRequired = true } = req.body;
+    const { classId, subjectId, isRequired = true, max_score, maxScore } = req.body || {};
     const user = req.user!;
 
     if (!classId || !subjectId) {
@@ -921,6 +949,16 @@ router.post('/examinations/:id/schedules', requireAuth, (req, res) => {
         error: 'Cannot modify examination schedule after examination has been published.',
         code: 'EXAMINATION_LOCKED'
       });
+      return;
+    }
+
+    const targetMax = max_score !== undefined
+      ? Number(max_score)
+      : (maxScore !== undefined
+        ? Number(maxScore)
+        : (exam.max_score ? Number(exam.max_score) : 100.0));
+    if (isNaN(targetMax) || targetMax <= 0 || targetMax > 1000) {
+      res.status(400).json({ error: 'Invalid max_score: must be a positive number in range (0, 1000].', code: 'INVALID_MAX_SCORE' });
       return;
     }
 
@@ -961,22 +999,35 @@ router.post('/examinations/:id/schedules', requireAuth, (req, res) => {
       return;
     }
 
+    const existingSubmitted = db.prepare(`
+      SELECT COUNT(*) as count FROM marks_sheets
+      WHERE examination_id = ? AND class_id = ? AND subject_id = ? AND status IN ('submitted', 'reviewed', 'approved', 'published')
+    `).get(examinationId, Number(classId), Number(subjectId)) as { count: number };
+    if (existingSubmitted && existingSubmitted.count > 0) {
+      res.status(409).json({
+        error: 'Cannot modify maximum score for a schedule item after marks sheets have been submitted or published.',
+        code: 'MARKS_ALREADY_SUBMITTED'
+      });
+      return;
+    }
+
     const stmt = db.prepare(`
-      INSERT INTO examination_schedules (examination_id, class_id, subject_id, is_required, status, created_at)
-      VALUES (?, ?, ?, ?, 'draft', datetime('now'))
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, max_score, is_required, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 'draft', datetime('now'))
       ON CONFLICT(examination_id, class_id, subject_id) DO UPDATE SET
+        max_score = excluded.max_score,
         is_required = excluded.is_required,
         status = 'draft',
         approved_by_user_id = NULL,
         approved_at = NULL
     `);
 
-    const result = stmt.run(examinationId, Number(classId), Number(subjectId), isRequired ? 1 : 0);
+    const result = stmt.run(examinationId, Number(classId), Number(subjectId), targetMax, isRequired ? 1 : 0);
     const scheduleId = result.lastInsertRowid ? Number(result.lastInsertRowid) : (db.prepare('SELECT id FROM examination_schedules WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(examinationId, Number(classId), Number(subjectId)) as any)?.id;
 
-    logAudit(user.id, user.username, 'EXAMINATION_SCHEDULE_CREATE', 'examination_schedules', scheduleId, { examinationId, classId, subjectId, isRequired }, req.ip);
+    logAudit(user.id, user.username, 'EXAMINATION_SCHEDULE_CREATE', 'examination_schedules', scheduleId, { examinationId, classId, subjectId, isRequired, maxScore: targetMax }, req.ip);
 
-    res.status(201).json({ success: true, scheduleId, status: 'draft' });
+    res.status(201).json({ success: true, scheduleId, status: 'draft', maxScore: targetMax });
   } catch (err: any) {
     const status = err.statusCode || 400;
     res.status(status).json({ error: err.message, code: err.code });

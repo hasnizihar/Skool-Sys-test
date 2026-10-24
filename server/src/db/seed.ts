@@ -5,7 +5,8 @@ import {
   getActiveDbPath,
   hasDisposableMarker,
   stampDisposableMarker,
-  isDatabasePopulated
+  isDatabasePopulated,
+  getPopulatedApplicationTables
 } from './database.js';
 import bcrypt from 'bcryptjs';
 import path from 'node:path';
@@ -78,8 +79,9 @@ export function validateSeedSafety(targetDbPath: string = DB_PATH): void {
   if (isDatabasePopulated(db)) {
     const hasMarker = hasDisposableMarker(db);
     if (!hasMarker) {
+      const populatedTables = getPopulatedApplicationTables(db);
       throw new Error(
-        `[SEED BLOCKED] Target database '${targetDbPath}' is already populated with data but lacks the verified disposable fixture marker (_skoolsys_disposable_marker). Destroying or overwriting an arbitrary populated database without positive disposable fixture identity is strictly prohibited, regardless of folder name (${path.basename(path.dirname(targetDbPath))}) or confirmation flags.`
+        `[SEED BLOCKED] Target database '${targetDbPath}' is already populated with data in application tables (${populatedTables.join(', ')}) but lacks the verified disposable fixture marker (_skoolsys_disposable_marker). Destroying or overwriting an arbitrary populated database without positive disposable fixture identity is strictly prohibited, regardless of folder name (${path.basename(path.dirname(targetDbPath))}) or confirmation flags.`
       );
     }
   }

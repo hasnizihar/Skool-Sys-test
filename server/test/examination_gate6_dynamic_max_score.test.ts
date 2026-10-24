@@ -16,6 +16,8 @@ describe('G6-03: Dynamic Maximum Marks & Grade Display Test Suite (50, 100, 200)
   let yearId: number;
   let teacherId: number;
   let teacherToken: string;
+  let principalId: number;
+  let principalToken: string;
   let class7AId: number;
   let subjectMathId: number;
   let student1Id: number;
@@ -52,13 +54,24 @@ describe('G6-03: Dynamic Maximum Marks & Grade Display Test Suite (50, 100, 200)
     `).run();
     yearId = Number(yr.lastInsertRowid);
 
-    // 3. Teacher User
+    // 3. Teacher User & Principal User
     const t = db.prepare(`
       INSERT INTO users (username, email, password_hash, role, full_name, is_active, token_version)
       VALUES ('teacher_g6', 'teacher_g6@kcc.lk', 'hashed', 'subject_teacher', 'Mr. G6 Test Teacher', 1, 1)
     `).run();
     teacherId = Number(t.lastInsertRowid);
     teacherToken = jwt.sign({ id: teacherId, username: 'teacher_g6', role: 'subject_teacher', token_version: 1 }, process.env.JWT_SECRET || 'gate6_dynamic_max_score_secret_xyz');
+
+    const p = db.prepare(`
+      INSERT INTO users (username, email, password_hash, role, full_name, is_active, token_version)
+      VALUES ('principal_g6', 'principal_g6@kcc.lk', 'hashed', 'admin', 'Principal G6', 1, 1)
+    `).run();
+    principalId = Number(p.lastInsertRowid);
+    principalToken = jwt.sign({ id: principalId, username: 'principal_g6', role: 'admin', token_version: 1 }, process.env.JWT_SECRET || 'gate6_dynamic_max_score_secret_xyz');
+    db.prepare(`
+      INSERT INTO academic_staff_authorizations (user_id, academic_year_id, auth_role, grade_band, granted_by_user_id)
+      VALUES (?, ?, 'principal', 'all', ?)
+    `).run(principalId, yearId, principalId);
 
     // 4. Class & Subject
     const c = db.prepare(`
@@ -94,12 +107,16 @@ describe('G6-03: Dynamic Maximum Marks & Grade Display Test Suite (50, 100, 200)
       db.prepare("INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at) VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'))").run(stId, subjectMathId, class7AId, yearId, teacherId);
     }
 
-    // 7. Examination
+    // 7. Examination configured with authoritative max_score = 50
     const ex = db.prepare(`
-      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, status, is_published)
-      VALUES ('Term 1 Dynamic Max Exam', 1, ?, '2026-03-01', '2026-03-15', 'scheduled', 0)
+      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, max_score, status, is_published)
+      VALUES ('Term 1 Dynamic Max Exam', 1, ?, '2026-03-01', '2026-03-15', 50, 'scheduled', 0)
     `).run(yearId);
     examId = Number(ex.lastInsertRowid);
+    db.prepare(`
+      INSERT INTO examination_schedules (examination_id, class_id, subject_id, max_score, is_required)
+      VALUES (?, ?, ?, 50, 1)
+    `).run(examId, class7AId, subjectMathId);
   });
 
   after(async () => {
@@ -212,6 +229,11 @@ describe('G6-03: Dynamic Maximum Marks & Grade Display Test Suite (50, 100, 200)
   });
 
   describe('2. Assessment with Maximum Score = 200', () => {
+    before(() => {
+      db.prepare('UPDATE examination_schedules SET max_score = 200 WHERE examination_id = ? AND class_id = ? AND subject_id = ?').run(examId, class7AId, subjectMathId);
+      db.prepare('UPDATE marks_sheets SET max_score = 200 WHERE examination_id = ? AND class_id = ? AND subject_id = ?').run(examId, class7AId, subjectMathId);
+    });
+
     test('2a. Unit: calcGradeLetter normalizes against maxScore = 200 correctly', () => {
       // 150 / 200 = 75% -> 'A'
       assert.equal(calcGradeLetter(150, 'PRESENT', 200), 'A');
@@ -365,6 +387,231 @@ describe('G6-03: Dynamic Maximum Marks & Grade Display Test Suite (50, 100, 200)
       const res200 = calculateSubjectGrade(152, 200, 'PRESENT', customPolicy);
       assert.equal(res200.normalizedPercentage, 76);
       assert.equal(res200.gradeLetter, 'A');
+    });
+  });
+
+  describe('4. Authoritative Examination & Schedule Max Score Specification (FIX C Acceptance)', () => {
+    let newExam200Id: number;
+    let subjectScienceId: number;
+
+    before(() => {
+      const s = db.prepare(`
+        INSERT INTO subjects (code, name, category, grade_level)
+        VALUES ('SCI-7', 'Science', 'Core', '7')
+      `).run();
+      subjectScienceId = Number(s.lastInsertRowid);
+      db.prepare('INSERT INTO class_subjects (class_id, subject_id) VALUES (?, ?)').run(class7AId, subjectScienceId);
+      db.prepare(`
+        INSERT INTO teacher_assignments (teacher_id, class_id, subject_id, assignment_type, academic_year_id)
+        VALUES (?, ?, ?, 'subject_teacher', ?)
+      `).run(teacherId, class7AId, subjectScienceId, yearId);
+
+      for (const stId of [student1Id, student2Id, student3Id]) {
+        db.prepare("INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at) VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'))").run(stId, subjectScienceId, class7AId, yearId, teacherId);
+      }
+    });
+
+    test('4a. Authoritative creation: Create a brand new examination with maxScore: 200 via POST /api/academic/examinations', async () => {
+      const res = await testServer.request('/api/academic/examinations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principalToken}`
+        },
+        body: JSON.stringify({
+          name: 'Grade 7 Annual 200-Mark Examination',
+          academic_year_id: yearId,
+          term: 3,
+          grade_band: 'all',
+          maxScore: 200
+        })
+      });
+
+      assert.equal(res.status, 201);
+      const data = await res.json();
+      assert.equal(data.success, true);
+      assert.equal(data.maxScore, 200);
+      newExam200Id = Number(data.id || data.examinationId);
+
+      const examInDb = db.prepare('SELECT max_score FROM examinations WHERE id = ?').get(newExam200Id) as any;
+      assert.equal(examInDb.max_score, 200);
+    });
+
+    test('4b. Authoritative pre-load: Calling GET /api/marks/sheet before any marks exist returns maxScore: 200', async () => {
+      const res = await testServer.request(`/api/marks/sheet?examId=${newExam200Id}&classId=${class7AId}&subjectId=${subjectMathId}`, {
+        headers: {
+          Authorization: `Bearer ${teacherToken}`
+        }
+      });
+
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.maxScore, 200);
+      assert.equal(data.stats.maxPossibleScore, 200);
+      assert(Array.isArray(data.roster));
+      assert.equal(data.roster.length, 3);
+      // Roster reflects authoritative 200 max score before the first mark is entered
+      assert.equal(data.roster[0].max_score, 200);
+      assert.equal(data.roster[0].score, null);
+    });
+
+    test('4c. Teacher enters 150.5/200: Saves draft and persists correctly', async () => {
+      const res = await testServer.request('/api/marks/sheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          examId: newExam200Id,
+          classId: class7AId,
+          subjectId: subjectMathId,
+          status: 'draft',
+          marks: [
+            { studentId: student1Id, score: 150.5, assessmentStatus: 'PRESENT' },
+            { studentId: student2Id, score: 180.0, assessmentStatus: 'PRESENT' },
+            { studentId: student3Id, score: null, assessmentStatus: 'NOT_ASSESSED' }
+          ]
+        })
+      });
+
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.success, true);
+    });
+
+    test('4d. Reload sheet: 150.5/200 persists and normalizes correctly to grade A', async () => {
+      const res = await testServer.request(`/api/marks/sheet?examId=${newExam200Id}&classId=${class7AId}&subjectId=${subjectMathId}`, {
+        headers: {
+          Authorization: `Bearer ${teacherToken}`
+        }
+      });
+
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.maxScore, 200);
+      const student1Mark = data.roster.find((r: any) => r.student_id === student1Id);
+      assert(student1Mark);
+      assert.equal(student1Mark.score, 150.5);
+      assert.equal(student1Mark.max_score, 200);
+      // 150.5 / 200 = 75.25% -> A
+      assert.equal(student1Mark.grade_letter, 'A');
+    });
+
+    test('4e. Teacher cannot override authoritative max score via payload', async () => {
+      const sheet = db.prepare('SELECT id, revision FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(newExam200Id, class7AId, subjectMathId) as any;
+
+      // Teacher attempts to supply maxScore: 50 in payload to alter official max score
+      const res = await testServer.request('/api/marks/sheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          examId: newExam200Id,
+          classId: class7AId,
+          subjectId: subjectMathId,
+          status: 'draft',
+          baseRevision: sheet.revision,
+          marks: [
+            { studentId: student1Id, score: 150.5, maxScore: 50, assessmentStatus: 'PRESENT' }
+          ]
+        })
+      });
+
+      // Server uses authoritativeMaxScore (200), so 150.5 is still accepted (within [0, 200]), and sheet maxScore remains 200
+      assert.equal(res.status, 200);
+      const updatedSheet = db.prepare('SELECT max_score FROM marks_sheets WHERE id = ?').get(sheet.id) as any;
+      assert.equal(updatedSheet.max_score, 200);
+    });
+
+    test('4f. Schedule-level max score override: Science assessment scheduled at maxScore: 50', async () => {
+      const schedRes = await testServer.request(`/api/marks/examinations/${newExam200Id}/schedules`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principalToken}`
+        },
+        body: JSON.stringify({
+          classId: class7AId,
+          subjectId: subjectScienceId,
+          isRequired: true,
+          maxScore: 50
+        })
+      });
+
+      assert.equal(schedRes.status, 201);
+
+      // GET sheet for Science before marks entry: returns schedule-configured maxScore: 50
+      const getRes = await testServer.request(`/api/marks/sheet?examId=${newExam200Id}&classId=${class7AId}&subjectId=${subjectScienceId}`, {
+        headers: {
+          Authorization: `Bearer ${teacherToken}`
+        }
+      });
+
+      assert.equal(getRes.status, 200);
+      const sheetData = await getRes.json();
+      assert.equal(sheetData.maxScore, 50);
+      assert.equal(sheetData.stats.maxPossibleScore, 50);
+      assert.equal(sheetData.roster[0].max_score, 50);
+    });
+
+    test('4g. Conflict protection: Incompatible max_score modifications blocked after marks submission', async () => {
+      // 1. Submit the Math sheet
+      const sheet = db.prepare('SELECT id, revision FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?').get(newExam200Id, class7AId, subjectMathId) as any;
+      
+      // Ensure all 3 students are assessed before submission
+      await testServer.request('/api/marks/sheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          examId: newExam200Id,
+          classId: class7AId,
+          subjectId: subjectMathId,
+          status: 'draft',
+          baseRevision: sheet.revision,
+          marks: [
+            { studentId: student1Id, score: 150.5, assessmentStatus: 'PRESENT' },
+            { studentId: student2Id, score: 180.0, assessmentStatus: 'PRESENT' },
+            { studentId: student3Id, score: 70.0, assessmentStatus: 'PRESENT' }
+          ]
+        })
+      });
+
+      const refetched = db.prepare('SELECT id, revision FROM marks_sheets WHERE id = ?').get(sheet.id) as any;
+      const submitRes = await testServer.request(`/api/marks/sheets/${sheet.id}/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacherToken}`
+        },
+        body: JSON.stringify({
+          baseRevision: refetched.revision,
+          notes: 'Submitting all marks'
+        })
+      });
+
+      assert.equal(submitRes.status, 200);
+
+      // 2. Attempt to modify examination max_score after marks have been submitted -> 409
+      const putRes = await testServer.request(`/api/academic/examinations/${newExam200Id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principalToken}`
+        },
+        body: JSON.stringify({
+          max_score: 100
+        })
+      });
+
+      assert.equal(putRes.status, 409);
+      const putData = await putRes.json();
+      assert.equal(putData.code, 'MARKS_ALREADY_SUBMITTED');
     });
   });
 });

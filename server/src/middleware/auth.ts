@@ -149,7 +149,6 @@ export function canViewMarksSheet(user: AuthUser, classId: number, subjectId: nu
   const activeUser = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(user.id) as { id: number; is_active: number } | undefined;
   if (!activeUser || activeUser.is_active !== 1) return false;
 
-  if (user.role === 'admin') return true;
   const assignments = getUserAssignments(user.id);
   const cId = Number(classId);
   const sId = Number(subjectId);

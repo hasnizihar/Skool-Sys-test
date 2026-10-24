@@ -718,6 +718,70 @@ describe('PR-005 Gate 5: Examination Functional Stabilization Test Suite (G5F-02
       assert.ok([401, 403].includes(res.status), 'Deactivated user must be rejected with 401 or 403');
     });
 
+    test('3f. FIX B: GET /api/marks/sheet rejects plain administrator on published sheet without academic leadership (403)', async () => {
+      const res = await testServer.request(
+        `/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class7AId}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${adminToken}`
+          }
+        }
+      );
+
+      assert.equal(res.status, 403, 'Plain administrator must receive 403 Forbidden for marks sheet');
+      const data = await res.json();
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('3g. FIX B: GET /api/marks/student-report rejects plain administrator on published report without academic leadership (403)', async () => {
+      const res = await testServer.request(
+        `/api/marks/student-report/${student1Id}/${exam2026Term1Id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${adminToken}`
+          }
+        }
+      );
+
+      assert.equal(res.status, 403, 'Plain administrator must receive 403 Forbidden for published student report card');
+      const data = await res.json();
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('3h. FIX B: GET /api/marks/sheet and /student-report permit authorized Principal and assigned Teacher (200)', async () => {
+      // Principal with academic leadership appointment
+      const sheetRes = await testServer.request(
+        `/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class7AId}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${principalToken}`
+          }
+        }
+      );
+      assert.equal(sheetRes.status, 200, 'Authorized Principal must receive 200 OK for marks sheet');
+
+      const reportRes = await testServer.request(
+        `/api/marks/student-report/${student1Id}/${exam2026Term1Id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${principalToken}`
+          }
+        }
+      );
+      assert.equal(reportRes.status, 200, 'Authorized Principal must receive 200 OK for student report');
+
+      // Assigned subject teacher
+      const teacherSheetRes = await testServer.request(
+        `/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class7AId}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${teacherMathToken}`
+          }
+        }
+      );
+      assert.equal(teacherSheetRes.status, 200, 'Assigned teacher must receive 200 OK for marks sheet');
+    });
+
     test('4. Authorized correction request succeeds with matching expectedPreviousScore and status', async () => {
       const corrPayload = {
         markId: publishedMark1Id,

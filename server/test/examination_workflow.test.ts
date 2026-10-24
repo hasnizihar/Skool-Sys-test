@@ -1647,10 +1647,17 @@ describe('PR-005 Gate 3B: Marks Workflow, Revision Control, CAS Concurrency & Le
     });
     assert.equal(adminPubDetailsRes.status, 200);
 
+    // FIX B: Plain admin without academic leadership cannot read marks sheet solely by base role (403)
     const adminPubLegacyRes = await testServer.request(`/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class8AId}&subjectId=${subjectMathId}`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
-    assert.equal(adminPubLegacyRes.status, 200);
+    assert.equal(adminPubLegacyRes.status, 403);
+
+    // Scoped academic leadership (Section Head) is permitted -> 200 OK
+    const leaderPubLegacyRes = await testServer.request(`/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class8AId}&subjectId=${subjectMathId}`, {
+      headers: { Authorization: `Bearer ${sectionHeadNimaliToken}` }
+    });
+    assert.equal(leaderPubLegacyRes.status, 200);
   });
 
   // Test 24: EXAM-G3T-03 Revoked Teacher Read Access Loss (G3S-AUD-03)
