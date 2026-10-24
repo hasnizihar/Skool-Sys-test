@@ -71,6 +71,14 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   const [activeSheet, setActiveSheet] = useState<any | null>(null);
   const [marksMap, setMarksMap] = useState<Record<number, { score: string; status: string; remarks?: string }>>({});
   const [stats, setStats] = useState<any | null>(null);
+  const [sheetMaxScore, setSheetMaxScore] = useState<number>(100);
+  const [sheetPolicy, setSheetPolicy] = useState<{
+    id?: number;
+    policy_code?: string;
+    title?: string;
+    is_approved_by_school?: boolean;
+    grading_scale_json?: string;
+  } | null>(null);
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [submittingSheet, setSubmittingSheet] = useState(false);
@@ -300,6 +308,9 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       setRoster(res.roster || []);
       setStats(res.stats || null);
       setActiveSheet(res.sheet || null);
+      const authoritativeMax = res.maxScore ? Number(res.maxScore) : (res.roster?.[0]?.max_score ? Number(res.roster[0].max_score) : 100);
+      setSheetMaxScore(authoritativeMax);
+      setSheetPolicy(res.policy || null);
 
       const map: Record<number, { score: string; status: string; remarks?: string }> = {};
       (res.roster || []).forEach((r: any) => {
@@ -393,8 +404,19 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
 
   // Score & Status Handlers
   const handleScoreChange = (studentId: number, val: string) => {
-    let sanitized = val.replace(/[^0-9]/g, '');
-    if (Number(sanitized) > 100) sanitized = '100';
+    // Preserve fractional scores with up to 1 decimal place without stripping decimal points
+    let sanitized = val.replace(/[^0-9.]/g, '');
+    const parts = sanitized.split('.');
+    if (parts.length > 2) {
+      sanitized = parts[0] + '.' + parts.slice(1).join('');
+    }
+    if (parts.length === 2 && parts[1].length > 1) {
+      sanitized = parts[0] + '.' + parts[1].slice(0, 1);
+    }
+    const num = parseFloat(sanitized);
+    if (!isNaN(num) && num > sheetMaxScore) {
+      sanitized = String(sheetMaxScore);
+    }
 
     setMarksMap((prev) => ({
       ...prev,
@@ -416,17 +438,55 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
     }));
   };
 
-  const calcGrade = (scoreStr: string, status: string): { letter: string; cls: string } => {
-    if (status === 'ABSENT') return { letter: 'AB', cls: 'grade-f' };
-    if (status === 'MEDICAL') return { letter: 'MED', cls: 'grade-s' };
-    if (status === 'EXEMPT') return { letter: 'EX', cls: 'grade-s' };
-    if (!scoreStr) return { letter: '—', cls: '' };
-    const num = Number(scoreStr);
-    if (num >= 75) return { letter: 'A', cls: 'grade-a' };
-    if (num >= 65) return { letter: 'B', cls: 'grade-b' };
-    if (num >= 50) return { letter: 'C', cls: 'grade-c' };
-    if (num >= 35) return { letter: 'S', cls: 'grade-s' };
-    return { letter: 'F', cls: 'grade-f' };
+  const calcGrade = (scoreStr: string, status: string): { letter: string; cls: string; isProvisional: boolean; percentage: number | null } => {
+    if (status === 'ABSENT') return { letter: 'AB', cls: 'grade-f', isProvisional: false, percentage: 0 };
+    if (status === 'MEDICAL') return { letter: 'MED', cls: 'grade-s', isProvisional: false, percentage: null };
+    if (status === 'EXEMPT') return { letter: 'EX', cls: 'grade-s', isProvisional: false, percentage: null };
+    if (!scoreStr || isNaN(Number(scoreStr))) return { letter: '—', cls: '', isProvisional: false, percentage: null };
+
+    const score = Number(scoreStr);
+    const max = sheetMaxScore > 0 ? sheetMaxScore : 100.0;
+    const pct = Math.round(((score / max) * 100.0) * 10) / 10;
+
+    const isPolicyApproved = Boolean(sheetPolicy?.is_approved_by_school);
+    const isProvisional = !isPolicyApproved;
+
+    let grade = 'F';
+    let cls = 'grade-f';
+
+    if (sheetPolicy?.grading_scale_json) {
+      try {
+        const scale = typeof sheetPolicy.grading_scale_json === 'string'
+          ? JSON.parse(sheetPolicy.grading_scale_json)
+          : sheetPolicy.grading_scale_json;
+        if (Array.isArray(scale)) {
+          const sorted = [...scale].sort((a: any, b: any) => (b.minScore ?? b.minPercentage ?? 0) - (a.minScore ?? a.minPercentage ?? 0));
+          for (const item of sorted) {
+            const threshold = item.minPercentage !== undefined ? item.minPercentage : item.minScore;
+            if (pct >= threshold) {
+              grade = item.gradeLetter || item.grade;
+              break;
+            }
+          }
+        }
+      } catch {}
+    } else {
+      if (pct >= 75.0) grade = 'A';
+      else if (pct >= 65.0) grade = 'B';
+      else if (pct >= 50.0) grade = 'C';
+      else if (pct >= 35.0) grade = 'S';
+      else grade = 'F';
+    }
+
+    if (grade === 'A') cls = 'grade-a';
+    else if (grade === 'B') cls = 'grade-b';
+    else if (grade === 'C') cls = 'grade-c';
+    else if (grade === 'S') cls = 'grade-s';
+    else cls = 'grade-f';
+
+    const displayLetter = isProvisional ? `${grade} (Prov.)` : grade;
+
+    return { letter: displayLetter, cls, isProvisional, percentage: pct };
   };
 
   // Save Draft Marks (CAS Base Revision - G5F-02)
@@ -447,7 +507,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       return {
         studentId: r.student_id,
         score: hasNumericScore ? Number(entry.score) : null,
-        maxScore: 100,
+        maxScore: sheetMaxScore,
         assessmentStatus: assessmentStatus as 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED',
         remarks: entry.remarks || undefined
       };
@@ -524,8 +584,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
         student_id: r.student_id,
         studentId: r.student_id,
         score: hasNumericScore ? Number(entry.score) : null,
-        maxScore: 100,
-        max_score: 100,
+        maxScore: sheetMaxScore,
+        max_score: sheetMaxScore,
         assessmentStatus,
         is_absent: assessmentStatus === 'ABSENT' ? 1 : 0,
         is_exempt: assessmentStatus === 'EXEMPT' ? 1 : 0,
@@ -1635,7 +1695,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                   <GraduationCap size={24} />
                 </div>
                 <div>
-                  <div className="stat-val">{stats.maxScore} / 100</div>
+                  <div className="stat-val">{stats.maxScore} / {sheetMaxScore}</div>
                   <div className="stat-label">Highest Score</div>
                 </div>
               </div>
@@ -1662,9 +1722,9 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                     <th>Admission No</th>
                     <th>Student Full Name</th>
                     <th>Subject Category</th>
-                    <th style={{ width: 130 }}>Raw Mark (0–100)</th>
+                    <th style={{ width: 140 }}>Raw Mark (0–{sheetMaxScore})</th>
                     <th style={{ width: 200, textAlign: 'center' }}>Assessment Status</th>
-                    <th style={{ width: 70, textAlign: 'center' }}>Grade</th>
+                    <th style={{ width: 85, textAlign: 'center' }}>Grade</th>
                     <th style={{ textAlign: 'right', width: 140 }}>Report Card</th>
                   </tr>
                 </thead>
@@ -1718,7 +1778,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                                 fontSize: '0.95rem',
                                 padding: '0.45rem 0.6rem'
                               }}
-                              placeholder="0–100"
+                              placeholder={`0–${sheetMaxScore}`}
                               value={entry.score}
                               disabled={isSheetLocked || entry.status !== 'PRESENT'}
                               onChange={(e) => handleScoreChange(r.student_id, e.target.value)}
@@ -1765,7 +1825,10 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                             </div>
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <span className={`grade-badge ${grade.cls}`}>
+                            <span
+                              className={`grade-badge ${grade.cls}`}
+                              title={grade.percentage !== null ? `${grade.percentage}% normalized (${grade.isProvisional ? 'Provisional - Policy unapproved' : 'Official Policy'})` : undefined}
+                            >
                               {grade.letter}
                             </span>
                           </td>
@@ -2940,11 +3003,12 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
-                    <label className="form-label">Requested Score (0–100)</label>
+                    <label className="form-label">Requested Score (0–{authoritativeMark?.maxScore || sheetMaxScore || 100})</label>
                     <input
                       type="number"
+                      step="0.1"
                       min={0}
-                      max={100}
+                      max={authoritativeMark?.maxScore || sheetMaxScore || 100}
                       className="form-input"
                       placeholder="e.g. 78"
                       value={correctionRequestedScore}

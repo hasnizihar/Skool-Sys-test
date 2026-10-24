@@ -118,7 +118,51 @@ router.get('/sheet', requireAuth, (req, res) => {
     };
   });
 
-  // Statistics
+  // G6-03: Resolve authoritative assessment policy and maximum score
+  let policy: any = null;
+  if (exam.assessment_policy_id) {
+    policy = db.prepare('SELECT * FROM assessment_policy_profiles WHERE id = ?').get(exam.assessment_policy_id);
+  }
+  if (!policy) {
+    const gradeBand = Number(classInfo.grade) <= 9 ? 'junior_6_9' : (Number(classInfo.grade) <= 11 ? 'ol_10_11' : 'al_12_13');
+    policy = db.prepare(`
+      SELECT * FROM assessment_policy_profiles
+      WHERE academic_year_id = ? AND grade_band = ?
+      ORDER BY is_approved_by_school DESC, id DESC
+      LIMIT 1
+    `).get(yearId, gradeBand);
+  }
+
+  // Authoritative max score:
+  // 1. Existing marks on this sheet
+  const existingMax = rawRoster.find(r => r.max_score !== null && r.max_score !== undefined)?.max_score;
+  let authoritativeMaxScore = existingMax !== undefined && existingMax !== null ? Number(existingMax) : null;
+
+  // 2. Policy-defined max score (from subject_weights_json or grading_scale_json)
+  if (!authoritativeMaxScore && policy) {
+    try {
+      if (policy.subject_weights_json) {
+        const weights = typeof policy.subject_weights_json === 'string' ? JSON.parse(policy.subject_weights_json) : policy.subject_weights_json;
+        if (weights[subject.code]?.maxScore) authoritativeMaxScore = Number(weights[subject.code].maxScore);
+        else if (weights[subject.id]?.maxScore) authoritativeMaxScore = Number(weights[subject.id].maxScore);
+        else if (weights.maxScore) authoritativeMaxScore = Number(weights.maxScore);
+      }
+      if (!authoritativeMaxScore && policy.grading_scale_json) {
+        const scale = typeof policy.grading_scale_json === 'string' ? JSON.parse(policy.grading_scale_json) : policy.grading_scale_json;
+        if (Array.isArray(scale)) {
+          const maxInScale = Math.max(...scale.map((s: any) => s.maxScore || 0));
+          if (maxInScale > 0 && maxInScale !== 100) authoritativeMaxScore = maxInScale;
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Fallback to exam max_score if present, otherwise 100.0
+  if (!authoritativeMaxScore) {
+    authoritativeMaxScore = exam.max_score ? Number(exam.max_score) : 100.0;
+  }
+
+  // Statistics (normalized against authoritativeMaxScore)
   let validScores: number[] = [];
   let gradeCounts: Record<string, number> = { A: 0, B: 0, C: 0, S: 0, F: 0, AB: 0, EX: 0, unmarked: 0 };
 
@@ -129,7 +173,7 @@ router.get('/sheet', requireAuth, (req, res) => {
       gradeCounts.EX++;
     } else if (r.score !== null && r.score !== undefined) {
       validScores.push(Number(r.score));
-      const g = r.grade_letter || calcGradeLetter(r.score, 'PRESENT', r.max_score || 100);
+      const g = r.grade_letter || calcGradeLetter(r.score, 'PRESENT', r.max_score || authoritativeMaxScore);
       if (gradeCounts[g] !== undefined) gradeCounts[g]++;
     } else {
       gradeCounts.unmarked++;
@@ -140,7 +184,8 @@ router.get('/sheet', requireAuth, (req, res) => {
   const avg = totalGraded > 0 ? Math.round((validScores.reduce((a, b) => a + b, 0) / totalGraded) * 10) / 10 : 0;
   const max = totalGraded > 0 ? Math.max(...validScores) : 0;
   const min = totalGraded > 0 ? Math.min(...validScores) : 0;
-  const passed = validScores.filter(s => s >= 35).length;
+  const passThreshold = (35.0 / 100.0) * authoritativeMaxScore;
+  const passed = validScores.filter(s => s >= passThreshold).length;
   const passRate = totalGraded > 0 ? Math.round((passed / totalGraded) * 100) : 0;
 
   res.json({
@@ -149,11 +194,20 @@ router.get('/sheet', requireAuth, (req, res) => {
     subject,
     sheet: sheet || null,
     roster,
+    maxScore: authoritativeMaxScore,
+    policy: policy ? {
+      id: policy.id,
+      policy_code: policy.policy_code,
+      title: policy.title,
+      is_approved_by_school: Boolean(policy.is_approved_by_school),
+      grading_scale_json: policy.grading_scale_json
+    } : null,
     stats: {
       totalStudents: roster.length,
       totalGraded,
       average: avg,
       maxScore: max,
+      maxPossibleScore: authoritativeMaxScore,
       minScore: min,
       passRate,
       gradeCounts
@@ -208,7 +262,7 @@ router.post('/sheet', requireAuth, (req, res) => {
       return {
         studentId: Number(m.student_id ?? m.studentId),
         score,
-        maxScore: m.max_score ? Number(m.max_score) : (m.maxScore ? Number(m.maxScore) : 100.0),
+        maxScore: m.max_score ? Number(m.max_score) : (m.maxScore ? Number(m.maxScore) : (req.body.maxScore ? Number(req.body.maxScore) : 100.0)),
         assessmentStatus: assessmentStatus as 'PRESENT' | 'ABSENT' | 'MEDICAL' | 'EXEMPT' | 'NOT_ASSESSED',
         remarks: m.remarks
       };
@@ -1569,7 +1623,9 @@ router.get('/published-mark', requireAuth, (req, res) => {
       return;
     }
 
-    // Role & Scope Authorization Check (Assigned subject teacher OR scoped leadership OR admin)
+    // G6-02 Role & Scope Authorization Check: Plain administrator bypass REMOVED.
+    // Strictly requires active academic leadership authorization matching grade band & year,
+    // OR active teaching assignment for this exact class, subject, and academic year.
     const isAssigned = db.prepare(`
       SELECT id FROM teacher_assignments
       WHERE teacher_id = ? AND class_id = ? AND subject_id = ? AND academic_year_id = ? AND assignment_type = 'subject_teacher'
@@ -1581,7 +1637,7 @@ router.get('/published-mark', requireAuth, (req, res) => {
       (a.grade_band === 'all' || doesBandCoverGrade(a.grade_band, mark.class_grade))
     );
 
-    if (!isAssigned && !isLeadership && user.role !== 'admin') {
+    if (!isAssigned && !isLeadership) {
       res.status(403).json({
         error: 'Access denied: You are not authorized to view or correct this student mark.',
         code: 'INSUFFICIENT_AUTHORIZATION'

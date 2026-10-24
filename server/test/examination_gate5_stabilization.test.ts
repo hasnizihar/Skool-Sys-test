@@ -644,6 +644,80 @@ describe('PR-005 Gate 5: Examination Functional Stabilization Test Suite (G5F-02
       assert.equal(data.code, 'MARK_NOT_FOUND');
     });
 
+    test('3a. G6-02: GET /api/marks/published-mark permits assigned subject teacher', async () => {
+      const res = await testServer.request(
+        `/api/marks/published-mark?examinationId=${exam2026Term1Id}&studentId=${student1Id}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${teacherMathToken}`
+          }
+        }
+      );
+
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.mark.studentId, student1Id);
+      assert.equal(data.mark.score, 92);
+    });
+
+    test('3b. G6-02: GET /api/marks/published-mark rejects plain administrator without academic appointment (403)', async () => {
+      const res = await testServer.request(
+        `/api/marks/published-mark?examinationId=${exam2026Term1Id}&studentId=${student1Id}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${adminToken}`
+          }
+        }
+      );
+
+      assert.equal(res.status, 403);
+      const data = await res.json();
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('3c. G6-02: GET /api/marks/published-mark rejects unrelated teacher (403)', async () => {
+      const res = await testServer.request(
+        `/api/marks/published-mark?examinationId=${exam2026Term1Id}&studentId=${student1Id}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${teacherUnrelatedToken}`
+          }
+        }
+      );
+
+      assert.equal(res.status, 403);
+      const data = await res.json();
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('3d. G6-02: GET /api/marks/published-mark rejects out-of-band leadership (OL head accessing Junior class) (403)', async () => {
+      const res = await testServer.request(
+        `/api/marks/published-mark?examinationId=${exam2026Term1Id}&studentId=${student1Id}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${sectionHead2026OLToken}`
+          }
+        }
+      );
+
+      assert.equal(res.status, 403);
+      const data = await res.json();
+      assert.equal(data.code, 'INSUFFICIENT_AUTHORIZATION');
+    });
+
+    test('3e. G6-02: GET /api/marks/published-mark rejects deactivated user account (401/403)', async () => {
+      const res = await testServer.request(
+        `/api/marks/published-mark?examinationId=${exam2026Term1Id}&studentId=${student1Id}&subjectId=${subjectMathId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${deactivatedTeacherToken}`
+          }
+        }
+      );
+
+      assert.ok([401, 403].includes(res.status), 'Deactivated user must be rejected with 401 or 403');
+    });
+
     test('4. Authorized correction request succeeds with matching expectedPreviousScore and status', async () => {
       const corrPayload = {
         markId: publishedMark1Id,

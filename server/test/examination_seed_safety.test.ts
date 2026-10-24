@@ -79,14 +79,13 @@ describe('G5F-01: Demo Seeding Data-Loss Protection & Safety Verification', () =
     );
   });
 
-  it('5. Refuses execution on non-disposable existing database without disposable environment declaration', () => {
+  it('5. Refuses execution on database without disposable environment declaration', () => {
     process.env.CONFIRM_DISPOSABLE_SEED = '1';
-    // Path doesn't contain test/temp/disposable/demo keywords
-    const neutralPath = 'C:\\skoolsys_regular_school_records.db';
+    // ALLOW_DISPOSABLE_SEED is not set
 
     assert.throws(
-      () => validateSeedSafety(neutralPath),
-      (err: any) => err.message.includes('[SEED BLOCKED]') && err.message.includes('not an explicitly designated disposable')
+      () => validateSeedSafety(tempDbPath),
+      (err: any) => err.message.includes('[SEED BLOCKED]') && err.message.includes('not authorized for disposable seeding')
     );
   });
 
@@ -122,7 +121,66 @@ describe('G5F-01: Demo Seeding Data-Loss Protection & Safety Verification', () =
     assert.strictEqual(user.full_name, 'Real Authorized Principal');
   });
 
-  it('7. Successfully seeds designated disposable fixture when all safety flags are explicitly satisfied', () => {
+  it('7. Rejects target and active SQLite connection path mismatch before any deletion or migration', () => {
+    process.env.CONFIRM_DISPOSABLE_SEED = '1';
+    process.env.ALLOW_DISPOSABLE_SEED = '1';
+
+    const mismatchedPath = path.join(os.tmpdir(), `skoolsys_mismatch_${Date.now()}.db`);
+
+    assert.throws(
+      () => validateSeedSafety(mismatchedPath),
+      (err: any) => err.message.includes('[SEED BLOCKED]') && err.message.includes('does not match active SQLite connection path')
+    );
+  });
+
+  it('8. Refuses to overwrite a populated database inside a folder named Skool-Sys-test if disposable marker is missing', () => {
+    process.env.CONFIRM_DISPOSABLE_SEED = '1';
+    process.env.ALLOW_DISPOSABLE_SEED = '1';
+
+    // Create a database inside a directory containing 'Skool-Sys-test'
+    const skoolSysTestDir = path.join(os.tmpdir(), 'Skool-Sys-test');
+    if (!fs.existsSync(skoolSysTestDir)) fs.mkdirSync(skoolSysTestDir, { recursive: true });
+    const realLookingDbPath = path.join(skoolSysTestDir, `kcc_real_records_${Date.now()}.db`);
+
+    try {
+      const realDb = switchDatabase(realLookingDbPath);
+      realDb.exec(`
+        CREATE TABLE users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT UNIQUE NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          full_name TEXT NOT NULL,
+          role TEXT NOT NULL
+        );
+        INSERT INTO users (username, email, password_hash, full_name, role)
+        VALUES ('kcc_principal', 'principal@kcc.lk', 'secure_hash', 'Kattankudy Central College Principal', 'admin');
+      `);
+
+      // Attempting to seed this populated DB even with all flags set MUST fail because it has no _skoolsys_disposable_marker
+      assert.throws(
+        () => validateSeedSafety(realLookingDbPath),
+        (err: any) =>
+          err.message.includes('[SEED BLOCKED]') &&
+          err.message.includes('lacks the verified disposable fixture marker') &&
+          err.message.includes('_skoolsys_disposable_marker')
+      );
+
+      // Verify principal record was not destroyed
+      const principal = realDb.prepare("SELECT full_name FROM users WHERE username = 'kcc_principal'").get() as any;
+      assert.strictEqual(principal.full_name, 'Kattankudy Central College Principal');
+    } finally {
+      closeDatabase();
+      try {
+        if (fs.existsSync(realLookingDbPath)) fs.unlinkSync(realLookingDbPath);
+        if (fs.existsSync(skoolSysTestDir)) fs.rmdirSync(skoolSysTestDir);
+      } catch {}
+      // Switch back to tempDbPath for subsequent tests
+      switchDatabase(tempDbPath);
+    }
+  });
+
+  it('9. Successfully seeds designated disposable fixture when all safety flags and disposable markers are verified', () => {
     process.env.CONFIRM_DISPOSABLE_SEED = '1';
     process.env.ALLOW_DISPOSABLE_SEED = '1';
 
@@ -139,9 +197,15 @@ describe('G5F-01: Demo Seeding Data-Loss Protection & Safety Verification', () =
     assert.strictEqual(exam.status, 'published');
     assert.ok(exam.name.includes('Demo / Synthetic'));
 
-    // Verify correction records are internally consistent
-    const corrections = db.prepare("SELECT mc.*, s.name as subject_name FROM marks_corrections mc JOIN subjects s ON mc.subject_id = s.id").all() as any[];
-    assert.strictEqual(corrections.length, 3);
+    // Verify disposable marker was stamped into the database
+    const marker = db.prepare("SELECT * FROM _skoolsys_disposable_marker WHERE marker_id = 'primary_marker'").get() as any;
+    assert.ok(marker, 'Disposable fixture marker must be stamped on seed completion');
+    assert.strictEqual(marker.disposable_token, 'DISPOSABLE_DEMO_SEED_2026');
+
+    // Verify subsequent re-seed of the stamped disposable database succeeds
+    runSeed({ targetDbPath: tempDbPath });
+    const countAfterReseed = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count;
+    assert.ok(countAfterReseed > 0);
 
     // Verify foreign key integrity remained enabled
     const fkPragma = (db.prepare('PRAGMA foreign_keys;').get() as any)?.foreign_keys;

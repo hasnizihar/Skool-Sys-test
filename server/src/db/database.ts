@@ -58,6 +58,71 @@ export const db: DatabaseSync = new Proxy({} as DatabaseSync, {
   }
 });
 
+export function getActiveDbPath(targetDb: DatabaseSync = activeDb): string {
+  try {
+    const rows = targetDb.prepare('PRAGMA database_list;').all() as Array<{ seq: number; name: string; file: string }>;
+    const mainDb = rows.find(r => r.name === 'main');
+    if (mainDb && mainDb.file) {
+      return path.resolve(mainDb.file);
+    }
+    return DB_PATH === ':memory:' ? ':memory:' : path.resolve(DB_PATH);
+  } catch {
+    return DB_PATH === ':memory:' ? ':memory:' : path.resolve(DB_PATH);
+  }
+}
+
+export const DISPOSABLE_MARKER_TABLE = '_skoolsys_disposable_marker';
+
+export function stampDisposableMarker(targetDb: DatabaseSync = db, token = 'DISPOSABLE_SYNTHETIC_TEST_RUN'): void {
+  targetDb.exec(`
+    CREATE TABLE IF NOT EXISTS _skoolsys_disposable_marker (
+      marker_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      disposable_token TEXT NOT NULL,
+      disclaimer TEXT NOT NULL
+    );
+  `);
+  const stmt = targetDb.prepare(`
+    INSERT OR REPLACE INTO _skoolsys_disposable_marker (marker_id, created_at, environment, disposable_token, disclaimer)
+    VALUES (?, datetime('now'), ?, ?, ?)
+  `);
+  stmt.run('primary_marker', process.env.NODE_ENV || 'test', token, 'AUTHORIZED_DISPOSABLE_DEMO_OR_SYNTHETIC_FIXTURE_ONLY');
+}
+
+export function hasDisposableMarker(targetDb: DatabaseSync = db): boolean {
+  try {
+    const tableExists = targetDb.prepare(
+      "SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='_skoolsys_disposable_marker'"
+    ).get() as { count: number } | undefined;
+    if (!tableExists || tableExists.count === 0) return false;
+    const row = targetDb.prepare(
+      "SELECT disposable_token FROM _skoolsys_disposable_marker WHERE marker_id = 'primary_marker'"
+    ).get() as { disposable_token?: string } | undefined;
+    return !!row?.disposable_token;
+  } catch {
+    return false;
+  }
+}
+
+export function isDatabasePopulated(targetDb: DatabaseSync = db): boolean {
+  try {
+    const userTable = targetDb.prepare("SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='users'").get() as any;
+    if (userTable?.count > 0) {
+      const userCount = (targetDb.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0;
+      if (userCount > 0) return true;
+    }
+    const studentTable = targetDb.prepare("SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='students'").get() as any;
+    if (studentTable?.count > 0) {
+      const studentCount = (targetDb.prepare('SELECT COUNT(*) as count FROM students').get() as any)?.count || 0;
+      if (studentCount > 0) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function initDatabase() {
   const schema = `
     CREATE TABLE IF NOT EXISTS users (

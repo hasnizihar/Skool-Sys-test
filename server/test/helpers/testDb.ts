@@ -290,6 +290,19 @@ export function setupIsolatedTestDb(): TestFixtureData {
     VALUES ('Term 1 Test Exam', 1, ?, '2026-03-01', '2026-03-15', 1)
   `).run(yearId);
 
+  // Stamp verified disposable fixture marker
+  testDb.exec(`
+    CREATE TABLE IF NOT EXISTS _skoolsys_disposable_marker (
+      marker_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      disposable_token TEXT NOT NULL,
+      disclaimer TEXT NOT NULL
+    );
+    INSERT OR REPLACE INTO _skoolsys_disposable_marker (marker_id, created_at, environment, disposable_token, disclaimer)
+    VALUES ('primary_marker', datetime('now'), 'test', 'DISPOSABLE_ISOLATED_TEST_FIXTURE', 'AUTHORIZED_DISPOSABLE_DEMO_OR_SYNTHETIC_FIXTURE_ONLY');
+  `);
+
   testDb.close();
 
   return {

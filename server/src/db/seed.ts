@@ -1,10 +1,22 @@
-import { db, initDatabase, DB_PATH } from './database.js';
+import {
+  db,
+  initDatabase,
+  DB_PATH,
+  getActiveDbPath,
+  hasDisposableMarker,
+  stampDisposableMarker,
+  isDatabasePopulated
+} from './database.js';
 import bcrypt from 'bcryptjs';
 import path from 'node:path';
 
 /**
- * G5F-01 Safety Guard: Validates that seeding is strictly running against
- * an authorized disposable development or test database with explicit confirmation.
+ * G6-01 Strong Disposable Seed Protection:
+ * 1. Positive verifiable disposable fixture identity (_skoolsys_disposable_marker), NOT folder-name substring matching.
+ * 2. Active SQLite connection path MUST match targetDbPath.
+ * 3. Never destroy an arbitrary populated database just because a folder contains 'test' or 'temp'.
+ * 4. Explicit confirmation flag and non-production environment checks.
+ * 5. Atomic rollback and PRAGMA foreign_keys = ON.
  */
 export function validateSeedSafety(targetDbPath: string = DB_PATH): void {
   // 1. Refuse in production or staging environments
@@ -13,31 +25,8 @@ export function validateSeedSafety(targetDbPath: string = DB_PATH): void {
     throw new Error(`[SEED BLOCKED] Seeding is strictly prohibited in '${env}' environment.`);
   }
 
-  // 2. Explicit seed confirmation flag required
-  const hasCliFlag = process.argv.includes('--confirm-seed') || process.argv.includes('--confirm-disposable-seed');
-  const hasEnvFlag = process.env.CONFIRM_DISPOSABLE_SEED === '1' || process.env.CONFIRM_DISPOSABLE_SEED === 'true';
-  if (!hasCliFlag && !hasEnvFlag) {
-    throw new Error(
-      '[SEED BLOCKED] Missing explicit confirmation flag. To seed a disposable database, pass --confirm-seed or set CONFIRM_DISPOSABLE_SEED=1.'
-    );
-  }
-
-  // 3. Must be designated disposable development/test database
+  // 2. Refuse if path contains production or live keywords
   const normalizedPath = path.resolve(targetDbPath).toLowerCase();
-  const isExplicitDisposableEnv =
-    process.env.ALLOW_DISPOSABLE_SEED === '1' ||
-    process.env.ALLOW_DISPOSABLE_SEED === 'true' ||
-    process.env.DISPOSABLE_DEV_DB === '1' ||
-    process.env.DISPOSABLE_DEV_DB === 'true';
-
-  const isDisposablePath =
-    normalizedPath.includes('test') ||
-    normalizedPath.includes('temp') ||
-    normalizedPath.includes('tmp') ||
-    normalizedPath.includes('disposable') ||
-    normalizedPath.includes('scratch') ||
-    normalizedPath.includes('demo');
-
   const isProductionNamed =
     normalizedPath.includes('prod') ||
     normalizedPath.includes('production') ||
@@ -48,38 +37,72 @@ export function validateSeedSafety(targetDbPath: string = DB_PATH): void {
     throw new Error(`[SEED BLOCKED] Database path '${targetDbPath}' appears to be a production or staging database. Refusing execution.`);
   }
 
-  if (!isExplicitDisposableEnv && !isDisposablePath) {
+  // 3. Explicit seed confirmation flag required
+  const hasCliFlag = process.argv.includes('--confirm-seed') || process.argv.includes('--confirm-disposable-seed');
+  const hasEnvFlag = process.env.CONFIRM_DISPOSABLE_SEED === '1' || process.env.CONFIRM_DISPOSABLE_SEED === 'true';
+  if (!hasCliFlag && !hasEnvFlag) {
     throw new Error(
-      `[SEED BLOCKED] Database '${targetDbPath}' is not an explicitly designated disposable test/dev database. Set ALLOW_DISPOSABLE_SEED=1 or DISPOSABLE_DEV_DB=1 to confirm.`
+      '[SEED BLOCKED] Missing explicit confirmation flag. To seed a disposable database, pass --confirm-seed or set CONFIRM_DISPOSABLE_SEED=1.'
     );
   }
 
-  // 4. Overwrite protection: If existing database contains records, require explicit disposable confirmation
-  try {
-    const userTable = db.prepare("SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='users'").get() as any;
-    if (userTable?.count > 0) {
-      const userCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0;
-      if (userCount > 0 && !isExplicitDisposableEnv && !isDisposablePath) {
-        throw new Error(
-          `[SEED BLOCKED] Database '${targetDbPath}' contains existing records (${userCount} users). Overwriting an existing database requires explicit disposable fixture validation.`
-        );
-      }
+  // 4. Verify targetDbPath exactly matches active SQLite connection target
+  const activePath = getActiveDbPath();
+  if (activePath !== ':memory:' && targetDbPath !== ':memory:') {
+    const resolvedActive = path.resolve(activePath).toLowerCase();
+    const resolvedTarget = path.resolve(targetDbPath).toLowerCase();
+    if (resolvedActive !== resolvedTarget) {
+      throw new Error(
+        `[SEED BLOCKED] Target database path '${targetDbPath}' does not match active SQLite connection path '${activePath}'. Mismatched targets are rejected before any operation.`
+      );
     }
-  } catch (err: any) {
-    if (err.message?.includes('[SEED BLOCKED]')) {
-      throw err;
+  }
+
+  // 5. Must have explicit disposable authorization
+  const isExplicitDisposableEnv =
+    process.env.ALLOW_DISPOSABLE_SEED === '1' ||
+    process.env.ALLOW_DISPOSABLE_SEED === 'true' ||
+    process.env.DISPOSABLE_DEV_DB === '1' ||
+    process.env.DISPOSABLE_DEV_DB === 'true';
+  const hasCliAllow = process.argv.includes('--allow-disposable-seed');
+  const isDisposableAuthorized = isExplicitDisposableEnv || hasCliAllow;
+
+  if (!isDisposableAuthorized) {
+    throw new Error(
+      `[SEED BLOCKED] Target database '${targetDbPath}' is not authorized for disposable seeding. Set ALLOW_DISPOSABLE_SEED=1 or DISPOSABLE_DEV_DB=1 to confirm.`
+    );
+  }
+
+  // 6. Strong Overwrite Protection: If database is populated, it MUST possess positive disposable fixture marker
+  // Folder-name substring matching ('test', 'temp', 'Skool-Sys-test') is strictly rejected as proof of disposable nature!
+  if (isDatabasePopulated(db)) {
+    const hasMarker = hasDisposableMarker(db);
+    if (!hasMarker) {
+      throw new Error(
+        `[SEED BLOCKED] Target database '${targetDbPath}' is already populated with data but lacks the verified disposable fixture marker (_skoolsys_disposable_marker). Destroying or overwriting an arbitrary populated database without positive disposable fixture identity is strictly prohibited, regardless of folder name (${path.basename(path.dirname(targetDbPath))}) or confirmation flags.`
+      );
     }
-    // Database tables might not be created yet, which is safe
   }
 }
 
-export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string }) {
+export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string; fixtureToken?: string }) {
   const targetPath = options?.targetDbPath || DB_PATH;
   validateSeedSafety(targetPath);
 
   if (!options?.bypassInit) {
     initDatabase();
   }
+
+  // Verify connection target and safety again after initialization before destructive operations
+  const activePath = getActiveDbPath();
+  if (activePath !== ':memory:' && targetPath !== ':memory:') {
+    if (path.resolve(activePath).toLowerCase() !== path.resolve(targetPath).toLowerCase()) {
+      throw new Error(
+        `[SEED BLOCKED] Active SQLite connection '${activePath}' does not match seed target '${targetPath}'.`
+      );
+    }
+  }
+  validateSeedSafety(targetPath);
 
   console.log('🌱 Starting SkoolSys PR-005 database seed against disposable target...');
 
@@ -90,6 +113,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string 
   try {
     // 1. Clean existing tables in topological dependency order (child before parent)
     const tablesToDelete = [
+      '_skoolsys_disposable_marker',
       'marks_corrections',
       'quarantined_legacy_marks',
       'marks_audit_history',
@@ -586,6 +610,9 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string 
     auditInsert.run(adminUser.id, 'admin', 'SYSTEM_INIT', 'System', '0', JSON.stringify({ message: 'SkoolSys 2.0 PR-005 Examination Management initial seed completed (Demo Data).' }));
     auditInsert.run(teacherNimali.id, 'teacher_nimali', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 8-A', recordsCount: createdStudents.length }));
     auditInsert.run(adminUser.id, 'admin', 'EXAMINATION_PUBLISH', 'examinations', String(term1Exam.id), JSON.stringify({ exam: 'Term 1 Assessment 2026', policy: 'KCC-SEC-STD-2026-V1' }));
+
+    // Stamp verified disposable fixture marker
+    stampDisposableMarker(db, options?.fixtureToken || 'DISPOSABLE_DEMO_SEED_2026');
 
     db.exec('COMMIT;');
 
