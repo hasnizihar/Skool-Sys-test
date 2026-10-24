@@ -1641,11 +1641,12 @@ describe('PR-005 Gate 3B: Marks Workflow, Revision Control, CAS Concurrency & Le
     });
     assert.equal(kamalLegacyRes.status, 200);
 
-    // 23.8 Published data policy: Base admin CAN read published marks sheets (sheetMath8AId) -> 200 OK
+    // 23.8 Published data policy: Plain IT admin without academic appointment is denied 403 on published sheet details
     const adminPubDetailsRes = await testServer.request(`/api/marks/sheets/${sheetMath8AId}`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
-    assert.equal(adminPubDetailsRes.status, 200);
+    assert.equal(adminPubDetailsRes.status, 403);
+    assert.equal((await adminPubDetailsRes.json() as any).code, 'INSUFFICIENT_AUTHORIZATION');
 
     // FIX B: Plain admin without academic leadership cannot read marks sheet solely by base role (403)
     const adminPubLegacyRes = await testServer.request(`/api/marks/sheet?examId=${exam2026Term1Id}&classId=${class8AId}&subjectId=${subjectMathId}`, {

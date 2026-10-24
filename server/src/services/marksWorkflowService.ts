@@ -257,8 +257,8 @@ export function getMarksSheetDetails(sheetId: number, user: AuthUser): any {
       throw err;
     }
   } else {
-    // PUBLISHED: Standard published access (admin, assigned teacher, or scoped leadership)
-    if (!viewAuth.allowed && user.role !== 'admin') {
+    // PUBLISHED: Affirmative canViewMarksSheet check (Strict confidentiality, no base-admin bypass)
+    if (!viewAuth.allowed) {
       const err = new Error(viewAuth.reason || 'Access denied: You do not have permission to view this marks sheet.');
       (err as any).statusCode = 403;
       (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
@@ -1032,8 +1032,8 @@ export function getMarksSheetHistory(sheetId: number, user: AuthUser): any {
       throw err;
     }
   } else {
-    // PUBLISHED: Standard published access
-    if (!viewAuth.allowed && user.role !== 'admin') {
+    // PUBLISHED: Affirmative canViewMarksSheet check (Strict confidentiality, no base-admin bypass)
+    if (!viewAuth.allowed) {
       const err = new Error('Access denied: You do not have permission to view history for this sheet.');
       (err as any).statusCode = 403;
       (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
@@ -1105,8 +1105,8 @@ export function getMarksSheetRevisionSnapshot(sheetId: number, revision: number,
       throw err;
     }
   } else {
-    // PUBLISHED: Standard published access
-    if (!viewAuth.allowed && user.role !== 'admin') {
+    // PUBLISHED: Affirmative canViewMarksSheet check (Strict confidentiality, no base-admin bypass)
+    if (!viewAuth.allowed) {
       const err = new Error('Access denied: You do not have permission to view revision snapshots for this marks sheet.');
       (err as any).statusCode = 403;
       (err as any).code = viewAuth.code || 'INSUFFICIENT_AUTHORIZATION';
