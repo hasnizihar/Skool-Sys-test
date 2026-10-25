@@ -10,6 +10,13 @@ import {
 } from './database.js';
 import bcrypt from 'bcryptjs';
 import path from 'node:path';
+import {
+  GradingScaleItem,
+  AbsenceRules,
+  RankingRules
+} from '../services/assessmentPolicyService.js';
+import { publishExamination } from '../services/examinationPublicationService.js';
+import { AuthUser } from '../middleware/auth.js';
 
 /**
  * G6-01 Strong Disposable Seed Protection:
@@ -626,7 +633,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       });
     });
 
-    // 11. Assessment Policy Profiles (Junior, O/L, A/L)
+    // 11. Assessment Policy Profiles (Junior, O/L, A/L - Canonical Synthetic Fixtures)
     const policyInsert = db.prepare(`
       INSERT INTO assessment_policy_profiles (
         academic_year_id, grade_band, policy_code, title,
@@ -635,50 +642,55 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 30, ?, ?, ?)
     `);
 
-    const standardGrading = JSON.stringify([
-      { gradeLetter: 'A', minScore: 75, maxScore: 100, description: 'Distinction' },
-      { gradeLetter: 'B', minScore: 65, maxScore: 74, description: 'Very Good' },
-      { gradeLetter: 'C', minScore: 50, maxScore: 64, description: 'Credit' },
-      { gradeLetter: 'S', minScore: 35, maxScore: 49, description: 'Pass' },
-      { gradeLetter: 'F', minScore: 0, maxScore: 34, description: 'Fail' }
-    ]);
+    const standardGradingScale: GradingScaleItem[] = [
+      { grade: 'A', minPercentage: 75.0, label: 'Distinction' },
+      { grade: 'B', minPercentage: 65.0, label: 'Very Good Pass' },
+      { grade: 'C', minPercentage: 50.0, label: 'Credit Pass' },
+      { grade: 'S', minPercentage: 35.0, label: 'Ordinary Pass' },
+      { grade: 'F', minPercentage: 0.0, label: 'Fail' }
+    ];
 
-    const absenceRules = JSON.stringify({
-      absentTreatedAsZero: true,
-      medicalExcludedFromRank: true
-    });
+    const standardAbsenceRules: AbsenceRules = {
+      absentHandling: 'zero',
+      medicalHandling: 'exclude',
+      exemptHandling: 'exclude'
+    };
 
-    const rankingRules = JSON.stringify({
-      includeElectives: true,
-      minSubjectsForRank: 3,
-      tieBreakingCriteria: 'aggregate_score'
-    });
+    const standardRankingRules: RankingRules = {
+      rankingMethod: 'competition',
+      tieHandling: 'equal_rank_skip_next',
+      minimumSubjectsRequired: 3
+    };
+
+    const standardGradingJson = JSON.stringify(standardGradingScale);
+    const standardAbsenceJson = JSON.stringify(standardAbsenceRules);
+    const standardRankingJson = JSON.stringify(standardRankingRules);
 
     policyInsert.run(
       currentYear.id, 'junior_6_9', 'KCC-SEC-STD-2026-V1',
       'Demo Junior Secondary Standard Policy (Synthetic Fixture Only)',
-      standardGrading, absenceRules, rankingRules,
+      standardGradingJson, standardAbsenceJson, standardRankingJson,
       1, adminUser.id, '2026-01-10 09:00:00'
     );
 
     policyInsert.run(
       currentYear.id, 'ol_10_11', 'KCC-OL-STD-2026-V1',
       'Demo G.C.E. O/L Secondary Standard Policy (Synthetic Fixture Only)',
-      standardGrading, absenceRules, rankingRules,
+      standardGradingJson, standardAbsenceJson, standardRankingJson,
       1, adminUser.id, '2026-01-10 09:00:00'
     );
 
     policyInsert.run(
       currentYear.id, 'al_12_13', 'KCC-AL-STD-2026-V1',
       'Demo G.C.E. A/L Collegiate Standard Policy (Synthetic Fixture Only)',
-      standardGrading, absenceRules, rankingRules,
+      standardGradingJson, standardAbsenceJson, standardRankingJson,
       1, adminUser.id, '2026-01-10 09:00:00'
     );
 
     policyInsert.run(
       currentYear.id, 'junior_6_9', 'KCC-PILOT-2026-V2',
       'Demo Pilot Weighted Assessment Policy (Synthetic Fixture Only)',
-      standardGrading, absenceRules, rankingRules,
+      standardGradingJson, standardAbsenceJson, standardRankingJson,
       0, null, null
     );
 
@@ -690,7 +702,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    examStmt.run('Term 1 Assessment 2026 (Demo / Synthetic)', 1, currentYear.id, 'all', '2026-03-20', '2026-03-31', 0, 'approved', approvedJuniorPolicy.id, 0);
+    examStmt.run('Term 1 Assessment 2026 (Demo / Synthetic)', 1, currentYear.id, 'all', '2026-03-20', '2026-03-31', 0, 'scheduled', approvedJuniorPolicy.id, 0);
     examStmt.run('Mid-Year Examination 2026 (Demo / Synthetic)', 2, currentYear.id, 'all', '2026-07-15', '2026-07-28', 0, 'scheduled', null, 0);
     examStmt.run('Year-End Final Examination 2026 (Demo / Synthetic)', 3, currentYear.id, 'all', '2026-11-20', '2026-12-05', 0, 'draft', null, 0);
 
@@ -703,8 +715,8 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    // Term 1: Grade 8-A Approved Schedules (Preserve baseline)
-    [math, sci, eng, his, ict, art, hpe].forEach((sub) => {
+    // Term 1: Grade 8-A Approved Schedules (Scheduled subjects have full approved sheets and complete marks)
+    [math, sci, eng].forEach((sub) => {
       scheduleInsert.run(term1Exam.id, grade8A.id, sub.id, 1, 'approved', adminUser.id, '2026-03-10 10:00:00');
     });
 
@@ -718,8 +730,8 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       scheduleInsert.run(term1Exam.id, grade12Sci.id, sub.id, 1, 'approved', adminUser.id, '2026-03-10 10:00:00');
     });
 
-    // Mid-Year: Draft Schedules (Preserve baseline for E2E tests)
-    [math, sci, eng].forEach((sub) => {
+    // Mid-Year: Draft Schedules (Preserve baseline for E2E tests and moderation demos)
+    [math, his, eng, sci, hpe].forEach((sub) => {
       scheduleInsert.run(midYearExam.id, grade8A.id, sub.id, 1, 'draft', null, null);
     });
 
@@ -733,7 +745,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    // Grade 8-A Sheets (Baseline)
+    // Term 1 - Grade 8-A Sheets (All complete, distinct approver, and approved prior to publication)
     sheetInsert.run(
       term1Exam.id, grade8A.id, math.id, currentYear.id, teacherSamantha.id,
       2, 'approved', 'Marks submitted after full internal checking', '2026-03-28 12:00:00',
@@ -744,26 +756,54 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
 
     sheetInsert.run(
       term1Exam.id, grade8A.id, sci.id, currentYear.id, teacherPriya.id,
-      1, 'reviewed', 'Science lab marks included', '2026-03-28 14:00:00',
+      1, 'approved', 'Science lab and theory marks compiled', '2026-03-28 14:00:00',
       sectionHeadUser.id, '2026-03-29 11:30:00', 'Endorsed by Section Head',
-      null, null, null
+      adminUser.id, '2026-03-29 15:15:00', 'Approved by Principal'
     );
     const sci8ASheet = db.prepare("SELECT id FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?").get(term1Exam.id, grade8A.id, sci.id) as { id: number };
 
     sheetInsert.run(
       term1Exam.id, grade8A.id, eng.id, currentYear.id, teacherNimali.id,
-      1, 'submitted', 'All grammar and essay marks compiled', '2026-03-28 16:00:00',
-      null, null, null,
-      null, null, null
+      1, 'approved', 'All grammar and essay marks compiled', '2026-03-28 16:00:00',
+      sectionHeadUser.id, '2026-03-29 12:00:00', 'Endorsed by Section Head',
+      adminUser.id, '2026-03-29 15:30:00', 'Approved by Principal'
     );
     const eng8ASheet = db.prepare("SELECT id FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?").get(term1Exam.id, grade8A.id, eng.id) as { id: number };
 
+    // Mid-Year - Separate Unpublished Moderation Demonstrations (Draft, Submitted, Reviewed, Approved)
+    // History: DRAFT state (assigned to teacherSamantha) - satisfies test 10
     sheetInsert.run(
-      term1Exam.id, grade8A.id, his.id, currentYear.id, teacherSamantha.id,
+      midYearExam.id, grade8A.id, his.id, currentYear.id, teacherSamantha.id,
       1, 'draft', null, null,
       null, null, null,
       null, null, null
     );
+
+    // English: SUBMITTED state (assigned to teacherNimali)
+    sheetInsert.run(
+      midYearExam.id, grade8A.id, eng.id, currentYear.id, teacherNimali.id,
+      1, 'submitted', 'Draft marks compiled for mid-year moderation', '2026-07-20 14:00:00',
+      null, null, null,
+      null, null, null
+    );
+
+    // Science: REVIEWED state (assigned to teacherPriya, endorsed by sectionHeadUser)
+    sheetInsert.run(
+      midYearExam.id, grade8A.id, sci.id, currentYear.id, teacherPriya.id,
+      1, 'reviewed', 'Mid-year practical marks submitted', '2026-07-20 15:00:00',
+      sectionHeadUser.id, '2026-07-21 10:00:00', 'Endorsed by Junior Section Head',
+      null, null, null
+    );
+
+    // HPE: APPROVED state (assigned to teacherSamantha, approved by adminUser)
+    sheetInsert.run(
+      midYearExam.id, grade8A.id, hpe.id, currentYear.id, teacherSamantha.id,
+      1, 'approved', 'Physical education assessment verified', '2026-07-20 16:00:00',
+      sectionHeadUser.id, '2026-07-21 11:00:00', 'Endorsed by Junior Section Head',
+      adminUser.id, '2026-07-22 14:00:00', 'Approved by Principal'
+    );
+
+    // Note: Mathematics in Mid-Year is intentionally unseeded so tests 5-7 can demonstrate live entry, draft save, and submit!
 
     // Grade 11-A Sheets (O/L Demo: Approved -> will be Published)
     sheetInsert.run(
@@ -837,7 +877,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       return 'F';
     }
 
-    // Grade 8-A Marks (Baseline preserved)
+    // Grade 8-A Marks (Baseline preserved: Math, Sci, Eng)
     const grade8ASubjectsToScore = [
       { sub: math, sheetId: math8ASheet.id, user: teacherSamantha.id, base: 78 },
       { sub: sci, sheetId: sci8ASheet.id, user: teacherPriya.id, base: 72 },
@@ -886,7 +926,29 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       });
     });
 
-    // 16. Post-Publication Corrections (Demonstrating Reissued report cards & negative states)
+    // Commit initial setup transaction before publication (publishExamination manages its own atomic transaction)
+    db.exec('COMMIT;');
+
+    // 16. Execute Canonical Examination Publication (PR-005 Examination Publication Service)
+    // Validates publication invariants, class calculation reconciliation, and creates immutable snapshot with authentic SHA-256 audit hash
+    const publisherUser: AuthUser = {
+      id: adminUser.id,
+      username: 'admin',
+      email: 'admin@skoolsys.edu',
+      full_name: 'DEMO ONLY: Mr. A.L.M. Mukthar (Synthetic Principal / Admin)',
+      role: 'admin'
+    };
+    publishExamination({
+      examinationId: term1Exam.id,
+      policyProfileId: approvedJuniorPolicy.id,
+      user: publisherUser,
+      ipAddress: '127.0.0.1'
+    });
+
+    // Begin transaction for post-publication corrections, audit entries, and disposable marker
+    db.exec('BEGIN IMMEDIATE;');
+
+    // 17. Post-Publication Corrections (Demonstrating Reissued report cards & negative states)
     const firstStudentId = createdGrade8AIds[0];
     const secondStudentId = createdGrade8AIds[1];
     const thirdStudentId = createdGrade8AIds[2];
@@ -930,45 +992,6 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       'rejected', adminUser.id, '2026-04-05 14:15:00', 'Rejected: No arithmetic error found on original script (Demo Rejection)'
     );
 
-    // 17. Transition Term 1 to Published and Insert Immutable Publication Snapshot Record
-    const recentPublishedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19);
-    db.prepare(`
-      UPDATE examinations
-      SET is_published = 1, status = 'published', assessment_policy_id = ?, publication_version = 1, published_at = ?
-      WHERE id = ?
-    `).run(approvedJuniorPolicy.id, recentPublishedAt, term1Exam.id);
-
-    // Transition marks sheets in published examination to published status
-    db.prepare(`
-      UPDATE marks_sheets
-      SET status = 'published'
-      WHERE examination_id = ? AND status = 'approved'
-    `).run(term1Exam.id);
-
-    const pubInsert = db.prepare(`
-      INSERT INTO examination_publications (
-        examination_id, publication_version, policy_profile_id, policy_version,
-        published_by_user_id, published_at, publication_snapshot_json, audit_hash
-      ) VALUES (?, 1, ?, 1, ?, ?, ?, 'a1b2c3d4e5f67890123456789abcdef0')
-    `);
-
-    const mockSnapshot = JSON.stringify({
-      publishedAt: recentPublishedAt,
-      publisher: { id: adminUser.id, username: 'admin', role: 'principal' },
-      policy: { id: approvedJuniorPolicy.id, policy_code: 'KCC-SEC-STD-2026-V1' },
-      classes: [
-        { classId: grade8A.id, className: 'Grade 8-A', studentCount: createdGrade8AIds.length },
-        { classId: grade11A.id, className: 'Grade 11-A', studentCount: createdGrade11AIds.length },
-        { classId: grade12Sci.id, className: 'Grade 12-Science', studentCount: createdGrade12SciIds.length }
-      ]
-    });
-
-    try {
-      pubInsert.run(term1Exam.id, approvedJuniorPolicy.id, adminUser.id, recentPublishedAt, mockSnapshot);
-    } catch (err: any) {
-      console.log('Publication snapshot insert notice:', err.message);
-    }
-
     // 18. Audit log entries
     const auditInsert = db.prepare(`
       INSERT INTO audit_logs (user_id, username, action, entity_type, entity_id, details)
@@ -979,7 +1002,6 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     auditInsert.run(teacherNimali.id, 'teacher_nimali', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 8-A', recordsCount: createdGrade8AIds.length }));
     auditInsert.run(teacherFathima.id, 'teacher_fathima', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 6-A', recordsCount: createdGrade6AIds.length }));
     auditInsert.run(teacherMansoor.id, 'teacher_mansoor', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 11-A', recordsCount: createdGrade11AIds.length }));
-    auditInsert.run(adminUser.id, 'admin', 'EXAMINATION_PUBLISH', 'examinations', String(term1Exam.id), JSON.stringify({ exam: 'Term 1 Assessment 2026', policy: 'KCC-SEC-STD-2026-V1' }));
 
     // Stamp verified disposable fixture marker
     stampDisposableMarker(db, options?.fixtureToken || 'DISPOSABLE_DEMO_SEED_2026');

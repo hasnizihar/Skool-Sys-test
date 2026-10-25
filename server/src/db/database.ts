@@ -364,6 +364,11 @@ export function initDatabase() {
     db.exec('ALTER TABLE marks_sheets ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
   } catch {}
 
+  // Safe column migrations for marks in existing databases
+  try {
+    db.exec("ALTER TABLE marks ADD COLUMN status TEXT DEFAULT 'submitted' CHECK(status IN ('draft', 'submitted', 'published'));");
+  } catch {}
+
   // Safe migration 004: Attendance integrity, revisions & receipts
   // Inspect whether migration 004 is needed
   const versionRow = db.prepare('PRAGMA user_version;').get() as { user_version: number };
