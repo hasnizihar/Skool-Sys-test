@@ -16,6 +16,7 @@ import {
   RankingRules
 } from '../services/assessmentPolicyService.js';
 import { publishExamination } from '../services/examinationPublicationService.js';
+import { requestMarkCorrection, reviewMarkCorrection } from '../services/marksCorrectionService.js';
 import { AuthUser } from '../middleware/auth.js';
 
 /**
@@ -124,9 +125,9 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     const tablesToDelete = [
       '_skoolsys_disposable_marker',
       'attendance_sync_receipts',
-      'marks_corrections',
       'quarantined_legacy_marks',
       'marks_audit_history',
+      'marks_corrections',
       'marks',
       'marks_sheet_revisions',
       'marks_sheets',
@@ -945,52 +946,104 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       ipAddress: '127.0.0.1'
     });
 
-    // Begin transaction for post-publication corrections, audit entries, and disposable marker
-    db.exec('BEGIN IMMEDIATE;');
-
     // 17. Post-Publication Corrections (Demonstrating Reissued report cards & negative states)
+    // Uses canonical PR-005 marksCorrectionService (requestMarkCorrection & reviewMarkCorrection)
     const firstStudentId = createdGrade8AIds[0];
     const secondStudentId = createdGrade8AIds[1];
     const thirdStudentId = createdGrade8AIds[2];
 
-    const correctionInsert = db.prepare(`
-      INSERT INTO marks_corrections (
-        mark_id, sheet_id, examination_id, student_id, subject_id,
-        requested_by_user_id, expected_previous_score, expected_previous_status,
-        requested_score, requested_status, correction_category, detailed_justification,
-        status, reviewed_by_user_id, reviewed_at, review_comments
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const teacherSamanthaUser: AuthUser = {
+      id: teacherSamantha.id,
+      username: 'teacher_samantha',
+      email: 'samantha.silva@skoolsys.edu',
+      full_name: 'DEMO ONLY: Mr. Samantha Silva (Synthetic Teacher)',
+      role: 'subject_teacher'
+    };
 
-    // Approved Correction (Triggers Reissued Report Card on Student 1)
+    const vpNawasUser: AuthUser = {
+      id: vpUser.id,
+      username: 'vp_academic',
+      email: 'vp.academic@skoolsys.edu',
+      full_name: 'DEMO ONLY: Mr. M.I.M. Nawas (Synthetic VP Academic)',
+      role: 'class_teacher'
+    };
+
+    const teacherPriyaUser: AuthUser = {
+      id: teacherPriya.id,
+      username: 'teacher_priya',
+      email: 'priya.wickrama@skoolsys.edu',
+      full_name: 'DEMO ONLY: Ms. Priyanthi Wickramasinghe (Synthetic Teacher)',
+      role: 'subject_teacher'
+    };
+
+    const teacherNimaliUser: AuthUser = {
+      id: teacherNimali.id,
+      username: 'teacher_nimali',
+      email: 'nimali.perera@skoolsys.edu',
+      full_name: 'DEMO ONLY: Mrs. Nimali Perera (Synthetic Teacher)',
+      role: 'class_teacher'
+    };
+
+    // Case 1: Approved Correction (Triggers Reissued Report Card on Student 1)
     const st1Mark = db.prepare("SELECT id, score, assessment_status FROM marks WHERE student_id = ? AND subject_id = ? AND examination_id = ?").get(firstStudentId, math.id, term1Exam.id) as any;
-    const st1InitialScore = Number(st1Mark.score);
-    correctionInsert.run(
-      st1Mark.id, math8ASheet.id, term1Exam.id, firstStudentId, math.id,
-      teacherSamantha.id, st1InitialScore, st1Mark.assessment_status, 85, 'PRESENT',
-      'clerical_addition', 'Recalculation of Section B marks upon formal re-examination appeal (Demo Case)',
-      'approved', adminUser.id, '2026-04-02 10:30:00', 'Approved following script inspection (Demo Approval)'
-    );
-    // Update student 1 mark to reflect the approved correction accurately
-    db.prepare("UPDATE marks SET score = 85, grade_letter = 'A', updated_at = '2026-04-02 10:30:00' WHERE id = ?").run(st1Mark.id);
+    const req1 = requestMarkCorrection({
+      markId: st1Mark.id,
+      expectedPreviousScore: Number(st1Mark.score),
+      expectedPreviousStatus: st1Mark.assessment_status,
+      requestedScore: 85,
+      requestedStatus: 'PRESENT',
+      correctionCategory: 'clerical_addition',
+      detailedJustification: 'Recalculation of Section B marks upon formal re-examination appeal (Demo Case)',
+      user: teacherSamanthaUser,
+      ipAddress: '127.0.0.1'
+    });
 
-    // Pending Correction on Science sheet
+    reviewMarkCorrection({
+      correctionId: req1.correctionId,
+      decision: 'approve',
+      reviewComments: 'Approved following script inspection (Demo Approval)',
+      user: vpNawasUser,
+      ipAddress: '127.0.0.1'
+    });
+
+    // Case 2: Pending Correction on Science sheet (Student 2)
     const st2Mark = db.prepare("SELECT id, score, assessment_status FROM marks WHERE student_id = ? AND subject_id = ? AND examination_id = ?").get(secondStudentId, sci.id, term1Exam.id) as any;
-    correctionInsert.run(
-      st2Mark.id, sci8ASheet.id, term1Exam.id, secondStudentId, sci.id,
-      teacherPriya.id, Number(st2Mark.score), st2Mark.assessment_status, 79, 'PRESENT',
-      're_scrutiny', 'Formal appeal registered by parent regarding paper 2 question 4 (Demo Case)',
-      'pending', null, null, null
-    );
+    requestMarkCorrection({
+      markId: st2Mark.id,
+      expectedPreviousScore: Number(st2Mark.score),
+      expectedPreviousStatus: st2Mark.assessment_status,
+      requestedScore: 79,
+      requestedStatus: 'PRESENT',
+      correctionCategory: 're_scrutiny',
+      detailedJustification: 'Formal appeal registered by parent regarding paper 2 question 4 (Demo Case)',
+      user: teacherPriyaUser,
+      ipAddress: '127.0.0.1'
+    });
 
-    // Rejected Correction on English sheet
+    // Case 3: Rejected Correction on English sheet (Student 3)
     const st3Mark = db.prepare("SELECT id, score, assessment_status FROM marks WHERE student_id = ? AND subject_id = ? AND examination_id = ?").get(thirdStudentId, eng.id, term1Exam.id) as any;
-    correctionInsert.run(
-      st3Mark.id, eng8ASheet.id, term1Exam.id, thirdStudentId, eng.id,
-      teacherNimali.id, Number(st3Mark.score), st3Mark.assessment_status, 95, 'PRESENT',
-      'other', 'Requested additional discretionary marks (Demo Case)',
-      'rejected', adminUser.id, '2026-04-05 14:15:00', 'Rejected: No arithmetic error found on original script (Demo Rejection)'
-    );
+    const req3 = requestMarkCorrection({
+      markId: st3Mark.id,
+      expectedPreviousScore: Number(st3Mark.score),
+      expectedPreviousStatus: st3Mark.assessment_status,
+      requestedScore: 95,
+      requestedStatus: 'PRESENT',
+      correctionCategory: 'other',
+      detailedJustification: 'Requested additional discretionary marks (Demo Case)',
+      user: teacherNimaliUser,
+      ipAddress: '127.0.0.1'
+    });
+
+    reviewMarkCorrection({
+      correctionId: req3.correctionId,
+      decision: 'reject',
+      reviewComments: 'Rejected: No arithmetic error found on original script (Demo Rejection)',
+      user: publisherUser,
+      ipAddress: '127.0.0.1'
+    });
+
+    // Begin transaction for audit entries and disposable marker
+    db.exec('BEGIN IMMEDIATE;');
 
     // 18. Audit log entries
     const auditInsert = db.prepare(`
