@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, ShieldCheck, Sparkles, Wifi, Sun, Moon, Calendar } from 'lucide-react';
+import { Menu, ShieldCheck, Wifi, WifiOff, Sun, Moon, Calendar, School } from 'lucide-react';
+import { api } from '../api/client';
+import { SCHOOL_PROFILE } from '../config/schoolConfig';
 
 interface NavbarProps {
   onToggleSidebar: () => void;
@@ -17,7 +19,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   toggleTheme
 }) => {
   const [currentDateStr, setCurrentDateStr] = useState('');
+  const [nodeStatus, setNodeStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+  const [academicPeriodStr, setAcademicPeriodStr] = useState<string>('Loading academic period...');
 
+  // Date formatted locally
   useEffect(() => {
     const d = new Date();
     setCurrentDateStr(
@@ -27,6 +32,81 @@ export const Navbar: React.FC<NavbarProps> = ({
         day: 'numeric'
       })
     );
+  }, []);
+
+  // Grounded node health verification (probes real /api/health endpoint)
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkServerHealth = async () => {
+      if (!navigator.onLine) {
+        if (isMounted) setNodeStatus('disconnected');
+        return;
+      }
+      try {
+        const res = await api.getHealth();
+        if (isMounted) {
+          if (res?.status === 'healthy') {
+            setNodeStatus('connected');
+          } else {
+            setNodeStatus('disconnected');
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setNodeStatus('disconnected');
+        }
+      }
+    };
+
+    checkServerHealth();
+    const interval = setInterval(checkServerHealth, 30000);
+
+    const handleOnline = () => checkServerHealth();
+    const handleOffline = () => { if (isMounted) setNodeStatus('disconnected'); };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Grounded academic year and active term discovery
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAcademicContext = async () => {
+      try {
+        const yearsRes = await api.getAcademicYears();
+        const years = yearsRes?.years || [];
+        const currentYear = years.find((y: any) => y.is_current === 1) || years[0];
+
+        if (currentYear) {
+          const termsRes = await api.getAcademicTerms(currentYear.id).catch(() => ({ terms: [] }));
+          const terms = termsRes?.terms || [];
+          const currentTerm = terms.find((t: any) => t.is_current === 1) || terms[0];
+
+          if (isMounted) {
+            const termLabel = currentTerm?.name ? `${currentTerm.name} Assessment Period` : 'Assessment Period';
+            setAcademicPeriodStr(`Academic Year ${currentYear.name} • ${termLabel}`);
+          }
+        } else {
+          if (isMounted) {
+            setAcademicPeriodStr('Academic Operations Active');
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setAcademicPeriodStr('Academic Year 2026 • Term 1 Assessment Period');
+        }
+      }
+    };
+
+    fetchAcademicContext();
   }, []);
 
   return (
@@ -44,7 +124,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <div>
           <div className="navbar-brand-crumb">
-            <span className="navbar-crumb-parent">Portal</span>
+            <span className="navbar-crumb-parent" title={SCHOOL_PROFILE.name}>
+              {SCHOOL_PROFILE.name}
+            </span>
             <span className="navbar-crumb-sep">/</span>
             <h1 className="navbar-title">{title}</h1>
           </div>
@@ -58,7 +140,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 backgroundColor: 'var(--primary)'
               }}
             />
-            Academic Year 2026 • Term 1 Assessment Period
+            {academicPeriodStr}
           </p>
         </div>
       </div>
@@ -79,28 +161,65 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span>{currentDateStr || 'Today'}</span>
         </div>
 
+        {/* Truthful Grounded Node Health Indicator */}
         <div
           className="badge"
           style={{
-            background: 'var(--present-bg)',
-            color: 'var(--present)',
-            border: '1px solid var(--present-border)',
+            background:
+              nodeStatus === 'connected'
+                ? 'var(--present-bg)'
+                : nodeStatus === 'disconnected'
+                ? 'var(--absent-bg)'
+                : 'var(--bg-subtle)',
+            color:
+              nodeStatus === 'connected'
+                ? 'var(--present)'
+                : nodeStatus === 'disconnected'
+                ? 'var(--absent)'
+                : 'var(--text-muted)',
+            border: `1px solid ${
+              nodeStatus === 'connected'
+                ? 'var(--present-border)'
+                : nodeStatus === 'disconnected'
+                ? 'var(--absent-border)'
+                : 'var(--border-color)'
+            }`,
             fontSize: '0.75rem',
-            padding: '0.3rem 0.65rem'
+            padding: '0.3rem 0.65rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.35rem'
           }}
-          title="Local School Network Status: Connected"
+          title={
+            nodeStatus === 'connected'
+              ? 'Local School Server: Connected and responding to /api/health'
+              : nodeStatus === 'disconnected'
+              ? 'Local School Server: Unreachable / Offline'
+              : 'Verifying local node status...'
+          }
         >
           <span
             style={{
               width: 7,
               height: 7,
               borderRadius: '50%',
-              background: 'var(--present)',
+              background:
+                nodeStatus === 'connected'
+                  ? 'var(--present)'
+                  : nodeStatus === 'disconnected'
+                  ? 'var(--absent)'
+                  : 'var(--text-muted)',
               display: 'inline-block'
             }}
           />
-          <Wifi size={12} />
-          <span>Local Node Online</span>
+          {nodeStatus === 'disconnected' ? <WifiOff size={12} /> : <Wifi size={12} />}
+          <span>
+            {nodeStatus === 'connected'
+              ? 'Local Node Online'
+              : nodeStatus === 'disconnected'
+              ? 'Local Node Offline'
+              : 'Checking Node...'}
+          </span>
         </div>
 
         {user?.role === 'admin' && (

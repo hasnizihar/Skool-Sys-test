@@ -45,9 +45,10 @@ describe('PR-005: Published Marks Sheet Confidentiality & Scoped Authorization S
 
   before(async () => {
     testDbPath = path.join(os.tmpdir(), `skoolsys_g6_pub_conf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.db`);
+    process.env.DB_PATH = testDbPath;
     switchDatabase(testDbPath);
 
-    testServer = await startTestServer();
+    testServer = await startTestServer({ DB_PATH: testDbPath });
 
     // 1. Disposable Fixture Marker
     db.exec(`

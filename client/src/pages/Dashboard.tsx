@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
+import { SCHOOL_PROFILE } from '../config/schoolConfig';
 
 interface DashboardProps {
   onNavigate: (tab: string) => void;
@@ -141,8 +142,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            {SCHOOL_PROFILE.name} ({SCHOOL_PROFILE.nameTamil}) • {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo})
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.2rem' }}>
             {user?.role === 'admin'
-              ? 'Complete institutional overview of school operations across Grades 6 to 13'
+              ? `Principal Profile: ${SCHOOL_PROFILE.principalName} • Executive institutional overview across Grades 6 to 13`
               : `Assigned Role: ${user?.role?.replace('_', ' ').toUpperCase()} • Grade 6–13 Portal`}
           </p>
         </div>

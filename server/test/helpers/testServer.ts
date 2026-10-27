@@ -9,16 +9,25 @@ export interface TestServerInstance {
   request: (path: string, options?: RequestInit) => Promise<Response>;
 }
 
+export interface TestServerOptions {
+  DB_PATH?: string;
+  JWT_SECRET?: string;
+}
+
 /**
  * Spawns an isolated HTTP server on an ephemeral port (port 0) for testing.
  * Uses native fetch for Zero-Dependency, high-speed API integration tests.
  */
-export async function startTestServer(): Promise<TestServerInstance> {
-  if (!process.env.JWT_SECRET) {
+export async function startTestServer(options?: TestServerOptions): Promise<TestServerInstance> {
+  if (options?.JWT_SECRET) {
+    process.env.JWT_SECRET = options.JWT_SECRET;
+  } else if (!process.env.JWT_SECRET) {
     process.env.JWT_SECRET = 'test-jwt-secret-with-at-least-32-chars-for-safety-2026';
   }
-  if (process.env.DB_PATH) {
-    switchDatabase(process.env.DB_PATH);
+  const targetDbPath = options?.DB_PATH || process.env.DB_PATH;
+  if (targetDbPath) {
+    process.env.DB_PATH = targetDbPath;
+    switchDatabase(targetDbPath);
   }
   const app = createApp();
 

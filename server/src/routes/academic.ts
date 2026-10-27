@@ -20,6 +20,24 @@ router.get('/years', requireAuth, (req, res) => {
   res.json({ years });
 });
 
+// Academic Terms
+router.get('/terms', requireAuth, (req, res) => {
+  const { academic_year_id } = req.query;
+  try {
+    let query = 'SELECT * FROM academic_terms';
+    const params: any[] = [];
+    if (academic_year_id) {
+      query += ' WHERE academic_year_id = ?';
+      params.push(Number(academic_year_id));
+    }
+    query += ' ORDER BY term_number ASC';
+    const terms = db.prepare(query).all(...params);
+    res.json({ terms });
+  } catch {
+    res.json({ terms: [] });
+  }
+});
+
 // Grades (6 to 13)
 router.get('/grades', requireAuth, (req, res) => {
   const grades = [6, 7, 8, 9, 10, 11, 12, 13];

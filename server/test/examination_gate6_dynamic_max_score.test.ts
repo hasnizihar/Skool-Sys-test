@@ -27,6 +27,7 @@ describe('G6-03: Dynamic Maximum Marks & Grade Display Test Suite (50, 100, 200)
 
   before(async () => {
     testDbPath = path.join(os.tmpdir(), `skoolsys_g6_max_score_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.db`);
+    process.env.DB_PATH = testDbPath;
     switchDatabase(testDbPath);
 
     testServer = await startTestServer({

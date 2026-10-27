@@ -13,6 +13,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { api } from '../api/client';
+import { SCHOOL_PROFILE } from '../config/schoolConfig';
 
 interface StudentReportCardProps {
   studentId: number;
@@ -213,6 +214,24 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
                 </div>
               )}
 
+              {/* Demonstration Result Notice Banner */}
+              <div
+                style={{
+                  background: '#fef3c7',
+                  border: '1px solid #f59e0b',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.45rem 0.85rem',
+                  marginBottom: '1rem',
+                  textAlign: 'center',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  color: '#92400e',
+                  letterSpacing: '0.04em'
+                }}
+              >
+                ⚠️ {SCHOOL_PROFILE.demoResultNotice}
+              </div>
+
               {/* School Formal Header */}
               <div
                 style={{
@@ -231,20 +250,23 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
                     marginBottom: '0.35rem'
                   }}
                 >
-                  <School size={30} style={{ color: 'var(--primary)' }} />
+                  <School size={32} style={{ color: 'var(--primary)' }} />
                   <div>
                     <h2
                       style={{
-                        fontSize: '1.4rem',
+                        fontSize: '1.35rem',
                         textTransform: 'uppercase',
                         letterSpacing: '0.04em',
                         margin: 0
                       }}
                     >
-                      Kattankudy Central College
+                      {SCHOOL_PROFILE.name}
                     </h2>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                      National School • Batticaloa Central Educational Zone
+                    <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--primary)', margin: '0.15rem 0' }}>
+                      {SCHOOL_PROFILE.nameTamil}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      {SCHOOL_PROFILE.secondaryTitle} • {SCHOOL_PROFILE.zone} Educational Zone • Census No. {SCHOOL_PROFILE.censusNo}
                     </div>
                   </div>
                 </div>
@@ -572,7 +594,7 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
                 >
                   <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Principal's Signature</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Mr. A.L.M. Mukthar / Principal
+                    {SCHOOL_PROFILE.principalName} / Principal
                   </div>
                 </div>
               </div>

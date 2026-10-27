@@ -79,10 +79,13 @@ export const api = {
       body: JSON.stringify({ username, password })
     }),
   getMe: () => apiFetch('/api/auth/me'),
+  getHealth: () => apiFetch('/api/health'),
 
   // Academic
   getYears: () => apiFetch('/api/academic/years'),
   getAcademicYears: () => apiFetch('/api/academic/years'),
+  getAcademicTerms: (academicYearId?: number) =>
+    apiFetch(`/api/academic/terms${academicYearId ? `?academic_year_id=${academicYearId}` : ''}`),
   getGrades: () => apiFetch('/api/academic/grades'),
   getClasses: (grade?: number) =>
     apiFetch(`/api/academic/classes${grade ? `?grade=${grade}` : ''}`),

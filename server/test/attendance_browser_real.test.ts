@@ -153,37 +153,6 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
     }
 
     if (!appFound) {
-      console.log('[Browser E2E] Spawning local Vite server on port 5173...');
-      const clientDir = path.resolve(import.meta.dirname, '../../client');
-      try {
-        const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-        spawnedViteProcess = spawn(npxCmd, ['vite', '--port', '5173'], {
-          cwd: clientDir,
-          shell: true,
-          stdio: 'ignore'
-        });
-
-        // Wait up to 10 seconds for Vite to be ready
-        const startTime = Date.now();
-        while (Date.now() - startTime < 10000) {
-          try {
-            const resp = await fetch('http://localhost:5173', { signal: AbortSignal.timeout(500) });
-            if (resp.ok || resp.status === 200 || resp.status === 304) {
-              appBaseUrl = 'http://localhost:5173';
-              appFound = true;
-              console.log(`[Browser E2E] Auto-spawned Vite dev server ready at ${appBaseUrl}`);
-              break;
-            }
-          } catch {
-            await new Promise((r) => setTimeout(r, 400));
-          }
-        }
-      } catch (e) {
-        console.warn('[Browser E2E] Failed to auto-spawn Vite dev server:', e);
-      }
-    }
-
-    if (!appFound) {
       const distDir = path.resolve(import.meta.dirname, '../../client/dist');
       if (fs.existsSync(distDir) && fs.existsSync(path.join(distDir, 'index.html'))) {
         const info = await createStaticServer(distDir);
@@ -307,6 +276,30 @@ describe('PR-004: Genuine Automated Browser E2E Tests (Real Chromium & Productio
             }
           ]
         })
+      });
+    });
+
+    await page.route('**/api/health', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'healthy', system: 'SkoolSys Management System MVP' })
+      });
+    });
+
+    await page.route('**/api/academic/years', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ years: [{ id: 1, name: '2026', is_current: 1 }] })
+      });
+    });
+
+    await page.route('**/api/academic/terms*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ terms: [{ id: 1, name: 'Term 1', term_number: 1, is_active: 1 }] })
       });
     });
 

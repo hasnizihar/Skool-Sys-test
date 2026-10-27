@@ -16,9 +16,11 @@ import {
   ArrowRight,
   ClipboardCheck,
   KeyRound,
-  Award
+  Award,
+  Info
 } from 'lucide-react';
 import { api, setAuthSession } from '../api/client';
+import { SCHOOL_PROFILE } from '../config/schoolConfig';
 
 interface LoginProps {
   onLoginSuccess: (user: any) => void;
@@ -39,72 +41,84 @@ interface DemoAccount {
 
 const DEMO_ACCOUNTS: DemoAccount[] = [
   {
-    roleTitle: 'Administrator / Principal',
-    name: 'Mr. A.L.M. Mukthar',
+    roleTitle: 'Principal — Demo Account',
+    name: `Principal — Demo Account (${SCHOOL_PROFILE.principalName} Profile)`,
     username: 'admin',
     password: 'admin123',
-    roleTag: 'Principal & Admin',
-    scope: 'All 13 Tables, Academic Years, Examination Publishing & Security',
+    roleTag: 'Principal (Executive)',
+    scope: 'School profile oversight, academic years, policy approvals & examination publishing',
     icon: Shield,
     color: 'var(--primary)',
     bgColor: 'var(--primary-light)',
     borderColor: 'rgba(67, 56, 202, 0.25)'
   },
   {
-    roleTitle: 'Vice Principal (Academic)',
-    name: 'Mr. M.I.M. Nawas',
+    roleTitle: 'Vice Principal Academic — Demo Account',
+    name: 'Vice Principal Academic — Demo Account',
     username: 'vp_academic',
     password: 'teacher123',
     roleTag: 'VP Academic',
-    scope: 'Academic Policy, School-Wide Moderation & Examination Approvals',
+    scope: 'Academic policy, school-wide moderation & examination approvals',
     icon: Award,
     color: '#8b5cf6',
     bgColor: '#f5f3ff',
     borderColor: 'rgba(139, 92, 246, 0.25)'
   },
   {
-    roleTitle: 'Section Head (Grades 6–9)',
-    name: 'Mr. K.L.M. Farook',
+    roleTitle: 'Section Head (Grades 6–9) — Demo Account',
+    name: 'Section Head (Grades 6–9) — Demo Account',
     username: 'section_head_junior',
     password: 'teacher123',
-    roleTag: 'Section Head',
-    scope: 'Junior Section Moderation, Marks Endorsement & Review',
+    roleTag: 'Junior Section Head',
+    scope: 'Junior secondary moderation, marks endorsement & review',
     icon: ClipboardCheck,
     color: '#0284c7',
     bgColor: '#f0f9ff',
     borderColor: 'rgba(2, 132, 199, 0.25)'
   },
   {
-    roleTitle: 'Class Teacher (Grade 8-A)',
-    name: 'Mrs. Nimali Perera',
+    roleTitle: 'Section Head (Grades 10–13) — Demo Account',
+    name: 'Section Head (Grades 10–13) — Demo Account',
+    username: 'section_head_senior',
+    password: 'teacher123',
+    roleTag: 'Senior Section Head',
+    scope: 'G.C.E. O/L & A/L section moderation & marks endorsement',
+    icon: ClipboardCheck,
+    color: '#0369a1',
+    bgColor: '#e0f2fe',
+    borderColor: 'rgba(3, 105, 161, 0.25)'
+  },
+  {
+    roleTitle: 'Class Teacher (Grade 8-A) — Demo Account',
+    name: 'Class Teacher (Grade 8-A) — Demo Account',
     username: 'teacher_nimali',
     password: 'teacher123',
     roleTag: 'Class Teacher',
-    scope: 'Grade 8-A Homeroom, Daily Attendance Register & Student Roster',
+    scope: 'Grade 8-A homeroom, daily attendance register & student roster',
     icon: BookOpen,
     color: 'var(--present)',
     bgColor: 'var(--present-bg)',
     borderColor: 'var(--present-border)'
   },
   {
-    roleTitle: 'Mathematics Subject Teacher',
-    name: 'Mr. Samantha Silva',
+    roleTitle: 'Mathematics Teacher — Demo Account',
+    name: 'Mathematics Teacher — Demo Account',
     username: 'teacher_samantha',
     password: 'teacher123',
-    roleTag: 'Math Specialist',
-    scope: 'Grade 8-A & 11-A Mathematics Marks Entry & Term Reports',
+    roleTag: 'Subject Teacher',
+    scope: 'Grade 8-A & 11-A mathematics marks entry & term reports',
     icon: Calculator,
     color: 'var(--secondary)',
     bgColor: 'var(--secondary-light)',
     borderColor: 'rgba(13, 148, 136, 0.25)'
   },
   {
-    roleTitle: 'Science & ICT Subject Teacher',
-    name: 'Ms. Priya Wickramasinghe',
+    roleTitle: 'Science & ICT Teacher — Demo Account',
+    name: 'Science & ICT Teacher — Demo Account',
     username: 'teacher_priya',
     password: 'teacher123',
-    roleTag: 'Science & ICT',
-    scope: 'Grade 8-A Science & ICT Marks Entry & Term Reports',
+    roleTag: 'Subject Teacher',
+    scope: 'Grade 8-A science & ICT marks entry & term reports',
     icon: FlaskConical,
     color: 'var(--accent)',
     bgColor: 'var(--accent-light)',
@@ -172,7 +186,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         className="card"
         style={{
           width: '100%',
-          maxWidth: '540px',
+          maxWidth: '560px',
           padding: '2.5rem 2.25rem',
           boxShadow: 'var(--shadow-xl)',
           borderRadius: 'var(--radius-xl)'
@@ -183,8 +197,8 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           <div
             className="brand-badge"
             style={{
-              width: 58,
-              height: 58,
+              width: 60,
+              height: 60,
               fontSize: '1.85rem',
               margin: '0 auto 1rem',
               boxShadow: '0 8px 24px rgba(67, 56, 202, 0.3)'
@@ -192,10 +206,37 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           >
             <School size={32} />
           </div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.25rem' }}>SkoolSys</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            Grades 6–13 Academic Management System
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.2rem', color: 'var(--text-main)' }}>
+            {SCHOOL_PROFILE.name}
+          </h1>
+          <div
+            style={{
+              fontSize: '1rem',
+              color: 'var(--primary)',
+              fontWeight: 700,
+              marginBottom: '0.35rem'
+            }}
+          >
+            {SCHOOL_PROFILE.nameTamil}
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.825rem', margin: 0 }}>
+            {SCHOOL_PROFILE.secondaryTitle} • Census No. {SCHOOL_PROFILE.censusNo}
           </p>
+          <div
+            style={{
+              display: 'inline-block',
+              marginTop: '0.5rem',
+              padding: '0.2rem 0.65rem',
+              borderRadius: 'var(--radius-full)',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-color)',
+              fontSize: '0.725rem',
+              color: 'var(--text-muted)',
+              fontWeight: 600
+            }}
+          >
+            {SCHOOL_PROFILE.systemTitle}
+          </div>
         </div>
 
         {/* Error Alert */}
@@ -372,7 +413,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </div>
 
             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-              Click <strong>Fill</strong> to populate the inputs, or <strong>Sign In ➔</strong> for instant 1-click authentication:
+              Click <strong>Fill</strong> to populate credentials, or <strong>Sign In ➔</strong> for instant 1-click authentication:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
@@ -533,6 +574,38 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </div>
           </div>
         )}
+
+        {/* Official Institutional Profile Footer Card */}
+        <div
+          style={{
+            marginTop: '1.5rem',
+            paddingTop: '1.25rem',
+            borderTop: '1px solid var(--border-color)',
+            fontSize: '0.72rem',
+            color: 'var(--text-muted)',
+            lineHeight: 1.45
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: 'var(--text-main)', fontWeight: 600 }}>
+            <Info size={13} style={{ color: 'var(--primary)' }} />
+            <span>Institutional Profile Reference</span>
+          </div>
+          <div>
+            <strong>Principal:</strong> {SCHOOL_PROFILE.principalName}{' '}
+            <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
+              (Spelling requires formal school confirmation prior to official correspondence)
+            </span>
+          </div>
+          <div>
+            <strong>Zone & Division:</strong> {SCHOOL_PROFILE.zone} • {SCHOOL_PROFILE.division}
+          </div>
+          <div>
+            <strong>Type & Classification:</strong> {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo}) • {SCHOOL_PROFILE.studentCategory} (Grades 6–13)
+          </div>
+          <div style={{ marginTop: '0.4rem', color: 'var(--accent)', fontWeight: 600 }}>
+            {SCHOOL_PROFILE.demoResultNotice} — All records are synthetic demonstration fixtures.
+          </div>
+        </div>
       </div>
     </div>
   );

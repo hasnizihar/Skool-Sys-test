@@ -62,8 +62,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <School size={22} />
             </div>
             <div className="brand-info">
-              <h2>SkoolSys</h2>
-              <p>Grades 6–13 Portal</p>
+              <h2 style={{ fontSize: '0.95rem', lineHeight: 1.25 }}>Kattankudy Central College</h2>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>National School — Kattankudy</p>
+              <span style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 600, display: 'block' }}>காத்தான்குடி மத்திய கல்லூரி</span>
             </div>
           </div>
 

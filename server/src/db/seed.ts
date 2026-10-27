@@ -83,7 +83,6 @@ export function validateSeedSafety(targetDbPath: string = DB_PATH): void {
   }
 
   // 6. Strong Overwrite Protection: If database is populated, it MUST possess positive disposable fixture marker
-  // Folder-name substring matching ('test', 'temp', 'Skool-Sys-test') is strictly rejected as proof of disposable nature!
   if (isDatabasePopulated(db)) {
     const hasMarker = hasDisposableMarker(db);
     if (!hasMarker) {
@@ -114,7 +113,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
   }
   validateSeedSafety(targetPath);
 
-  console.log('🌱 Starting SkoolSys PR-005 database seed against disposable target...');
+  console.log('🌱 Starting Kattankudy Central College MVP database seed against disposable target...');
 
   // Topological table deletion child-before-parent under PRAGMA foreign_keys = ON within transaction
   db.exec('PRAGMA foreign_keys = ON;');
@@ -179,7 +178,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       // Table may not exist in all environments
     }
 
-    // 3. System Users & Passwords (Fictional Demo Synthetic Accounts)
+    // 3. System Users & Passwords (Fictional Demo Synthetic Personas)
     const salt = bcrypt.genSaltSync(10);
     const adminPass = bcrypt.hashSync('admin123', salt);
     const teacherPass = bcrypt.hashSync('teacher123', salt);
@@ -189,10 +188,12 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       VALUES (?, ?, ?, ?, ?)
     `);
 
-    userStmt.run('admin', 'admin@skoolsys.edu', adminPass, 'DEMO ONLY: Mr. A.L.M. Mukthar (Synthetic Principal / Admin)', 'admin');
+    // Demonstrative administrative and faculty roles (All labeled DEMO ONLY & Synthetic)
+    userStmt.run('admin', 'admin@skoolsys.edu', adminPass, 'DEMO ONLY: Principal — Demo Account (Synthetic Admin)', 'admin');
     userStmt.run('vp_academic', 'vp.academic@skoolsys.edu', teacherPass, 'DEMO ONLY: Mr. M.I.M. Nawas (Synthetic VP Academic)', 'class_teacher');
     userStmt.run('section_head_junior', 'sh.junior@skoolsys.edu', teacherPass, 'DEMO ONLY: Mr. K.L.M. Farook (Synthetic Section Head Grades 6-9)', 'class_teacher');
     userStmt.run('section_head_senior', 'sh.senior@skoolsys.edu', teacherPass, 'DEMO ONLY: Mr. S.H.M. Jameel (Synthetic Section Head Grades 10-13)', 'class_teacher');
+    userStmt.run('it_admin', 'it.admin@skoolsys.edu', adminPass, 'DEMO ONLY: IT Administrator — Demo Account (Synthetic)', 'admin');
     userStmt.run('teacher_nimali', 'nimali.perera@skoolsys.edu', teacherPass, 'DEMO ONLY: Mrs. Nimali Perera (Synthetic Teacher)', 'class_teacher');
     userStmt.run('teacher_samantha', 'samantha.silva@skoolsys.edu', teacherPass, 'DEMO ONLY: Mr. Samantha Silva (Synthetic Teacher)', 'subject_teacher');
     userStmt.run('teacher_priya', 'priya.wickrama@skoolsys.edu', teacherPass, 'DEMO ONLY: Ms. Priyanthi Wickramasinghe (Synthetic Teacher)', 'subject_teacher');
@@ -205,6 +206,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     const vpUser = db.prepare("SELECT id FROM users WHERE username = 'vp_academic'").get() as { id: number };
     const sectionHeadUser = db.prepare("SELECT id FROM users WHERE username = 'section_head_junior'").get() as { id: number };
     const sectionHeadSeniorUser = db.prepare("SELECT id FROM users WHERE username = 'section_head_senior'").get() as { id: number };
+    const itAdminUser = db.prepare("SELECT id FROM users WHERE username = 'it_admin'").get() as { id: number };
     const teacherNimali = db.prepare("SELECT id FROM users WHERE username = 'teacher_nimali'").get() as { id: number };
     const teacherSamantha = db.prepare("SELECT id FROM users WHERE username = 'teacher_samantha'").get() as { id: number };
     const teacherPriya = db.prepare("SELECT id FROM users WHERE username = 'teacher_priya'").get() as { id: number };
@@ -213,7 +215,8 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     const teacherKamal = db.prepare("SELECT id FROM users WHERE username = 'teacher_kamal'").get() as { id: number };
     const teacherZareena = db.prepare("SELECT id FROM users WHERE username = 'teacher_zareena'").get() as { id: number };
 
-    // 4. Academic Staff Authorizations (PR-005 Multi-Tier Leadership - Synthetic Test Fixtures)
+    // 4. Academic Staff Authorizations (PR-005 Multi-Tier Leadership Authorizations)
+    // Notice: itAdminUser has NO academic authorization record (enforcing segregation of duties)
     const authStmt = db.prepare(`
       INSERT INTO academic_staff_authorizations (user_id, academic_year_id, auth_role, grade_band, is_active, granted_by_user_id)
       VALUES (?, ?, ?, ?, 1, ?)
@@ -225,41 +228,49 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     authStmt.run(sectionHeadSeniorUser.id, currentYear.id, 'section_head', 'ol_10_11', adminUser.id);
     authStmt.run(sectionHeadSeniorUser.id, currentYear.id, 'section_head', 'al_12_13', adminUser.id);
 
-    // 5. Classes (Grades 6 to 13)
+    // 5. Classes (Grades 6 to 13 — Kattankudy Central College Institutional Structure)
     const classStmt = db.prepare(`
       INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id)
       VALUES (?, ?, ?, ?, ?)
     `);
 
     classStmt.run(6, 'Grade 6-A', 'Block A - 101', currentYear.id, teacherFathima.id);
-    classStmt.run(6, 'Grade 6-B', 'Block A - 102', currentYear.id, null);
+    classStmt.run(6, 'Grade 6-B', 'Block A - 102', currentYear.id, teacherZareena.id);
     classStmt.run(7, 'Grade 7-A', 'Block A - 201', currentYear.id, teacherZareena.id);
-    classStmt.run(7, 'Grade 7-B', 'Block A - 202', currentYear.id, null);
+    classStmt.run(7, 'Grade 7-B', 'Block A - 202', currentYear.id, teacherFathima.id);
     classStmt.run(8, 'Grade 8-A', 'Block B - 101', currentYear.id, teacherNimali.id);
-    classStmt.run(8, 'Grade 8-B', 'Block B - 102', currentYear.id, null);
+    classStmt.run(8, 'Grade 8-B', 'Block B - 102', currentYear.id, teacherSamantha.id);
     classStmt.run(9, 'Grade 9-A', 'Block B - 201', currentYear.id, teacherSamantha.id);
-    classStmt.run(9, 'Grade 9-B', 'Block B - 202', currentYear.id, null);
+    classStmt.run(9, 'Grade 9-B', 'Block B - 202', currentYear.id, teacherPriya.id);
     classStmt.run(10, 'Grade 10-A', 'Block C - 101', currentYear.id, teacherZareena.id);
-    classStmt.run(10, 'Grade 10-B', 'Block C - 102', currentYear.id, null);
+    classStmt.run(10, 'Grade 10-B', 'Block C - 102', currentYear.id, teacherMansoor.id);
     classStmt.run(11, 'Grade 11-A', 'Block C - 201', currentYear.id, teacherMansoor.id);
-    classStmt.run(11, 'Grade 11-B', 'Block C - 202', currentYear.id, null);
+    classStmt.run(11, 'Grade 11-B', 'Block C - 202', currentYear.id, teacherNimali.id);
     classStmt.run(12, 'Grade 12-Science', 'Science Lab 1', currentYear.id, teacherKamal.id);
     classStmt.run(12, 'Grade 12-Commerce', 'Block D - 101', currentYear.id, teacherMansoor.id);
-    classStmt.run(12, 'Grade 12-Arts', 'Block D - 201', currentYear.id, null);
+    classStmt.run(12, 'Grade 12-Arts', 'Block D - 201', currentYear.id, teacherPriya.id);
     classStmt.run(13, 'Grade 13-Science', 'Science Lab 2', currentYear.id, teacherKamal.id);
-    classStmt.run(13, 'Grade 13-Commerce', 'Block D - 102', currentYear.id, null);
-    classStmt.run(13, 'Grade 13-Arts', 'Block D - 202', currentYear.id, null);
+    classStmt.run(13, 'Grade 13-Commerce', 'Block D - 102', currentYear.id, teacherMansoor.id);
+    classStmt.run(13, 'Grade 13-Arts', 'Block D - 202', currentYear.id, teacherPriya.id);
 
     const grade6A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 6-A'").get() as { id: number };
+    const grade6B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 6-B'").get() as { id: number };
     const grade7A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 7-A'").get() as { id: number };
+    const grade7B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 7-B'").get() as { id: number };
     const grade8A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 8-A'").get() as { id: number };
     const grade8B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 8-B'").get() as { id: number };
     const grade9A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 9-A'").get() as { id: number };
+    const grade9B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 9-B'").get() as { id: number };
     const grade10A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 10-A'").get() as { id: number };
+    const grade10B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 10-B'").get() as { id: number };
     const grade11A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 11-A'").get() as { id: number };
+    const grade11B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 11-B'").get() as { id: number };
     const grade12Sci = db.prepare("SELECT id FROM classes WHERE name = 'Grade 12-Science'").get() as { id: number };
     const grade12Com = db.prepare("SELECT id FROM classes WHERE name = 'Grade 12-Commerce'").get() as { id: number };
+    const grade12Art = db.prepare("SELECT id FROM classes WHERE name = 'Grade 12-Arts'").get() as { id: number };
     const grade13Sci = db.prepare("SELECT id FROM classes WHERE name = 'Grade 13-Science'").get() as { id: number };
+    const grade13Com = db.prepare("SELECT id FROM classes WHERE name = 'Grade 13-Commerce'").get() as { id: number };
+    const grade13Art = db.prepare("SELECT id FROM classes WHERE name = 'Grade 13-Arts'").get() as { id: number };
 
     // 6. Subjects (National Curriculum Junior & Senior Secondary)
     const subStmt = db.prepare(`
@@ -311,38 +322,50 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       VALUES (?, ?)
     `);
 
-    // Junior: 8-A and 8-B (Baseline)
+    // Junior: 8-A and 8-B (Baseline preserved)
     [math, sci, eng, his, ict, art, hpe].forEach((sub) => {
       csStmt.run(grade8A.id, sub.id);
       csStmt.run(grade8B.id, sub.id);
     });
 
-    // Junior: 6-A and 7-A
+    // Junior: 6-A, 6-B, 7-A, 7-B
     [math, sci, eng, tam, isl, his, hpe, art].forEach((sub) => {
       csStmt.run(grade6A.id, sub.id);
+      csStmt.run(grade6B.id, sub.id);
       csStmt.run(grade7A.id, sub.id);
+      csStmt.run(grade7B.id, sub.id);
     });
 
-    // Junior: 9-A
-    [math, sci, eng, sin, his, ict, hpe].forEach((sub) => {
+    // Junior: 9-A, 9-B
+    [math, sci, eng, tam, isl, his, ict, hpe].forEach((sub) => {
       csStmt.run(grade9A.id, sub.id);
+      csStmt.run(grade9B.id, sub.id);
     });
 
-    // Senior Secondary: 10-A and 11-A
+    // Senior Secondary: 10-A, 10-B, 11-A, 11-B
     [math, sci, eng, tam, comm, his, ict, isl].forEach((sub) => {
       csStmt.run(grade10A.id, sub.id);
+      csStmt.run(grade10B.id, sub.id);
       csStmt.run(grade11A.id, sub.id);
+      csStmt.run(grade11B.id, sub.id);
     });
 
-    // Collegiate: 12-Science and 13-Science
+    // Collegiate Science: 12-Science and 13-Science
     [phy, chem, cmath, eng, ict].forEach((sub) => {
       csStmt.run(grade12Sci.id, sub.id);
       csStmt.run(grade13Sci.id, sub.id);
     });
 
-    // Collegiate: 12-Commerce
+    // Collegiate Commerce: 12-Commerce and 13-Commerce
     [acc, bs, econ, eng, ict].forEach((sub) => {
       csStmt.run(grade12Com.id, sub.id);
+      csStmt.run(grade13Com.id, sub.id);
+    });
+
+    // Collegiate Arts: 12-Arts and 13-Arts
+    [tam, his, eng, ict, art].forEach((sub) => {
+      csStmt.run(grade12Art.id, sub.id);
+      csStmt.run(grade13Art.id, sub.id);
     });
 
     // 8. Teacher Assignments
@@ -389,7 +412,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     taStmt.run(teacherMansoor.id, grade12Com.id, bs.id, currentYear.id, 'subject_teacher');
     taStmt.run(teacherMansoor.id, grade12Com.id, econ.id, currentYear.id, 'subject_teacher');
 
-    // 9. Students & Enrollments across Grades 6 to 13
+    // 9. Students & Enrollments across Grades 6 to 13 (220 Fictional Boys Profiles)
     const studentInsert = db.prepare(`
       INSERT INTO students (
         admission_no, full_name, calling_name, dob, gender, address,
@@ -408,33 +431,34 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, '2026-01-15 08:00:00')
     `);
 
-    // A. Grade 8-A (20 students) - EXACT BASELINE PRESERVED FOR REGRESSION TESTS
+    // A. Grade 8-A (20 students) — BASELINE FIXTURE FOR REGRESSION TESTS
+    // SCH-2024-001 (Kasun) is preserved; all profiles are male and representative of Kattankudy / Batticaloa.
     const grade8AStudents = [
-      { adm: 'SCH-2024-001', name: 'Kasun Malinda Ranasinghe', call: 'Kasun', dob: '2012-03-14', gender: 'Male', gName: 'Sunil Ranasinghe', gRel: 'Father', phone: '0771234567', addr: 'No 45, Temple Road, Colombo 05' },
-      { adm: 'SCH-2024-002', name: 'Tharushi Nilakshi Fernando', call: 'Tharushi', dob: '2012-05-22', gender: 'Female', gName: 'Kamal Fernando', gRel: 'Father', phone: '0712345678', addr: 'No 12/A, Station Lane, Dehiwala' },
-      { adm: 'SCH-2024-003', name: 'Dineth Sathsara Jayawardena', call: 'Dineth', dob: '2012-01-19', gender: 'Male', gName: 'Rohan Jayawardena', gRel: 'Father', phone: '0763456789', addr: '23, Galle Road, Mount Lavinia' },
-      { adm: 'SCH-2024-004', name: 'Chamodi Sandunika Senanayake', call: 'Chamodi', dob: '2012-07-08', gender: 'Female', gName: 'Malini Senanayake', gRel: 'Mother', phone: '0784567890', addr: '56, School Lane, Moratuwa' },
-      { adm: 'SCH-2024-005', name: 'Kavindu Theekshana Weerasinghe', call: 'Kavindu', dob: '2012-09-15', gender: 'Male', gName: 'Prasanna Weerasinghe', gRel: 'Father', phone: '0755678901', addr: '89, Kandy Road, Kiribathgoda' },
-      { adm: 'SCH-2024-006', name: 'Oshadi Bhagya Wickramasinghe', call: 'Oshadi', dob: '2012-11-30', gender: 'Female', gName: 'Chithra Wickramasinghe', gRel: 'Mother', phone: '0716789012', addr: '104, Hill Street, Nugegoda' },
-      { adm: 'SCH-2024-007', name: 'Bawantha Nimnada Abeykoon', call: 'Bawantha', dob: '2012-04-05', gender: 'Male', gName: 'Ajith Abeykoon', gRel: 'Father', phone: '0777890123', addr: '71, High Level Rd, Maharagama' },
-      { adm: 'SCH-2024-008', name: 'Hiruni Himasha Dissanayake', call: 'Hiruni', dob: '2012-08-12', gender: 'Female', gName: 'Sujith Dissanayake', gRel: 'Father', phone: '0728901234', addr: '15, Park Avenue, Rajagiriya' },
-      { adm: 'SCH-2024-009', name: 'Akeel Mohamed Rizwan', call: 'Akeel', dob: '2012-02-28', gender: 'Male', gName: 'Mohamed Rizwan', gRel: 'Father', phone: '0779012345', addr: '34, Main Street, Dematagoda' },
-      { adm: 'SCH-2024-010', name: 'Dilini Hansika Ratnayake', call: 'Dilini', dob: '2012-06-17', gender: 'Female', gName: 'Gamini Ratnayake', gRel: 'Father', phone: '0760123456', addr: '92, Circular Road, Kotte' },
-      { adm: 'SCH-2024-011', name: 'Sahan Prabhashwara Gunathilake', call: 'Sahan', dob: '2012-10-03', gender: 'Male', gName: 'Bandula Gunathilake', gRel: 'Father', phone: '0781234567', addr: '18, Lake Road, Battaramulla' },
-      { adm: 'SCH-2024-012', name: 'Methmi Rashmika Kulatunga', call: 'Methmi', dob: '2012-12-25', gender: 'Female', gName: 'Deepani Kulatunga', gRel: 'Mother', phone: '0752345678', addr: '63, Hospital Road, Kalubowila' },
-      { adm: 'SCH-2024-013', name: 'Sithum Nimsara Karunaratne', call: 'Sithum', dob: '2012-01-11', gender: 'Male', gName: 'Nihal Karunaratne', gRel: 'Father', phone: '0713456789', addr: '41, Jaya Road, Wellawatte' },
-      { adm: 'SCH-2024-014', name: 'Praveena Janani Warnakulasuriya', call: 'Praveena', dob: '2012-04-19', gender: 'Female', gName: 'Anthony Warnakulasuriya', gRel: 'Father', phone: '0774567890', addr: '09, Church Lane, Wattala' },
-      { adm: 'SCH-2024-015', name: 'Naveen Lakshan Alahakoon', call: 'Naveen', dob: '2012-07-27', gender: 'Male', gName: 'Sarath Alahakoon', gRel: 'Father', phone: '0725678901', addr: '82, Old Road, Pannipitiya' },
-      { adm: 'SCH-2024-016', name: 'Sanduni Kaushalya Samaraweera', call: 'Sanduni', dob: '2012-09-02', gender: 'Female', gName: 'Anoma Samaraweera', gRel: 'Mother', phone: '0766789012', addr: '27, Cross Road, Malabe' },
-      { adm: 'SCH-2024-017', name: 'Thevindu Hasaranga Mendis', call: 'Thevindu', dob: '2012-03-21', gender: 'Male', gName: 'Upali Mendis', gRel: 'Father', phone: '0787890123', addr: '50, Riverside, Kelaniya' },
-      { adm: 'SCH-2024-018', name: 'Anuki Dahamya Jayasuriya', call: 'Anuki', dob: '2012-08-30', gender: 'Female', gName: 'Priyantha Jayasuriya', gRel: 'Father', phone: '0758901234', addr: '11, Flower Terrace, Colombo 07' },
-      { adm: 'SCH-2024-019', name: 'Lithira Senhas Hettiarachchi', call: 'Lithira', dob: '2012-10-14', gender: 'Male', gName: 'Lalith Hettiarachchi', gRel: 'Father', phone: '0719012345', addr: '38, Sri Sumangala Mawatha, Panadura' },
-      { adm: 'SCH-2024-020', name: 'Vethum Sanjaya Rajapaksha', call: 'Vethum', dob: '2012-05-09', gender: 'Male', gName: 'Janaka Rajapaksha', gRel: 'Father', phone: '0770123456', addr: '99, Moragaha Lane, Piliyandala' }
+      { adm: 'SCH-2024-001', name: 'Kasun Malinda Ranasinghe', call: 'Kasun', dob: '2012-03-14', gender: 'Male', gName: 'Sunil Ranasinghe', gRel: 'Father', phone: '0770001001', addr: 'No. 45, Beach Road, New Kattankudy 06' },
+      { adm: 'SCH-2024-002', name: 'Mohamed Tariq Rameez', call: 'Tariq', dob: '2012-05-22', gender: 'Male', gName: 'Rameez Lebbe', gRel: 'Father', phone: '0770001002', addr: 'No. 12, Station Road, New Kattankudy 02' },
+      { adm: 'SCH-2024-003', name: 'Dineth Sathsara Jayawardena', call: 'Dineth', dob: '2012-01-19', gender: 'Male', gName: 'Rohan Jayawardena', gRel: 'Father', phone: '0770001003', addr: 'No. 23, Central Road, Kattankudy 04' },
+      { adm: 'SCH-2024-004', name: 'Abdul Majeed Salman', call: 'Salman', dob: '2012-07-08', gender: 'Male', gName: 'Majeed Farook', gRel: 'Father', phone: '0770001004', addr: 'No. 56, Lake Road, Kattankudy 05' },
+      { adm: 'SCH-2024-005', name: 'Kavindu Theekshana Weerasinghe', call: 'Kavindu', dob: '2012-09-15', gender: 'Male', gName: 'Prasanna Weerasinghe', gRel: 'Father', phone: '0770001005', addr: 'No. 89, Beach Road, New Kattankudy 01' },
+      { adm: 'SCH-2024-006', name: 'Mohamed Ashfaq Naleem', call: 'Ashfaq', dob: '2012-11-30', gender: 'Male', gName: 'Naleem Hadjiar', gRel: 'Father', phone: '0770001006', addr: 'No. 104, Old Mosque Road, Kattankudy 03' },
+      { adm: 'SCH-2024-007', name: 'Bawantha Nimnada Abeykoon', call: 'Bawantha', dob: '2012-04-05', gender: 'Male', gName: 'Ajith Abeykoon', gRel: 'Father', phone: '0770001007', addr: 'No. 71, Main Street, Kattankudy 06' },
+      { adm: 'SCH-2024-008', name: 'Mohamed Sajid Hafeel', call: 'Sajid', dob: '2012-08-12', gender: 'Male', gName: 'Hafeel Mohamed', gRel: 'Father', phone: '0770001008', addr: 'No. 15, Post Office Lane, Kattankudy 02' },
+      { adm: 'SCH-2024-009', name: 'Akeel Mohamed Rizwan', call: 'Akeel', dob: '2012-02-28', gender: 'Male', gName: 'Mohamed Rizwan', gRel: 'Father', phone: '0770001009', addr: 'No. 34, Beach Road, New Kattankudy 06' },
+      { adm: 'SCH-2024-010', name: 'Mohamed Nabeel Irfan', call: 'Nabeel', dob: '2012-06-17', gender: 'Male', gName: 'Irfan Cassim', gRel: 'Father', phone: '0770001010', addr: 'No. 92, Circular Road, Kattankudy 04' },
+      { adm: 'SCH-2024-011', name: 'Sahan Prabhashwara Gunathilake', call: 'Sahan', dob: '2012-10-03', gender: 'Male', gName: 'Bandula Gunathilake', gRel: 'Father', phone: '0770001011', addr: 'No. 18, Lake Road, Kattankudy 05' },
+      { adm: 'SCH-2024-012', name: 'Mohamed Zaid Subair', call: 'Zaid', dob: '2012-12-25', gender: 'Male', gName: 'Subair Hajiar', gRel: 'Father', phone: '0770001012', addr: 'No. 63, Hospital Road, Kattankudy 04' },
+      { adm: 'SCH-2024-013', name: 'Sithum Nimsara Karunaratne', call: 'Sithum', dob: '2012-01-11', gender: 'Male', gName: 'Nihal Karunaratne', gRel: 'Father', phone: '0770001013', addr: 'No. 41, Central Road, Kattankudy 03' },
+      { adm: 'SCH-2024-014', name: 'Mohamed Safwan Thahir', call: 'Safwan', dob: '2012-04-19', gender: 'Male', gName: 'Thahir Aliyar', gRel: 'Father', phone: '0770001014', addr: 'No. 09, Mosque Lane, Kattankudy 01' },
+      { adm: 'SCH-2024-015', name: 'Naveen Lakshan Alahakoon', call: 'Naveen', dob: '2012-07-27', gender: 'Male', gName: 'Sarath Alahakoon', gRel: 'Father', phone: '0770001015', addr: 'No. 82, Beach Road, New Kattankudy 02' },
+      { adm: 'SCH-2024-016', name: 'Mohamed Farhan Nizam', call: 'Farhan', dob: '2012-09-02', gender: 'Male', gName: 'Nizamdeen Seeni', gRel: 'Father', phone: '0770001016', addr: 'No. 27, Cross Street, Kattankudy 05' },
+      { adm: 'SCH-2024-017', name: 'Thevindu Hasaranga Mendis', call: 'Thevindu', dob: '2012-03-21', gender: 'Male', gName: 'Upali Mendis', gRel: 'Father', phone: '0770001017', addr: 'No. 50, Old Road, Manjanthoduvai' },
+      { adm: 'SCH-2024-018', name: 'Mohamed Aslam Faizal', call: 'Aslam', dob: '2012-08-30', gender: 'Male', gName: 'Faizal Cassim', gRel: 'Father', phone: '0770001018', addr: 'No. 11, Beach View, New Kattankudy 06' },
+      { adm: 'SCH-2024-019', name: 'Lithira Senhas Hettiarachchi', call: 'Lithira', dob: '2012-10-14', gender: 'Male', gName: 'Lalith Hettiarachchi', gRel: 'Father', phone: '0770001019', addr: 'No. 38, Sea View Road, Kattankudy 05' },
+      { adm: 'SCH-2024-020', name: 'Vethum Sanjaya Rajapaksha', call: 'Vethum', dob: '2012-05-09', gender: 'Male', gName: 'Janaka Rajapaksha', gRel: 'Father', phone: '0770001020', addr: 'No. 99, Central Lane, Kattankudy 04' }
     ];
 
     const createdGrade8AIds: number[] = [];
     grade8AStudents.forEach((s, idx) => {
-      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@family.lk`, s.phone);
+      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@demo.kcc.sch.lk`, s.phone);
       const st = db.prepare("SELECT id FROM students WHERE admission_no = ?").get(s.adm) as { id: number };
       createdGrade8AIds.push(st.id);
       enrollInsert.run(st.id, grade8A.id, currentYear.id, idx + 1);
@@ -451,59 +475,122 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       }
     });
 
-    // B. Grade 6-A (15 students - Junior Secondary Entry)
-    const grade6AStudents = [
-      { adm: 'SCH-2026-001', name: 'Mohamed Ashfaq Farzan', call: 'Ashfaq', dob: '2014-02-11', gender: 'Male', gName: 'Farzan Mohamed', gRel: 'Father', phone: '0773112233', addr: 'No 15, Beach Road, Kattankudy 01' },
-      { adm: 'SCH-2026-002', name: 'Fathima Nuha Rameez', call: 'Nuha', dob: '2014-04-18', gender: 'Female', gName: 'Rameez Lebbe', gRel: 'Father', phone: '0714223344', addr: 'No 8, Mosque Road, Kattankudy 03' },
-      { adm: 'SCH-2026-003', name: 'Abdul Rahman Salman', call: 'Salman', dob: '2014-01-29', gender: 'Male', gName: 'Salman Farook', gRel: 'Father', phone: '0765334455', addr: 'No 22, Central Road, Kattankudy 06' },
-      { adm: 'SCH-2026-004', name: 'Ayesha Mariyam Jameel', call: 'Mariyam', dob: '2014-06-12', gender: 'Female', gName: 'Jameel Ahmed', gRel: 'Father', phone: '0786445566', addr: 'No 45, Post Office Lane, Kattankudy 02' },
-      { adm: 'SCH-2026-005', name: 'Mohamed Hisham Risvi', call: 'Hisham', dob: '2014-08-05', gender: 'Male', gName: 'Risvi Mohamed', gRel: 'Father', phone: '0757556677', addr: 'No 12, Main Street, New Kattankudy' },
-      { adm: 'SCH-2026-006', name: 'Zainab Shifa Nawas', call: 'Shifa', dob: '2014-03-24', gender: 'Female', gName: 'Nawas Thamby', gRel: 'Father', phone: '0728667788', addr: 'No 67, Sea View Avenue, Kattankudy 05' },
-      { adm: 'SCH-2026-007', name: 'Mohamed Aadhil Mansoor', call: 'Aadhil', dob: '2014-09-19', gender: 'Male', gName: 'Mansoor Ali', gRel: 'Father', phone: '0779778899', addr: 'No 31, Hospital Road, Kattankudy 04' },
-      { adm: 'SCH-2026-008', name: 'Rifka Banu Shihab', call: 'Rifka', dob: '2014-11-03', gender: 'Female', gName: 'Shihabdeen Marikkar', gRel: 'Father', phone: '0760889900', addr: 'No 09, Market Lane, Kattankudy 02' },
-      { adm: 'SCH-2026-009', name: 'Mohamed Bilal Azhar', call: 'Bilal', dob: '2014-05-15', gender: 'Male', gName: 'Azhar Moulana', gRel: 'Father', phone: '0781990011', addr: 'No 54, Lake Road, Kattankudy 06' },
-      { adm: 'SCH-2026-010', name: 'Sumayya Zahra Irfan', call: 'Sumayya', dob: '2014-07-27', gender: 'Female', gName: 'Irfan Cassim', gRel: 'Father', phone: '0752001122', addr: 'No 19, Library Lane, Kattankudy 03' },
-      { adm: 'SCH-2026-011', name: 'Mohamed Luqman Thahir', call: 'Luqman', dob: '2014-10-09', gender: 'Male', gName: 'Thahir Aliyar', gRel: 'Father', phone: '0713112233', addr: 'No 88, Old Road, Manjanthoduvai' },
-      { adm: 'SCH-2026-012', name: 'Hafsa Naureen Subair', call: 'Hafsa', dob: '2014-12-14', gender: 'Female', gName: 'Subair Hajiar', gRel: 'Father', phone: '0774223344', addr: 'No 27, Circular Road, Kattankudy 01' },
-      { adm: 'SCH-2026-013', name: 'Mohamed Umair Rauf', call: 'Umair', dob: '2014-02-28', gender: 'Male', gName: 'Rauf Bawa', gRel: 'Father', phone: '0725334455', addr: 'No 40, Cross Street, Kattankudy 05' },
-      { adm: 'SCH-2026-014', name: 'Sara Zulaikha Nizam', call: 'Sara', dob: '2014-04-06', gender: 'Female', gName: 'Nizamdeen Seeni', gRel: 'Father', phone: '0766445566', addr: 'No 14, Beach Lane, New Kattankudy' },
-      { adm: 'SCH-2026-015', name: 'Mohamed Zayan Majeed', call: 'Zayan', dob: '2014-08-30', gender: 'Male', gName: 'Majeed Sultan', gRel: 'Father', phone: '0787556677', addr: 'No 73, Court Road, Batticaloa' }
+    // Helper to batch seed realistic synthetic boy student rosters for other classes
+    const seedClassRoster = (
+      classRecord: { id: number },
+      gradeLevel: number,
+      admPrefix: string,
+      startNum: number,
+      count: number,
+      names: Array<{ name: string; call: string; gName: string; addr: string }>,
+      subjectList: Array<{ id: number }>
+    ): number[] => {
+      const studentIds: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const item = names[i % names.length];
+        const numStr = String(startNum + i).padStart(3, '0');
+        const adm = `${admPrefix}-${numStr}`;
+        const birthYear = 2026 - (gradeLevel + 6);
+        const dobMonth = String((i % 12) + 1).padStart(2, '0');
+        const dobDay = String(((i * 3) % 27) + 1).padStart(2, '0');
+        const dob = `${birthYear}-${dobMonth}-${dobDay}`;
+        const phone = `0770001${String(startNum + i).padStart(3, '0')}`;
+
+        studentInsert.run(
+          adm,
+          item.name,
+          item.call,
+          dob,
+          'Male',
+          item.addr,
+          item.gName,
+          'Father',
+          phone,
+          `${item.call.toLowerCase()}.${startNum + i}@demo.kcc.sch.lk`,
+          phone
+        );
+
+        const st = db.prepare("SELECT id FROM students WHERE admission_no = ?").get(adm) as { id: number };
+        studentIds.push(st.id);
+        enrollInsert.run(st.id, classRecord.id, currentYear.id, i + 1);
+
+        subjectList.forEach(sub => {
+          sseInsert.run(st.id, sub.id, classRecord.id, currentYear.id, 'core_compulsory', adminUser.id);
+        });
+      }
+      return studentIds;
+    };
+
+    // Fictional realistic Kattankudy name/address fixture pools
+    const juniorPool1 = [
+      { name: 'Mohamed Ashfaq Farzan', call: 'Ashfaq', gName: 'Farzan Mohamed', addr: 'No. 15, Beach Road, New Kattankudy 01' },
+      { name: 'Abdul Rahman Salman', call: 'Salman', gName: 'Salman Farook', addr: 'No. 22, Central Road, Kattankudy 06' },
+      { name: 'Mohamed Hisham Risvi', call: 'Hisham', gName: 'Risvi Mohamed', addr: 'No. 12, Main Street, New Kattankudy 03' },
+      { name: 'Mohamed Aadhil Mansoor', call: 'Aadhil', gName: 'Mansoor Ali', addr: 'No. 31, Hospital Road, Kattankudy 04' },
+      { name: 'Mohamed Bilal Azhar', call: 'Bilal', gName: 'Azhar Moulana', addr: 'No. 54, Lake Road, Kattankudy 06' },
+      { name: 'Mohamed Luqman Thahir', call: 'Luqman', gName: 'Thahir Aliyar', addr: 'No. 88, Old Road, Manjanthoduvai' },
+      { name: 'Mohamed Umair Rauf', call: 'Umair', gName: 'Rauf Bawa', addr: 'No. 40, Cross Street, Kattankudy 05' },
+      { name: 'Mohamed Zayan Majeed', call: 'Zayan', gName: 'Majeed Sultan', addr: 'No. 73, Court Road, Batticaloa' },
+      { name: 'Mohamed Ilham Sheriff', call: 'Ilham', gName: 'Sheriffdeen Hadjiar', addr: 'No. 19, Beach Lane, New Kattankudy 02' },
+      { name: 'Mohamed Danish Faizal', call: 'Danish', gName: 'Faizal Cassim', addr: 'No. 28, Circular Road, Kattankudy 01' },
+      { name: 'Abdul Basith Jameel', call: 'Basith', gName: 'Jameel Ahmed', addr: 'No. 65, Market Lane, Kattankudy 02' },
+      { name: 'Mohamed Rinas Shihab', call: 'Rinas', gName: 'Shihab Marikkar', addr: 'No. 47, Post Office Road, Kattankudy 03' },
+      { name: 'Mohamed Mushtaq Subair', call: 'Mushtaq', gName: 'Subair Hajiar', addr: 'No. 14, Grand Mosque Road, Kattankudy 01' },
+      { name: 'Mohamed Hamza Nizam', call: 'Hamza', gName: 'Nizamdeen Seeni', addr: 'No. 36, Beach View, New Kattankudy 06' },
+      { name: 'Mohamed Anas Latheef', call: 'Anas', gName: 'Latheef Kariapper', addr: 'No. 52, Sea View Avenue, Kattankudy 05' }
     ];
 
-    const createdGrade6AIds: number[] = [];
-    grade6AStudents.forEach((s, idx) => {
-      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@family.lk`, s.phone);
-      const st = db.prepare("SELECT id FROM students WHERE admission_no = ?").get(s.adm) as { id: number };
-      createdGrade6AIds.push(st.id);
-      enrollInsert.run(st.id, grade6A.id, currentYear.id, idx + 1);
+    const juniorPool2 = [
+      { name: 'Mohamed Rayan Niyas', call: 'Rayan', gName: 'Niyas Mohamed', addr: 'No. 18, Central Street, Kattankudy 03' },
+      { name: 'Abdul Hadi Basheer', call: 'Hadi', gName: 'Basheer Ahmed', addr: 'No. 42, Hospital Road, Kattankudy 04' },
+      { name: 'Mohamed Zaheem Siraj', call: 'Zaheem', gName: 'Sirajdeen Moulana', addr: 'No. 09, Beach Road, New Kattankudy 02' },
+      { name: 'Mohamed Afnan Haris', call: 'Afnan', gName: 'Haris Mohamed', addr: 'No. 60, Lake Road, Kattankudy 06' },
+      { name: 'Mohamed Shuaib Thowfeek', call: 'Shuaib', gName: 'Thowfeek Bawa', addr: 'No. 33, Station Road, Batticaloa' },
+      { name: 'Mohamed Waseem Aslam', call: 'Waseem', gName: 'Aslam Lebbe', addr: 'No. 81, Old Mosque Road, Kattankudy 01' },
+      { name: 'Abdul Malik Kaleel', call: 'Malik', gName: 'Kaleelur Rahman', addr: 'No. 25, Bazaar Street, Kattankudy 02' },
+      { name: 'Mohamed Nihal Fouzul', call: 'Nihal', gName: 'Fouzul Hameed', addr: 'No. 76, New Road, Kattankudy 04' },
+      { name: 'Mohamed Sarfan Anwer', call: 'Sarfan', gName: 'Anwer Sadath', addr: 'No. 14, Library Road, Kattankudy 03' },
+      { name: 'Mohamed Azim Nafeez', call: 'Azim', gName: 'Nafeez Marikkar', addr: 'No. 90, Central Avenue, Kattankudy 05' },
+      { name: 'Mohamed Hafeel Yoonus', call: 'Hafeel', gName: 'Yoonus Moulavi', addr: 'No. 38, Beach Lane, New Kattankudy 01' },
+      { name: 'Mohamed Mursheed Jalal', call: 'Mursheed', gName: 'Jalaldeen Hadjiar', addr: 'No. 57, Circular Road, Kattankudy 06' }
+    ];
 
-      [math, sci, eng, tam, isl, his, hpe, art].forEach(sub => {
-        sseInsert.run(st.id, sub.id, grade6A.id, currentYear.id, 'core_compulsory', adminUser.id);
-      });
-    });
+    // Seed Junior Secondary: Grade 6, 7, 8-B, 9
+    const createdGrade6AIds = seedClassRoster(grade6A, 6, 'KCC-2026', 1, 15, juniorPool1, [math, sci, eng, tam, isl, his, hpe, art]);
+    seedClassRoster(grade6B, 6, 'KCC-2026', 16, 12, juniorPool2, [math, sci, eng, tam, isl, his, hpe, art]);
+    seedClassRoster(grade7A, 7, 'KCC-2025', 1, 12, juniorPool1, [math, sci, eng, tam, isl, his, hpe, art]);
+    seedClassRoster(grade7B, 7, 'KCC-2025', 13, 12, juniorPool2, [math, sci, eng, tam, isl, his, hpe, art]);
+    seedClassRoster(grade8B, 8, 'KCC-2024', 21, 12, juniorPool2, [math, sci, eng, his, ict, art, hpe]);
+    seedClassRoster(grade9A, 9, 'KCC-2023', 1, 12, juniorPool1, [math, sci, eng, tam, isl, his, ict, hpe]);
+    seedClassRoster(grade9B, 9, 'KCC-2023', 13, 12, juniorPool2, [math, sci, eng, tam, isl, his, ict, hpe]);
 
-    // C. Grade 11-A (15 students - G.C.E. O/L Candidate Class)
+    // Seed Senior O/L: Grade 10-A, 10-B
+    seedClassRoster(grade10A, 10, 'KCC-2022', 1, 12, juniorPool1, [math, sci, eng, tam, comm, his, ict, isl]);
+    seedClassRoster(grade10B, 10, 'KCC-2022', 13, 12, juniorPool2, [math, sci, eng, tam, comm, his, ict, isl]);
+
+    // B. Grade 11-A (15 students - G.C.E. O/L Candidate Class) — BASELINE FIXTURE FOR REGRESSION TESTS
+    // SCH-2021-001 (Akram) preserved; all profiles are male.
     const grade11AStudents = [
-      { adm: 'SCH-2021-001', name: 'Mohamed Akram Ilham', call: 'Akram', dob: '2009-03-10', gender: 'Male', gName: 'Ilham Sheriff', gRel: 'Father', phone: '0772233441', addr: 'No 10, Grand Mosque Road, Kattankudy' },
-      { adm: 'SCH-2021-002', name: 'Fathima Sajeedha Naleer', call: 'Sajeedha', dob: '2009-05-14', gender: 'Female', gName: 'Naleer Hadjiar', gRel: 'Father', phone: '0713344552', addr: 'No 24, Bazaar Street, Kattankudy' },
-      { adm: 'SCH-2021-003', name: 'Mohamed Afzal Raheem', call: 'Afzal', dob: '2009-01-20', gender: 'Male', gName: 'Abdul Raheem', gRel: 'Father', phone: '0764455663', addr: 'No 58, New Road, Kattankudy 04' },
-      { adm: 'SCH-2021-004', name: 'Aamina Rushda Fouzul', call: 'Rushda', dob: '2009-07-09', gender: 'Female', gName: 'Fouzul Hameed', gRel: 'Father', phone: '0785566774', addr: 'No 33, College Road, Kattankudy' },
-      { adm: 'SCH-2021-005', name: 'Mohamed Sarfan Anwer', call: 'Sarfan', dob: '2009-09-17', gender: 'Male', gName: 'Anwer Sadath', gRel: 'Father', phone: '0756677885', addr: 'No 17, Main Street, Batticaloa' },
-      { adm: 'SCH-2021-006', name: 'Zahra Musfira Hameed', call: 'Musfira', dob: '2009-11-25', gender: 'Female', gName: 'Hameed Sultan', gRel: 'Father', phone: '0727788996', addr: 'No 76, Hospital Road, Kattankudy' },
-      { adm: 'SCH-2021-007', name: 'Mohamed Nihal Jabir', call: 'Nihal', dob: '2009-04-03', gender: 'Male', gName: 'Jabir Mohamed', gRel: 'Father', phone: '0778899007', addr: 'No 41, Central Lane, Kattankudy' },
-      { adm: 'SCH-2021-008', name: 'Fathima Shamla Rauf', call: 'Shamla', dob: '2009-08-11', gender: 'Female', gName: 'Abdul Rauf', gRel: 'Father', phone: '0769900118', addr: 'No 19, Beach Road, New Kattankudy' },
-      { adm: 'SCH-2021-009', name: 'Mohamed Mursheed Jalal', call: 'Mursheed', dob: '2009-02-18', gender: 'Male', gName: 'Jalaldeen Marikkar', gRel: 'Father', phone: '0780011229', addr: 'No 62, Station Road, Batticaloa' },
-      { adm: 'SCH-2021-010', name: 'Asma Tasneem Zubair', call: 'Tasneem', dob: '2009-06-22', gender: 'Female', gName: 'Zubair Alim', gRel: 'Father', phone: '0751122330', addr: 'No 05, Library Road, Kattankudy' },
-      { adm: 'SCH-2021-011', name: 'Mohamed Shakir Bazeer', call: 'Shakir', dob: '2009-10-05', gender: 'Male', gName: 'Bazeer Lebbe', gRel: 'Father', phone: '0712233441', addr: 'No 83, Mosque Lane, Kattankudy 05' },
-      { adm: 'SCH-2021-012', name: 'Fathima Zeenath Latheef', call: 'Zeenath', dob: '2009-12-30', gender: 'Female', gName: 'Latheef Kariapper', gRel: 'Father', phone: '0773344552', addr: 'No 29, Old Post Road, Kattankudy' },
-      { adm: 'SCH-2021-013', name: 'Mohamed Sajid Hafeel', call: 'Sajid', dob: '2009-01-16', gender: 'Male', gName: 'Hafeel Mohamed', gRel: 'Father', phone: '0724455663', addr: 'No 51, Sea View Road, Kattankudy' },
-      { adm: 'SCH-2021-014', name: 'Mariyam Rashida Yoonus', call: 'Rashida', dob: '2009-04-28', gender: 'Female', gName: 'Yoonus Moulavi', gRel: 'Father', phone: '0765566774', addr: 'No 14, Beach Side, Kattankudy 02' },
-      { adm: 'SCH-2021-015', name: 'Mohamed Azim Nafeez', call: 'Azim', dob: '2009-07-31', gender: 'Male', gName: 'Nafeez Marikkar', gRel: 'Father', phone: '0786677885', addr: 'No 90, Central Avenue, Kattankudy' }
+      { adm: 'SCH-2021-001', name: 'Mohamed Akram Ilham', call: 'Akram', dob: '2009-03-10', gender: 'Male', gName: 'Ilham Sheriff', gRel: 'Father', phone: '0770001081', addr: 'No. 10, Grand Mosque Road, Kattankudy 01' },
+      { adm: 'SCH-2021-002', name: 'Abdul Majeed Naleer', call: 'Majeed', dob: '2009-05-14', gender: 'Male', gName: 'Naleer Hadjiar', gRel: 'Father', phone: '0770001082', addr: 'No. 24, Bazaar Street, Kattankudy 02' },
+      { adm: 'SCH-2021-003', name: 'Mohamed Afzal Raheem', call: 'Afzal', dob: '2009-01-20', gender: 'Male', gName: 'Abdul Raheem', gRel: 'Father', phone: '0770001083', addr: 'No. 58, New Road, Kattankudy 04' },
+      { adm: 'SCH-2021-004', name: 'Abdul Rahman Salman', call: 'Salman', dob: '2009-07-09', gender: 'Male', gName: 'Salman Farook', gRel: 'Father', phone: '0770001084', addr: 'No. 33, College Road, Kattankudy 03' },
+      { adm: 'SCH-2021-005', name: 'Mohamed Sarfan Anwer', call: 'Sarfan', dob: '2009-09-17', gender: 'Male', gName: 'Anwer Sadath', gRel: 'Father', phone: '0770001085', addr: 'No. 17, Main Street, Batticaloa' },
+      { adm: 'SCH-2021-006', name: 'Mohamed Ashfaq Hameed', call: 'Ashfaq', dob: '2009-11-25', gender: 'Male', gName: 'Hameed Sultan', gRel: 'Father', phone: '0770001086', addr: 'No. 76, Hospital Road, Kattankudy 04' },
+      { adm: 'SCH-2021-007', name: 'Mohamed Nihal Jabir', call: 'Nihal', dob: '2009-04-03', gender: 'Male', gName: 'Jabir Mohamed', gRel: 'Father', phone: '0770001087', addr: 'No. 41, Central Lane, Kattankudy 05' },
+      { adm: 'SCH-2021-008', name: 'Abdul Wahid Rauf', call: 'Wahid', dob: '2009-08-11', gender: 'Male', gName: 'Abdul Rauf', gRel: 'Father', phone: '0770001088', addr: 'No. 19, Beach Road, New Kattankudy 02' },
+      { adm: 'SCH-2021-009', name: 'Mohamed Mursheed Jalal', call: 'Mursheed', dob: '2009-02-18', gender: 'Male', gName: 'Jalaldeen Marikkar', gRel: 'Father', phone: '0770001089', addr: 'No. 62, Station Road, Batticaloa' },
+      { adm: 'SCH-2021-010', name: 'Mohamed Ziyad Zubair', call: 'Ziyad', dob: '2009-06-22', gender: 'Male', gName: 'Zubair Alim', gRel: 'Father', phone: '0770001090', addr: 'No. 05, Library Road, Kattankudy 03' },
+      { adm: 'SCH-2021-011', name: 'Mohamed Shakir Bazeer', call: 'Shakir', dob: '2009-10-05', gender: 'Male', gName: 'Bazeer Lebbe', gRel: 'Father', phone: '0770001091', addr: 'No. 83, Mosque Lane, Kattankudy 05' },
+      { adm: 'SCH-2021-012', name: 'Mohamed Aadhil Latheef', call: 'Aadhil', dob: '2009-12-30', gender: 'Male', gName: 'Latheef Kariapper', gRel: 'Father', phone: '0770001092', addr: 'No. 29, Old Post Road, Kattankudy 01' },
+      { adm: 'SCH-2021-013', name: 'Mohamed Sajid Hafeel', call: 'Sajid', dob: '2009-01-16', gender: 'Male', gName: 'Hafeel Mohamed', gRel: 'Father', phone: '0770001093', addr: 'No. 51, Sea View Road, Kattankudy 05' },
+      { adm: 'SCH-2021-014', name: 'Mohamed Bilal Yoonus', call: 'Bilal', dob: '2009-04-28', gender: 'Male', gName: 'Yoonus Moulavi', gRel: 'Father', phone: '0770001094', addr: 'No. 14, Beach Side, Kattankudy 02' },
+      { adm: 'SCH-2021-015', name: 'Mohamed Azim Nafeez', call: 'Azim', dob: '2009-07-31', gender: 'Male', gName: 'Nafeez Marikkar', gRel: 'Father', phone: '0770001095', addr: 'No. 90, Central Avenue, Kattankudy 06' }
     ];
 
     const createdGrade11AIds: number[] = [];
     grade11AStudents.forEach((s, idx) => {
-      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@family.lk`, s.phone);
+      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@demo.kcc.sch.lk`, s.phone);
       const st = db.prepare("SELECT id FROM students WHERE admission_no = ?").get(s.adm) as { id: number };
       createdGrade11AIds.push(st.id);
       enrollInsert.run(st.id, grade11A.id, currentYear.id, idx + 1);
@@ -513,25 +600,28 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       });
     });
 
-    // D. Grade 12-Science (12 students - G.C.E. A/L Physical Science Stream)
+    seedClassRoster(grade11B, 11, 'KCC-2021', 16, 12, juniorPool2, [math, sci, eng, tam, comm, his, ict, isl]);
+
+    // C. Grade 12-Science (12 students - G.C.E. A/L Physical Science Stream) — BASELINE FIXTURE FOR REGRESSION TESTS
+    // SCH-2020-001 (Irfan) preserved; all profiles are male.
     const grade12SciStudents = [
-      { adm: 'SCH-2020-001', name: 'Mohamed Irfan Shakaf', call: 'Irfan', dob: '2007-03-08', gender: 'Male', gName: 'Shakaf Mohamed', gRel: 'Father', phone: '0774455661', addr: 'No 25, Main Road, Kattankudy' },
-      { adm: 'SCH-2020-002', name: 'Fathima Safana Rifas', call: 'Safana', dob: '2007-05-19', gender: 'Female', gName: 'Rifas Hadjiar', gRel: 'Father', phone: '0715566772', addr: 'No 42, Beach View, Kattankudy' },
-      { adm: 'SCH-2020-003', name: 'Mohamed Hamdan Naheem', call: 'Hamdan', dob: '2007-01-14', gender: 'Male', gName: 'Naheem Kariapper', gRel: 'Father', phone: '0766677883', addr: 'No 18, Central Street, Kattankudy' },
-      { adm: 'SCH-2020-004', name: 'Ayesha Humaira Basheer', call: 'Humaira', dob: '2007-07-26', gender: 'Female', gName: 'Basheer Ahmed', gRel: 'Father', phone: '0787788994', addr: 'No 60, Hospital Road, Kattankudy' },
-      { adm: 'SCH-2020-005', name: 'Mohamed Fawwaz Siraj', call: 'Fawwaz', dob: '2007-09-02', gender: 'Male', gName: 'Sirajdeen Moulana', gRel: 'Father', phone: '0758899005', addr: 'No 33, College Road, Kattankudy' },
-      { adm: 'SCH-2020-006', name: 'Haleema Afra Niyas', call: 'Afra', dob: '2007-11-17', gender: 'Female', gName: 'Niyas Mohamed', gRel: 'Father', phone: '0729900116', addr: 'No 07, Market Road, Kattankudy' },
-      { adm: 'SCH-2020-007', name: 'Mohamed Luqman Thowfeek', call: 'Luqman', dob: '2007-04-12', gender: 'Male', gName: 'Thowfeek Bawa', gRel: 'Father', phone: '0770011227', addr: 'No 84, Sea Beach Lane, Kattankudy' },
-      { adm: 'SCH-2020-008', name: 'Fathima Munawwara Aslam', call: 'Munawwara', dob: '2007-08-29', gender: 'Female', gName: 'Aslam Lebbe', gRel: 'Father', phone: '0761122338', addr: 'No 51, Circular Road, Kattankudy' },
-      { adm: 'SCH-2020-009', name: 'Mohamed Danial Haris', call: 'Danial', dob: '2007-02-23', gender: 'Male', gName: 'Haris Mohamed', gRel: 'Father', phone: '0782233449', addr: 'No 14, Old Post Road, Batticaloa' },
-      { adm: 'SCH-2020-010', name: 'Zainab Nusrath Kaleel', call: 'Nusrath', dob: '2007-06-05', gender: 'Female', gName: 'Kaleelur Rahman', gRel: 'Father', phone: '0753344550', addr: 'No 79, Mosque Avenue, Kattankudy' },
-      { adm: 'SCH-2020-011', name: 'Mohamed Saajid Waseem', call: 'Saajid', dob: '2007-10-18', gender: 'Male', gName: 'Waseem Marikkar', gRel: 'Father', phone: '0714455661', addr: 'No 36, Grand Lane, Kattankudy' },
-      { adm: 'SCH-2020-012', name: 'Khadija Minha Faizal', call: 'Minha', dob: '2007-12-07', gender: 'Female', gName: 'Faizal Cassim', gRel: 'Father', phone: '0775566772', addr: 'No 21, New Beach Road, Kattankudy' }
+      { adm: 'SCH-2020-001', name: 'Mohamed Irfan Shakaf', call: 'Irfan', dob: '2007-03-08', gender: 'Male', gName: 'Shakaf Mohamed', gRel: 'Father', phone: '0770001151', addr: 'No. 25, Main Road, New Kattankudy 02' },
+      { adm: 'SCH-2020-002', name: 'Mohamed Rifas Hadjiar', call: 'Rifas', dob: '2007-05-19', gender: 'Male', gName: 'Hadjiar Lebbe', gRel: 'Father', phone: '0770001152', addr: 'No. 42, Beach View, New Kattankudy 06' },
+      { adm: 'SCH-2020-003', name: 'Mohamed Hamdan Naheem', call: 'Hamdan', dob: '2007-01-14', gender: 'Male', gName: 'Naheem Kariapper', gRel: 'Father', phone: '0770001153', addr: 'No. 18, Central Street, Kattankudy 03' },
+      { adm: 'SCH-2020-004', name: 'Abdul Basheer Ahmed', call: 'Basheer', dob: '2007-07-26', gender: 'Male', gName: 'Ahmed Sultan', gRel: 'Father', phone: '0770001154', addr: 'No. 60, Hospital Road, Kattankudy 04' },
+      { adm: 'SCH-2020-005', name: 'Mohamed Fawwaz Siraj', call: 'Fawwaz', dob: '2007-09-02', gender: 'Male', gName: 'Sirajdeen Moulana', gRel: 'Father', phone: '0770001155', addr: 'No. 33, College Road, Kattankudy 01' },
+      { adm: 'SCH-2020-006', name: 'Mohamed Niyas Bawa', call: 'Niyas', dob: '2007-11-17', gender: 'Male', gName: 'Bawa Marikkar', gRel: 'Father', phone: '0770001156', addr: 'No. 07, Market Road, Kattankudy 02' },
+      { adm: 'SCH-2020-007', name: 'Mohamed Luqman Thowfeek', call: 'Luqman', dob: '2007-04-12', gender: 'Male', gName: 'Thowfeek Bawa', gRel: 'Father', phone: '0770001157', addr: 'No. 84, Sea Beach Lane, Kattankudy 05' },
+      { adm: 'SCH-2020-008', name: 'Abdul Aslam Lebbe', call: 'Aslam', dob: '2007-08-29', gender: 'Male', gName: 'Lebbe Aliyar', gRel: 'Father', phone: '0770001158', addr: 'No. 51, Circular Road, Kattankudy 06' },
+      { adm: 'SCH-2020-009', name: 'Mohamed Danial Haris', call: 'Danial', dob: '2007-02-23', gender: 'Male', gName: 'Haris Mohamed', gRel: 'Father', phone: '0770001159', addr: 'No. 14, Old Post Road, Batticaloa' },
+      { adm: 'SCH-2020-010', name: 'Mohamed Kaleelur Rahman', call: 'Kaleel', dob: '2007-06-05', gender: 'Male', gName: 'Rahman Marikkar', gRel: 'Father', phone: '0770001160', addr: 'No. 79, Mosque Avenue, Kattankudy 03' },
+      { adm: 'SCH-2020-011', name: 'Mohamed Saajid Waseem', call: 'Saajid', dob: '2007-10-18', gender: 'Male', gName: 'Waseem Marikkar', gRel: 'Father', phone: '0770001161', addr: 'No. 36, Grand Lane, Kattankudy 01' },
+      { adm: 'SCH-2020-012', name: 'Mohamed Faizal Cassim', call: 'Faizal', dob: '2007-12-07', gender: 'Male', gName: 'Cassim Hajiar', gRel: 'Father', phone: '0770001162', addr: 'No. 21, New Beach Road, Kattankudy 06' }
     ];
 
     const createdGrade12SciIds: number[] = [];
     grade12SciStudents.forEach((s, idx) => {
-      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@family.lk`, s.phone);
+      studentInsert.run(s.adm, s.name, s.call, s.dob, s.gender, s.addr, s.gName, s.gRel, s.phone, `${s.call.toLowerCase()}@demo.kcc.sch.lk`, s.phone);
       const st = db.prepare("SELECT id FROM students WHERE admission_no = ?").get(s.adm) as { id: number };
       createdGrade12SciIds.push(st.id);
       enrollInsert.run(st.id, grade12Sci.id, currentYear.id, idx + 1);
@@ -541,7 +631,16 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       });
     });
 
-    // 10. Attendance Sessions & Records across Grades 6, 8, 11, 12
+    // Seed Collegiate Commerce & Arts: Grade 12-Commerce, 12-Arts, 13-Science, 13-Commerce, 13-Arts
+    seedClassRoster(grade12Com, 12, 'KCC-2020', 13, 10, juniorPool1, [acc, bs, econ, eng, ict]);
+    seedClassRoster(grade12Art, 12, 'KCC-2020', 23, 10, juniorPool2, [tam, his, eng, ict, art]);
+    seedClassRoster(grade13Sci, 13, 'KCC-2019', 1, 10, juniorPool1, [phy, chem, cmath, eng, ict]);
+    seedClassRoster(grade13Com, 13, 'KCC-2019', 11, 10, juniorPool2, [acc, bs, econ, eng, ict]);
+    seedClassRoster(grade13Art, 13, 'KCC-2019', 21, 10, juniorPool1, [tam, his, eng, ict, art]);
+
+    const totalStudentsCount = (db.prepare('SELECT COUNT(*) as cnt FROM students').get() as { cnt: number }).cnt;
+
+    // 10. Attendance Sessions & Records across Multiple Grades and Dates
     const sessionInsert = db.prepare(`
       INSERT INTO attendance_sessions (uuid, class_id, date, academic_year_id, taken_by_user_id, status, notes)
       VALUES (?, ?, ?, ?, ?, 'submitted', ?)
@@ -591,7 +690,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
           remarks = 'Family function';
         } else if ((sIdx + dayIdx) % 12 === 0) {
           status = 'late';
-          remarks = 'Heavy rain delay';
+          remarks = 'Rain delay';
         }
         recordInsert.run(sess.id, studentId, status, remarks);
       });
@@ -772,7 +871,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     const eng8ASheet = db.prepare("SELECT id FROM marks_sheets WHERE examination_id = ? AND class_id = ? AND subject_id = ?").get(term1Exam.id, grade8A.id, eng.id) as { id: number };
 
     // Mid-Year - Separate Unpublished Moderation Demonstrations (Draft, Submitted, Reviewed, Approved)
-    // History: DRAFT state (assigned to teacherSamantha) - satisfies test 10
+    // History: DRAFT state (assigned to teacherSamantha)
     sheetInsert.run(
       midYearExam.id, grade8A.id, his.id, currentYear.id, teacherSamantha.id,
       1, 'draft', null, null,
@@ -804,7 +903,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       adminUser.id, '2026-07-22 14:00:00', 'Approved by Principal'
     );
 
-    // Note: Mathematics in Mid-Year is intentionally unseeded so tests 5-7 can demonstrate live entry, draft save, and submit!
+    // Note: Mathematics in Mid-Year is intentionally unseeded so interactive entry, draft save, and submit can be demonstrated live.
 
     // Grade 11-A Sheets (O/L Demo: Approved -> will be Published)
     sheetInsert.run(
@@ -931,12 +1030,11 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     db.exec('COMMIT;');
 
     // 16. Execute Canonical Examination Publication (PR-005 Examination Publication Service)
-    // Validates publication invariants, class calculation reconciliation, and creates immutable snapshot with authentic SHA-256 audit hash
     const publisherUser: AuthUser = {
       id: adminUser.id,
       username: 'admin',
       email: 'admin@skoolsys.edu',
-      full_name: 'DEMO ONLY: Mr. A.L.M. Mukthar (Synthetic Principal / Admin)',
+      full_name: 'DEMO ONLY: Principal — Demo Account (Synthetic Admin)',
       role: 'admin'
     };
     publishExamination({
@@ -947,7 +1045,6 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     });
 
     // 17. Post-Publication Corrections (Demonstrating Reissued report cards & negative states)
-    // Uses canonical PR-005 marksCorrectionService (requestMarkCorrection & reviewMarkCorrection)
     const firstStudentId = createdGrade8AIds[0];
     const secondStudentId = createdGrade8AIds[1];
     const thirdStudentId = createdGrade8AIds[2];
@@ -1051,7 +1148,7 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    auditInsert.run(adminUser.id, 'admin', 'SYSTEM_INIT', 'System', '0', JSON.stringify({ message: 'SkoolSys 2.0 MVP School Demo database seed completed (Synthetic Data).' }));
+    auditInsert.run(adminUser.id, 'admin', 'SYSTEM_INIT', 'System', '0', JSON.stringify({ message: 'Kattankudy Central College SkoolSys 2.0 MVP database seed completed (Synthetic Data).' }));
     auditInsert.run(teacherNimali.id, 'teacher_nimali', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 8-A', recordsCount: createdGrade8AIds.length }));
     auditInsert.run(teacherFathima.id, 'teacher_fathima', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 6-A', recordsCount: createdGrade6AIds.length }));
     auditInsert.run(teacherMansoor.id, 'teacher_mansoor', 'ATTENDANCE_SUBMIT', 'attendance_sessions', recentDates[4], JSON.stringify({ class: 'Grade 11-A', recordsCount: createdGrade11AIds.length }));
@@ -1061,18 +1158,19 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
 
     db.exec('COMMIT;');
 
-    console.log('✅ SkoolSys Database seeded successfully with synthetic demo data:');
+    console.log('✅ Kattankudy Central College Database seeded successfully with synthetic demo data:');
     console.log('   - 1 Academic Year (2026) with 3 Terms');
-    console.log('   - 11 Synthetic System Users (Principal, VP Academic, Junior & Senior Section Heads, Class & Specialist Teachers)');
-    console.log('   - 5 Active Leadership Authorizations (Principal, VP, Junior Section Head, Senior Section Head)');
-    console.log('   - 18 Classes (Grades 6 to 13)');
+    console.log('   - 12 Synthetic System Users (Principal, VP Academic, Junior & Senior Section Heads, IT Admin, Teachers)');
+    console.log('   - 5 Active Leadership Authorizations (Principal, VP, Junior & Senior Section Heads; IT Admin unprivileged)');
+    console.log('   - 18 Classes across all Grades 6 to 13 (Junior Secondary, O/L, and Collegiate Science/Commerce/Arts)');
     console.log('   - 19 Subjects (Core, Religion, Aesthetic, Commerce, Science)');
-    console.log(`   - ${createdGrade8AIds.length + createdGrade6AIds.length + createdGrade11AIds.length + createdGrade12SciIds.length} Students across Grades 6, 8, 11 (O/L), and 12 (A/L) with Confirmed Enrolments`);
+    console.log(`   - ${totalStudentsCount} Synthetic Boy Students across Grades 6 to 13 with Confirmed Enrolments & Unique Admission Nos`);
     console.log('   - 4 Assessment Policy Profiles across Junior, O/L, and A/L grade bands');
-    console.log('   - 3 Examinations across lifecycle stages (Published, Scheduled, Draft)');
+    console.log('   - 3 Examinations across lifecycle stages (Published Term 1, Scheduled Mid-Year, Draft Year-End)');
     console.log('   - Approved Schedules for Grade 8-A, 11-A, and 12-Science');
     console.log('   - 11 Marks Sheets across Approved, Published, Reviewed, Submitted, and Draft states');
-    console.log('   - Published Marks and Report Cards ready for Junior, O/L, and A/L students');
+    console.log('   - Canonical Publication with authentic SHA-256 audit hash over snapshot');
+    console.log('   - Published Marks and Official Report Cards ready for Junior, O/L, and A/L students');
     console.log('   - 3 Post-Publication Corrections (Approved/Reissued, Pending, Rejected)');
   } catch (err) {
     try {
