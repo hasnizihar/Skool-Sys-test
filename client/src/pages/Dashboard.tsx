@@ -361,136 +361,121 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           SHARED INSTITUTIONAL HEADER & BANNER
           ==================================================================== */}
       <div className="dashboard-banner">
-        <div className="dashboard-banner-content">
-          <div className="dashboard-title-row">
+        {/* Top Header Row: School Title & Context on Left, Status Badges on Right */}
+        <div className="dashboard-banner-top">
+          <div className="dashboard-banner-title-area">
             <h2 className="dashboard-title">
               {activeView === 'admin' ? 'School Operations Overview' : `${greetingTime}, ${cleanName}`}
             </h2>
-            <span
-              className="badge"
-              style={{
-                background: 'var(--bg-subtle)',
-                color: 'var(--text-main)',
-                fontWeight: 600,
-                fontSize: '0.75rem',
-                border: '1px solid var(--border-color)'
-              }}
-            >
+            <p className="dashboard-school-info">
+              <strong>{SCHOOL_PROFILE.name}</strong> • {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo})
+            </p>
+          </div>
+
+          <div className="dashboard-banner-badges">
+            <span className="badge badge-meta">
               Academic Year 2026 • Term 1
             </span>
-            <span
-              className="badge"
-              style={{
-                background: 'var(--bg-subtle)',
-                color: 'var(--text-muted)',
-                fontWeight: 500,
-                fontSize: '0.75rem',
-                border: '1px solid var(--border-color)'
-              }}
-            >
+            <span className="badge badge-meta">
               <Clock size={12} style={{ marginRight: 4, display: 'inline' }} />
               {todayFormatted} (Asia/Colombo)
             </span>
             <span
-              className="badge"
+              className="badge badge-connectivity"
               style={{
                 background: isOnline ? 'var(--present-bg)' : 'var(--absent-bg)',
                 color: isOnline ? 'var(--present)' : 'var(--absent)',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                border: '1px solid var(--border-color)'
+                borderColor: isOnline ? 'var(--present-border)' : 'var(--absent-border)'
               }}
               title={isOnline ? 'Connected to local network & backend' : 'Working in local offline mode'}
             >
-              {isOnline ? <Wifi size={11} style={{ marginRight: 3, display: 'inline' }} /> : <WifiOff size={11} style={{ marginRight: 3, display: 'inline' }} />}
+              <span
+                className="connectivity-dot"
+                style={{ background: isOnline ? 'var(--present)' : 'var(--absent)' }}
+              />
               {isOnline ? 'Online' : 'Offline'}
             </span>
           </div>
-
-          <p className="dashboard-school-info">
-            <strong>{SCHOOL_PROFILE.name}</strong> ({SCHOOL_PROFILE.nameTamil}) • {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo})
-          </p>
-
-          <p className="dashboard-role-info">
-            {activeView === 'admin' ? (
-              <span>
-                <strong>Principal Profile:</strong> {SCHOOL_PROFILE.principalName} • Executive institutional overview across Grades 6 to 13
-              </span>
-            ) : (
-              <span>
-                <strong>Faculty Profile:</strong> {cleanName} • Assigned: {teacherPrimaryClass?.className || 'Grade 8-A'} Class Teacher • Grade 6–13 Portal
-              </span>
-            )}
-          </p>
         </div>
 
-        <div className="dashboard-banner-actions">
-          {/* Administrator / Leadership Role View Switcher */}
-          {isLeadership && (
-            <div className="dashboard-view-toggle" title="Switch presentation between Executive Overview and Teacher Cockpit preview">
-              <button
-                type="button"
-                className={`dashboard-view-toggle-btn ${activeView === 'admin' ? 'active' : ''}`}
-                onClick={() => setActiveView('admin')}
-              >
-                Executive Overview
-              </button>
-              <button
-                type="button"
-                className={`dashboard-view-toggle-btn ${activeView === 'teacher' ? 'active' : ''}`}
-                onClick={() => setActiveView('teacher')}
-              >
-                Teacher View
-              </button>
-            </div>
-          )}
+        {/* Bottom Toolbar: Mode View Switcher on Left, Operational Quick Actions on Right */}
+        <div className="dashboard-banner-toolbar">
+          <div className="dashboard-toolbar-left">
+            {isLeadership && (
+              <div className="dashboard-view-toggle" title="Switch presentation between Executive Overview and Teacher Cockpit preview">
+                <button
+                  type="button"
+                  className={`dashboard-view-toggle-btn ${activeView === 'admin' ? 'active' : ''}`}
+                  onClick={() => setActiveView('admin')}
+                >
+                  Executive Overview
+                </button>
+                <button
+                  type="button"
+                  className={`dashboard-view-toggle-btn ${activeView === 'teacher' ? 'active' : ''}`}
+                  onClick={() => setActiveView('teacher')}
+                >
+                  Teacher View
+                </button>
+              </div>
+            )}
+            <span className="dashboard-role-label">
+              {activeView === 'admin' ? (
+                <span>Principal: <strong>{SCHOOL_PROFILE.principalName}</strong> • Grades 6–13 Executive Portal</span>
+              ) : (
+                <span>Faculty: <strong>{cleanName}</strong> • Assigned: {teacherPrimaryClass?.className || 'Grade 8-A'}</span>
+              )}
+            </span>
+          </div>
 
-          {activeView === 'admin' ? (
-            <>
-              <button
-                onClick={() => onNavigate('students')}
-                className="btn btn-secondary btn-sm"
-                aria-label="Add new student"
-              >
-                <span>+ Add Student</span>
-              </button>
-              <button
-                onClick={() => onNavigate('attendance')}
-                className="btn btn-primary btn-sm"
-                aria-label="Take daily class attendance"
-              >
-                <CalendarCheck size={16} />
-                <span>Take Attendance</span>
-              </button>
-              <button
-                onClick={() => onNavigate('marks')}
-                className="btn btn-secondary btn-sm"
-                aria-label="Enter examination marks"
-              >
-                <GraduationCap size={16} />
-                <span>Enter Marks</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => onNavigate('attendance')}
-                className="btn btn-primary btn-sm"
-                aria-label="Go to Class Attendance"
-              >
-                <CalendarCheck size={16} />
-                <span>My Attendance Register</span>
-              </button>
-              <button
-                onClick={() => onNavigate('marks')}
-                className="btn btn-secondary btn-sm"
-                aria-label="Go to Examination Marks"
-              >
-                <GraduationCap size={16} />
-                <span>Enter Subject Marks</span>
-              </button>
-            </>
-          )}
+          <div className="dashboard-toolbar-actions">
+            {activeView === 'admin' ? (
+              <>
+                <button
+                  onClick={() => onNavigate('students')}
+                  className="btn btn-secondary btn-sm"
+                  aria-label="Add new student"
+                >
+                  <span>+ Add Student</span>
+                </button>
+                <button
+                  onClick={() => onNavigate('attendance')}
+                  className="btn btn-primary btn-sm"
+                  aria-label="Take daily class attendance"
+                >
+                  <CalendarCheck size={15} />
+                  <span>Take Attendance</span>
+                </button>
+                <button
+                  onClick={() => onNavigate('marks')}
+                  className="btn btn-secondary btn-sm"
+                  aria-label="Enter examination marks"
+                >
+                  <GraduationCap size={15} />
+                  <span>Enter Marks</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => onNavigate('attendance')}
+                  className="btn btn-primary btn-sm"
+                  aria-label="Go to Class Attendance"
+                >
+                  <CalendarCheck size={15} />
+                  <span>My Attendance Register</span>
+                </button>
+                <button
+                  onClick={() => onNavigate('marks')}
+                  className="btn btn-secondary btn-sm"
+                  aria-label="Go to Examination Marks"
+                >
+                  <GraduationCap size={15} />
+                  <span>Enter Subject Marks</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
