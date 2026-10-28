@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   GraduationCap,
   Save,
@@ -29,10 +29,15 @@ import {
   BookOpen,
   X,
   XCircle,
-  CheckSquare
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Smartphone,
+  LayoutGrid
 } from 'lucide-react';
 import { api } from '../api/client';
 import { StudentReportCard } from './StudentReportCard';
+import './marksEntry.css';
 
 interface MarksEntryProps {
   user: any;
@@ -83,6 +88,11 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   const [savingDraft, setSavingDraft] = useState(false);
   const [submittingSheet, setSubmittingSheet] = useState(false);
   const [sheetMessage, setSheetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // View mode & Stepper state
+  const [viewMode, setViewMode] = useState<'grid' | 'stepper'>('grid');
+  const [stepperIndex, setStepperIndex] = useState<number>(0);
+  const scoreInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   // Tab: Schedules state
   const [schedulesData, setSchedulesData] = useState<any | null>(null);
@@ -495,6 +505,71 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
     return { letter: displayLetter, cls, isProvisional, percentage: pct };
   };
 
+  // Keyboard navigation down/up rows and quick status shortcuts
+  const handleScoreKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, studentId: number, index: number) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter') {
+      e.preventDefault();
+      if (index + 1 < roster.length) {
+        const next = roster[index + 1];
+        scoreInputRefs.current[next.student_id]?.focus();
+        scoreInputRefs.current[next.student_id]?.select();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (index - 1 >= 0) {
+        const prev = roster[index - 1];
+        scoreInputRefs.current[prev.student_id]?.focus();
+        scoreInputRefs.current[prev.student_id]?.select();
+      }
+    } else if (e.altKey) {
+      const key = e.key.toLowerCase();
+      if (key === 'p') {
+        e.preventDefault();
+        handleStatusChange(studentId, 'PRESENT');
+      } else if (key === 'a') {
+        e.preventDefault();
+        handleStatusChange(studentId, 'ABSENT');
+      } else if (key === 'm') {
+        e.preventDefault();
+        handleStatusChange(studentId, 'MEDICAL');
+      } else if (key === 'e') {
+        e.preventDefault();
+        handleStatusChange(studentId, 'EXEMPT');
+      }
+    }
+  };
+
+  // Memoized Grade Distribution across Roster
+  const gradeCounts = useMemo(() => {
+    const counts = { A: 0, B: 0, C: 0, S: 0, F: 0, MED: 0, ABS: 0, total: 0 };
+    roster.forEach((r) => {
+      const entry = marksMap[r.student_id];
+      if (!entry) return;
+      counts.total++;
+      if (entry.status === 'MEDICAL' || entry.status === 'EXEMPT') counts.MED++;
+      else if (entry.status === 'ABSENT') counts.ABS++;
+      else if (entry.score) {
+        const g = calcGrade(entry.score, entry.status);
+        if (g.letter?.startsWith('A')) counts.A++;
+        else if (g.letter?.startsWith('B')) counts.B++;
+        else if (g.letter?.startsWith('C')) counts.C++;
+        else if (g.letter?.startsWith('S')) counts.S++;
+        else if (g.letter?.startsWith('F')) counts.F++;
+      }
+    });
+    return counts;
+  }, [roster, marksMap, sheetMaxScore, sheetPolicy]);
+
+  const getExamLifecycleStage = (exam: any) => {
+    if (!exam) return 1;
+    if (exam.is_published === 1 || exam.status === 'published') return 5;
+    if (exam.status === 'approved') return 4;
+    if (exam.status === 'under_review') return 4;
+    if (exam.status === 'marking_open') return 3;
+    if (exam.status === 'scheduled') return 2;
+    return 1;
+  };
+
   // Save Draft Marks (CAS Base Revision - G5F-02)
   const handleSaveDraft = async () => {
     if (!activeSheet?.id) {
@@ -893,20 +968,11 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
   });
 
   return (
-    <div>
+    <div className="marks-workspace">
       {/* Workspace Top Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.25rem',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+      <div className="marks-workspace-header">
+        <div className="marks-workspace-title-group">
+          <div className="marks-workspace-title-row">
             <h2>Examination Management Workspace</h2>
             <span
               className="badge"
@@ -915,31 +981,31 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
               PR-005 Integrity
             </span>
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 2 }}>
+          <p className="marks-workspace-subtitle">
             Kattankudy Central College • Authoritative examination scheduling, marks entry, independent review, assessment policy, and results publication.
           </p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           {/* User Appointments Badges */}
-          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <div className="marks-appointment-pills">
             {isAdmin && (
-              <span className="badge" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+              <span className="badge marks-appointment-pill admin">
                 <ShieldCheck size={12} /> Administrator
               </span>
             )}
             {isPrincipal && (
-              <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe' }}>
+              <span className="badge marks-appointment-pill principal">
                 <Award size={12} /> Principal
               </span>
             )}
             {isVP && (
-              <span className="badge" style={{ background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4' }}>
+              <span className="badge marks-appointment-pill vp">
                 <Award size={12} /> VP Academic
               </span>
             )}
             {isSectionHead && (
-              <span className="badge" style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0' }}>
+              <span className="badge marks-appointment-pill section-head">
                 <Award size={12} /> Section Head
               </span>
             )}
@@ -974,6 +1040,40 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           </button>
         </div>
       </div>
+
+      {/* Examination Lifecycle Progress Stepper (Screen 08) */}
+      {currentExam && (
+        <div className="exam-lifecycle-stepper">
+          <div className={`lifecycle-step ${getExamLifecycleStage(currentExam) > 1 ? 'completed' : getExamLifecycleStage(currentExam) === 1 ? 'active' : ''}`}>
+            <span className="lifecycle-step-dot">{getExamLifecycleStage(currentExam) > 1 ? '✓' : '1'}</span>
+            <span>1. Plan & Scope</span>
+          </div>
+          <div className={`lifecycle-divider ${getExamLifecycleStage(currentExam) > 1 ? 'completed' : ''}`} />
+
+          <div className={`lifecycle-step ${getExamLifecycleStage(currentExam) > 2 ? 'completed' : getExamLifecycleStage(currentExam) === 2 ? 'active' : ''}`}>
+            <span className="lifecycle-step-dot">{getExamLifecycleStage(currentExam) > 2 ? '✓' : '2'}</span>
+            <span>2. Schedules Approved</span>
+          </div>
+          <div className={`lifecycle-divider ${getExamLifecycleStage(currentExam) > 2 ? 'completed' : ''}`} />
+
+          <div className={`lifecycle-step ${getExamLifecycleStage(currentExam) > 3 ? 'completed' : getExamLifecycleStage(currentExam) === 3 ? 'active' : ''}`}>
+            <span className="lifecycle-step-dot">{getExamLifecycleStage(currentExam) > 3 ? '✓' : '3'}</span>
+            <span>3. Marks Entry</span>
+          </div>
+          <div className={`lifecycle-divider ${getExamLifecycleStage(currentExam) > 3 ? 'completed' : ''}`} />
+
+          <div className={`lifecycle-step ${getExamLifecycleStage(currentExam) > 4 ? 'completed' : getExamLifecycleStage(currentExam) === 4 ? 'active' : ''}`}>
+            <span className="lifecycle-step-dot">{getExamLifecycleStage(currentExam) > 4 ? '✓' : '4'}</span>
+            <span>4. Leadership Review</span>
+          </div>
+          <div className={`lifecycle-divider ${getExamLifecycleStage(currentExam) >= 5 ? 'completed' : ''}`} />
+
+          <div className={`lifecycle-step ${getExamLifecycleStage(currentExam) === 5 ? 'completed active' : ''}`}>
+            <span className="lifecycle-step-dot">{getExamLifecycleStage(currentExam) === 5 ? '✓' : '5'}</span>
+            <span>5. Published & Sealed</span>
+          </div>
+        </div>
+      )}
 
       {/* Workspace Navigation Tabs */}
       <div className="workspace-tabs">
@@ -1618,7 +1718,32 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                 )}
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {/* View Mode Toggle (Spreadsheet Grid vs Mobile Stepper) */}
+                {roster.length > 0 && (
+                  <div className="marks-view-toggle">
+                    <button
+                      type="button"
+                      className={`marks-view-toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                      onClick={() => setViewMode('grid')}
+                      title="Desktop Spreadsheet Grid View"
+                    >
+                      <LayoutGrid size={14} /> Grid
+                    </button>
+                    <button
+                      type="button"
+                      className={`marks-view-toggle-btn ${viewMode === 'stepper' ? 'active' : ''}`}
+                      onClick={() => {
+                        setStepperIndex(0);
+                        setViewMode('stepper');
+                      }}
+                      title="Touch-Optimized Student Stepper Mode"
+                    >
+                      <Smartphone size={14} /> Stepper
+                    </button>
+                  </div>
+                )}
+
                 {activeSheet?.id && (
                   <button
                     type="button"
@@ -1679,61 +1804,276 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
 
           {/* Class Statistics Widget */}
           {stats && (
-            <div className="stats-grid" style={{ marginBottom: '1.25rem' }}>
-              <div className="stat-card">
-                <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
-                  <TrendingUp size={24} />
+            <div className="marks-stats-container">
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+                    <TrendingUp size={24} />
+                  </div>
+                  <div>
+                    <div className="stat-val">{stats.average}%</div>
+                    <div className="stat-label">Subject Class Average</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="stat-val">{stats.average}%</div>
-                  <div className="stat-label">Subject Class Average</div>
+
+                <div className="stat-card">
+                  <div className="stat-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
+                    <Award size={24} />
+                  </div>
+                  <div>
+                    <div className="stat-val">{stats.passRate}%</div>
+                    <div className="stat-label">Pass Rate (&ge; 35)</div>
+                  </div>
+                </div>
+
+                <div className="stat-card">
+                  <div className="stat-icon" style={{ background: '#fef3c7', color: '#b45309' }}>
+                    <GraduationCap size={24} />
+                  </div>
+                  <div>
+                    <div className="stat-val">{stats.maxScore} / {sheetMaxScore}</div>
+                    <div className="stat-label">Highest Score</div>
+                  </div>
+                </div>
+
+                <div className="stat-card">
+                  <div className="stat-icon" style={{ background: '#eff6ff', color: '#0284c7' }}>
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <div className="stat-val">{stats.totalGraded} / {stats.totalStudents}</div>
+                    <div className="stat-label">Graded Students</div>
+                  </div>
                 </div>
               </div>
 
-              <div className="stat-card">
-                <div className="stat-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
-                  <Award size={24} />
+              {/* Grade Distribution Mini Bar */}
+              <div className="marks-distribution-bar">
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.5rem' }}>
+                  Grade Distribution:
+                </span>
+                <div className="distribution-item">
+                  <span className="grade-badge grade-a" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>A</span>
+                  <span>{gradeCounts.A}</span>
                 </div>
-                <div>
-                  <div className="stat-val">{stats.passRate}%</div>
-                  <div className="stat-label">Pass Rate (&ge; 35)</div>
+                <div className="distribution-item">
+                  <span className="grade-badge grade-b" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>B</span>
+                  <span>{gradeCounts.B}</span>
                 </div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-icon" style={{ background: '#fef3c7', color: '#b45309' }}>
-                  <GraduationCap size={24} />
+                <div className="distribution-item">
+                  <span className="grade-badge grade-c" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>C</span>
+                  <span>{gradeCounts.C}</span>
                 </div>
-                <div>
-                  <div className="stat-val">{stats.maxScore} / {sheetMaxScore}</div>
-                  <div className="stat-label">Highest Score</div>
+                <div className="distribution-item">
+                  <span className="grade-badge grade-s" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>S</span>
+                  <span>{gradeCounts.S}</span>
                 </div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-icon" style={{ background: '#eff6ff', color: '#0284c7' }}>
-                  <Users size={24} />
+                <div className="distribution-item">
+                  <span className="grade-badge grade-f" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>F</span>
+                  <span>{gradeCounts.F}</span>
                 </div>
-                <div>
-                  <div className="stat-val">{stats.totalGraded} / {stats.totalStudents}</div>
-                  <div className="stat-label">Graded Students</div>
+                <div className="distribution-item" style={{ color: '#d97706' }}>
+                  <span>Med/Ex:</span>
+                  <span>{gradeCounts.MED}</span>
+                </div>
+                <div className="distribution-item" style={{ color: 'var(--absent)' }}>
+                  <span>Absent:</span>
+                  <span>{gradeCounts.ABS}</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Marks Spreadsheet Grid */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div className="table-responsive">
-              <table className="data-table">
+          {/* Mobile Single-Student Stepper View Mode (< 768px or user toggled) */}
+          {viewMode === 'stepper' && roster.length > 0 && (() => {
+            const curStudent = roster[stepperIndex] || roster[0];
+            const curEntry = marksMap[curStudent.student_id] || { score: '', status: 'PRESENT' };
+            const curGrade = calcGrade(curEntry.score, curEntry.status);
+
+            return (
+              <div className="marks-stepper-view" style={{ marginBottom: '1.25rem' }}>
+                <div className="marks-stepper-card">
+                  {/* Stepper Header */}
+                  <div className="marks-stepper-counter-header">
+                    <span className="marks-stepper-counter-badge">
+                      Student {stepperIndex + 1} of {roster.length}
+                    </span>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => setReportStudentId(curStudent.student_id)}
+                        className="btn btn-secondary btn-sm"
+                        title="View Report Card"
+                      >
+                        <FileText size={14} /> Report Card
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('grid')}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        <LayoutGrid size={14} /> Grid
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Student Details */}
+                  <div className="marks-stepper-student-info">
+                    <div className="marks-stepper-avatar">
+                      #{curStudent.roll_number || stepperIndex + 1}
+                    </div>
+                    <div className="marks-stepper-names">
+                      <h3>{curStudent.calling_name || curStudent.full_name}</h3>
+                      <p>{curStudent.full_name}</p>
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                        <span className="badge" style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)', fontWeight: 700 }}>
+                          {curStudent.admission_no}
+                        </span>
+                        <span className="badge" style={{ background: 'var(--bg-subtle)' }}>
+                          {curStudent.enrollment_category || 'Core Offering'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Large Numeric Score Input & Live Grade Pill */}
+                  <div className="marks-stepper-input-container">
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                        Raw Score (0–{sheetMaxScore || 100})
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <button
+                          type="button"
+                          disabled={isSheetLocked || curEntry.status !== 'PRESENT'}
+                          onClick={() => {
+                            const cur = parseFloat(curEntry.score) || 0;
+                            handleScoreChange(curStudent.student_id, String(Math.max(0, cur - 1)));
+                          }}
+                          className="btn btn-secondary btn-icon"
+                          style={{ width: 44, height: 44, fontSize: '1.25rem' }}
+                        >
+                          -
+                        </button>
+
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className={`form-input marks-stepper-score-input ${Number(curEntry.score) > sheetMaxScore ? 'score-invalid' : ''}`}
+                          placeholder={`0–${sheetMaxScore || 100}`}
+                          value={curEntry.score}
+                          disabled={isSheetLocked || curEntry.status !== 'PRESENT'}
+                          onChange={(e) => handleScoreChange(curStudent.student_id, e.target.value)}
+                        />
+
+                        <button
+                          type="button"
+                          disabled={isSheetLocked || curEntry.status !== 'PRESENT'}
+                          onClick={() => {
+                            const cur = parseFloat(curEntry.score) || 0;
+                            handleScoreChange(curStudent.student_id, String(Math.min(sheetMaxScore, cur + 1)));
+                          }}
+                          className="btn btn-secondary btn-icon"
+                          style={{ width: 44, height: 44, fontSize: '1.25rem' }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Grade</span>
+                      <div className={`marks-stepper-grade-pill grade-badge ${curGrade.cls}`}>
+                        {curGrade.letter}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4-Way Touch Status Buttons */}
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.8rem', marginBottom: '0.4rem' }}>
+                      Assessment Status
+                    </label>
+                    <div className="marks-stepper-status-grid">
+                      <button
+                        type="button"
+                        disabled={isSheetLocked}
+                        onClick={() => handleStatusChange(curStudent.student_id, 'PRESENT')}
+                        className={`marks-stepper-status-btn ${curEntry.status === 'PRESENT' ? 'btn-primary active active-present' : ''}`}
+                      >
+                        Present
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSheetLocked}
+                        onClick={() => handleStatusChange(curStudent.student_id, 'ABSENT')}
+                        className={`marks-stepper-status-btn ${curEntry.status === 'ABSENT' ? 'btn-danger active active-absent' : ''}`}
+                      >
+                        Absent
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSheetLocked}
+                        onClick={() => handleStatusChange(curStudent.student_id, 'MEDICAL')}
+                        className={`marks-stepper-status-btn ${curEntry.status === 'MEDICAL' ? 'active-medical active' : ''}`}
+                      >
+                        Medical
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSheetLocked}
+                        onClick={() => handleStatusChange(curStudent.student_id, 'EXEMPT')}
+                        className={`marks-stepper-status-btn ${curEntry.status === 'EXEMPT' ? 'active-exempt active' : ''}`}
+                      >
+                        Exempt
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stepper Navigation Footer */}
+                  <div className="marks-stepper-nav-footer">
+                    <button
+                      type="button"
+                      disabled={stepperIndex === 0}
+                      onClick={() => setStepperIndex((i) => Math.max(0, i - 1))}
+                      className="btn btn-secondary marks-stepper-nav-btn"
+                    >
+                      <ChevronLeft size={18} /> Previous Student
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={stepperIndex === roster.length - 1}
+                      onClick={() => setStepperIndex((i) => Math.min(roster.length - 1, i + 1))}
+                      className="btn btn-primary marks-stepper-nav-btn"
+                    >
+                      Next Student <ChevronRight size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Marks Spreadsheet Grid (Always accessible in grid mode and for automated tests) */}
+          <div
+            className="card"
+            style={{
+              padding: 0,
+              overflow: 'hidden',
+              display: viewMode === 'grid' ? 'block' : 'none'
+            }}
+          >
+            <div className="table-responsive marks-table-wrapper">
+              <table className="data-table marks-spreadsheet-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 60 }}>Roll</th>
-                    <th>Admission No</th>
-                    <th>Student Full Name</th>
+                    <th className="marks-sticky-roll" style={{ width: 60 }}>Roll</th>
+                    <th className="marks-sticky-adm">Admission No</th>
+                    <th className="marks-sticky-name">Student Full Name</th>
                     <th>Subject Category</th>
-                    <th style={{ width: 140 }}>Raw Mark (0–{sheetMaxScore})</th>
-                    <th style={{ width: 200, textAlign: 'center' }}>Assessment Status</th>
+                    <th style={{ width: 140 }}>Raw Mark (0–{sheetMaxScore || 100})</th>
+                    <th style={{ width: 220, textAlign: 'center' }}>Assessment Status</th>
                     <th style={{ width: 85, textAlign: 'center' }}>Grade</th>
                     <th style={{ textAlign: 'right', width: 140 }}>Report Card</th>
                   </tr>
@@ -1755,16 +2095,17 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                     roster.map((r, idx) => {
                       const entry = marksMap[r.student_id] || { score: '', status: 'PRESENT' };
                       const grade = calcGrade(entry.score, entry.status);
+                      const isScoreInvalid = entry.score !== '' && Number(entry.score) > sheetMaxScore;
 
                       return (
                         <tr key={r.student_id}>
-                          <td><strong>#{r.roll_number || idx + 1}</strong></td>
-                          <td>
+                          <td className="marks-sticky-roll"><strong>#{r.roll_number || idx + 1}</strong></td>
+                          <td className="marks-sticky-adm">
                             <span style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)', fontWeight: 600 }}>
                               {r.admission_no}
                             </span>
                           </td>
-                          <td>
+                          <td className="marks-sticky-name">
                             <div style={{ fontWeight: 600 }}>{r.full_name}</div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{r.calling_name}</div>
                           </td>
@@ -1778,29 +2119,26 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                           </td>
                           <td>
                             <input
+                              ref={(el) => {
+                                scoreInputRefs.current[r.student_id] = el;
+                              }}
                               type="text"
                               inputMode="numeric"
-                              className="form-input"
-                              style={{
-                                width: '90px',
-                                fontWeight: 700,
-                                textAlign: 'center',
-                                fontSize: '0.95rem',
-                                padding: '0.45rem 0.6rem'
-                              }}
-                              placeholder={`0–${sheetMaxScore}`}
+                              className={`form-input marks-score-input ${isScoreInvalid ? 'score-invalid' : ''}`}
+                              placeholder={`0–${sheetMaxScore || 100}`}
                               value={entry.score}
                               disabled={isSheetLocked || entry.status !== 'PRESENT'}
                               onChange={(e) => handleScoreChange(r.student_id, e.target.value)}
+                              onKeyDown={(e) => handleScoreKeyDown(e, r.student_id, idx)}
                             />
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                            <div className="marks-status-btngroup">
                               <button
                                 type="button"
                                 disabled={isSheetLocked}
                                 onClick={() => handleStatusChange(r.student_id, 'PRESENT')}
-                                className={`btn btn-sm ${entry.status === 'PRESENT' ? 'btn-primary' : 'btn-secondary'}`}
+                                className={`btn btn-sm ${entry.status === 'PRESENT' ? 'btn-primary active active-present' : 'btn-secondary'}`}
                                 style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
                               >
                                 Present
@@ -1809,7 +2147,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                                 type="button"
                                 disabled={isSheetLocked}
                                 onClick={() => handleStatusChange(r.student_id, 'ABSENT')}
-                                className={`btn btn-sm ${entry.status === 'ABSENT' ? 'btn-danger' : 'btn-secondary'}`}
+                                className={`btn btn-sm ${entry.status === 'ABSENT' ? 'btn-danger active active-absent' : 'btn-secondary'}`}
                                 style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
                               >
                                 Absent
@@ -1818,7 +2156,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                                 type="button"
                                 disabled={isSheetLocked}
                                 onClick={() => handleStatusChange(r.student_id, 'MEDICAL')}
-                                className={`btn btn-sm ${entry.status === 'MEDICAL' ? 'btn-secondary active' : 'btn-secondary'}`}
+                                className={`btn btn-sm ${entry.status === 'MEDICAL' ? 'btn-secondary active active-medical' : 'btn-secondary'}`}
                                 style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
                               >
                                 Med
@@ -1827,7 +2165,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                                 type="button"
                                 disabled={isSheetLocked}
                                 onClick={() => handleStatusChange(r.student_id, 'EXEMPT')}
-                                className={`btn btn-sm ${entry.status === 'EXEMPT' ? 'btn-secondary active' : 'btn-secondary'}`}
+                                className={`btn btn-sm ${entry.status === 'EXEMPT' ? 'btn-secondary active active-exempt' : 'btn-secondary'}`}
                                 style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
                               >
                                 Exempt
@@ -1859,6 +2197,22 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Keyboard Navigation Assist Bar */}
+            <div className="marks-keyboard-bar">
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span><strong>Keyboard Shortcuts:</strong></span>
+                <span><span className="keyboard-shortcut-tag">Enter</span> or <span className="keyboard-shortcut-tag">↓</span> Next row</span>
+                <span><span className="keyboard-shortcut-tag">↑</span> Previous row</span>
+                <span><span className="keyboard-shortcut-tag">Alt + P</span> Present</span>
+                <span><span className="keyboard-shortcut-tag">Alt + A</span> Absent</span>
+                <span><span className="keyboard-shortcut-tag">Alt + M</span> Medical</span>
+                <span><span className="keyboard-shortcut-tag">Alt + E</span> Exempt</span>
+              </div>
+              <div>
+                <span>Max Raw Mark: <strong>{sheetMaxScore || 100}</strong></span>
+              </div>
             </div>
           </div>
         </div>
