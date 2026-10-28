@@ -1,0 +1,229 @@
+/* ==========================================================================
+   SkoolSys 2.0: Login & Authentication Screen Styles
+   Institutional Green Palette, Accessible Form Inputs, Split/Card Layout
+   ========================================================================== */
+
+.login-viewport {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-app);
+  padding: var(--space-xl) var(--space-lg);
+  position: relative;
+  background-image: radial-gradient(ellipse at 50% 0%, var(--primary-light) 0%, transparent 65%);
+  font-family: var(--font-sans);
+}
+
+.login-card-container {
+  width: 100%;
+  max-width: 580px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  padding: var(--space-2xl) var(--space-xl);
+  position: relative;
+  animation: sk-scale-up 240ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.login-brand-header {
+  text-align: center;
+  margin-bottom: var(--space-xl);
+}
+
+.login-brand-emblem {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary) 0%, #047857 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-md);
+  box-shadow: var(--shadow-glow);
+}
+
+.login-school-title {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.25;
+  margin: 0 0 4px;
+}
+
+.login-tamil-title {
+  font-family: var(--font-tamil);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 6px;
+}
+
+.login-census-subtitle {
+  font-size: 0.78125rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 10px;
+}
+
+.login-system-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.login-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  margin-bottom: var(--space-lg);
+}
+
+.login-alert--error {
+  background-color: var(--absent-bg);
+  color: var(--status-absent);
+  border: 1px solid var(--absent-border);
+}
+
+.login-alert--success {
+  background-color: var(--present-bg);
+  color: var(--status-present);
+  border: 1px solid var(--present-border);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.login-submit-btn {
+  margin-top: 4px;
+  font-weight: 700;
+  font-size: 0.9375rem;
+}
+
+/* Testing & Demo Panel */
+.demo-accounts-panel {
+  margin-top: var(--space-xl);
+  border-top: 1px dashed var(--border-color);
+  padding-top: var(--space-lg);
+}
+
+.demo-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.demo-panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.demo-account-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  background-color: var(--bg-surface);
+  margin-bottom: var(--space-sm);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.demo-account-card:hover {
+  border-color: #b5cdc0;
+  box-shadow: var(--shadow-sm);
+}
+
+.demo-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.demo-role-badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+}
+
+.demo-creds-box {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: 4px 8px;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  font-size: 0.71875rem;
+  font-family: monospace;
+  margin: 6px 0;
+}
+
+.demo-scope-text {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin-bottom: var(--space-sm);
+}
+
+.demo-actions-row {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/* Institutional Profile Footer */
+.login-profile-footer {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-color);
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .login-viewport {
+    padding: var(--space-md) var(--space-sm);
+    align-items: flex-start;
+  }
+
+  .login-card-container {
+    padding: var(--space-xl) var(--space-md);
+    border-radius: var(--radius-md);
+  }
+
+  .login-school-title {
+    font-size: 1.1875rem;
+  }
+
+  .demo-actions-row {
+    flex-direction: column;
+  }
+}

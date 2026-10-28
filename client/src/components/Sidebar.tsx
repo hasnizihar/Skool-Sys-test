@@ -12,8 +12,11 @@ import {
   Sun,
   School,
   X,
-  Sparkles
+  Sparkles,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
+import './sidebar.css';
 
 interface SidebarProps {
   currentTab: string;
@@ -24,6 +27,8 @@ interface SidebarProps {
   onClose: () => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +39,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onClose,
   theme,
-  toggleTheme
+  toggleTheme,
+  isCollapsed = false,
+  onToggleCollapse
 }) => {
   const isAdmin = user?.role === 'admin';
   const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
@@ -46,34 +53,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
+  const navClass = (tab: string) => `nav-item ${currentTab === tab ? 'active' : ''}`;
+
   return (
     <>
       {isOpen && (
         <div
           onClick={onClose}
-          aria-label="Close sidebar"
+          aria-label="Close sidebar overlay"
           className="sidebar-backdrop"
         />
       )}
 
-      <aside className={`sidebar ${isOpen ? 'open' : ''}`} aria-label="Main Navigation">
-        <div className="sidebar-header" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div className="brand-badge">
+      <aside
+        className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''} ${isOpen ? 'open' : ''}`}
+        aria-label="Main Navigation"
+      >
+        <div className="sidebar-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
+            <div className="brand-badge" title="Kattankudy Central College">
               <School size={22} />
             </div>
             <div className="brand-info">
-              <h2 style={{ fontSize: '0.95rem', lineHeight: 1.25 }}>Kattankudy Central College</h2>
-              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>National School — Kattankudy</p>
-              <span style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 600, display: 'block' }}>காத்தான்குடி மத்திய கல்லூரி</span>
+              <h2>Kattankudy Central College</h2>
+              <p>National School — Kattankudy</p>
+              <span className="brand-tamil-title">காத்தான்குடி மத்திய கல்லூரி</span>
             </div>
           </div>
 
+          {/* Desktop Collapse Toggle */}
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="sidebar-collapse-toggle"
+              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
+          )}
+
+          {/* Mobile Close Button */}
           {isOpen && (
             <button
+              type="button"
               onClick={onClose}
               className="btn btn-secondary btn-icon"
-              style={{ width: 32, height: 32, minHeight: 32 }}
+              style={{ width: 32, height: 32, minHeight: 32, marginLeft: 'auto' }}
               aria-label="Close navigation"
             >
               <X size={16} />
@@ -85,20 +112,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="nav-section-title">Core Management</div>
 
           <button
-            className={`nav-item ${currentTab === 'dashboard' ? 'active' : ''}`}
+            type="button"
+            className={navClass('dashboard')}
             onClick={() => handleNav('dashboard')}
             aria-current={currentTab === 'dashboard' ? 'page' : undefined}
+            title={isCollapsed ? 'Dashboard' : undefined}
           >
-            <LayoutDashboard size={18} />
+            <LayoutDashboard size={18} aria-hidden="true" />
             <span>Dashboard</span>
           </button>
 
           <button
-            className={`nav-item ${currentTab === 'students' ? 'active' : ''}`}
+            type="button"
+            className={navClass('students')}
             onClick={() => handleNav('students')}
             aria-current={currentTab === 'students' ? 'page' : undefined}
+            title={isCollapsed ? 'Student Records' : undefined}
           >
-            <Users size={18} />
+            <Users size={18} aria-hidden="true" />
             <span>Student Records</span>
           </button>
 
@@ -106,32 +137,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {isClassTeacher && (
             <button
-              className={`nav-item ${currentTab === 'attendance' ? 'active' : ''}`}
+              type="button"
+              className={navClass('attendance')}
               onClick={() => handleNav('attendance')}
               aria-current={currentTab === 'attendance' ? 'page' : undefined}
+              title={isCollapsed ? 'Take Attendance' : undefined}
             >
-              <CalendarCheck size={18} />
+              <CalendarCheck size={18} aria-hidden="true" />
               <span>Take Attendance</span>
             </button>
           )}
 
           <button
-            className={`nav-item ${currentTab === 'attendance-reports' ? 'active' : ''}`}
+            type="button"
+            className={navClass('attendance-reports')}
             onClick={() => handleNav('attendance-reports')}
             aria-current={currentTab === 'attendance-reports' ? 'page' : undefined}
+            title={isCollapsed ? 'Attendance Reports' : undefined}
           >
-            <FileSpreadsheet size={18} />
+            <FileSpreadsheet size={18} aria-hidden="true" />
             <span>Attendance Reports</span>
           </button>
 
           <div className="nav-section-title">Academics & Exams</div>
 
           <button
-            className={`nav-item ${currentTab === 'marks' ? 'active' : ''}`}
+            type="button"
+            className={navClass('marks')}
             onClick={() => handleNav('marks')}
             aria-current={currentTab === 'marks' ? 'page' : undefined}
+            title={isCollapsed ? 'Marks Management' : undefined}
           >
-            <GraduationCap size={18} />
+            <GraduationCap size={18} aria-hidden="true" />
             <span>Marks Management</span>
           </button>
 
@@ -140,29 +177,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="nav-section-title">System & Security</div>
 
               <button
-                className={`nav-item ${currentTab === 'admin' ? 'active' : ''}`}
+                type="button"
+                className={navClass('admin')}
                 onClick={() => handleNav('admin')}
                 aria-current={currentTab === 'admin' ? 'page' : undefined}
+                title={isCollapsed ? 'School Administration' : undefined}
               >
-                <ShieldCheck size={18} />
+                <ShieldCheck size={18} aria-hidden="true" />
                 <span>School Administration</span>
               </button>
 
               <button
-                className={`nav-item ${currentTab === 'audit' ? 'active' : ''}`}
+                type="button"
+                className={navClass('audit')}
                 onClick={() => handleNav('audit')}
                 aria-current={currentTab === 'audit' ? 'page' : undefined}
+                title={isCollapsed ? 'Audit Trail' : undefined}
               >
-                <History size={18} />
+                <History size={18} aria-hidden="true" />
                 <span>Audit Trail</span>
               </button>
 
               <button
-                className={`nav-item ${currentTab === 'design-system' ? 'active' : ''}`}
+                type="button"
+                className={navClass('design-system')}
                 onClick={() => handleNav('design-system')}
                 aria-current={currentTab === 'design-system' ? 'page' : undefined}
+                title={isCollapsed ? 'UI Primitives Preview' : undefined}
               >
-                <Sparkles size={18} />
+                <Sparkles size={18} aria-hidden="true" />
                 <span>UI Primitives Preview</span>
               </button>
             </>
@@ -171,33 +214,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="sidebar-footer">
           <div className="user-snippet">
-            <div className="user-avatar">
+            <div
+              className="user-avatar"
+              title={`${user?.full_name || 'User'} (${user?.role?.replace('_', ' ') || 'Role'})`}
+            >
               {user?.full_name?.charAt(0) || 'U'}
             </div>
             <div className="user-details">
-              <div className="user-name" title={user?.full_name}>{user?.full_name}</div>
-              <span className="user-role-badge">{user?.role?.replace('_', ' ')}</span>
+              <div className="user-name" title={user?.full_name}>
+                {user?.full_name}
+              </div>
+              <span className="user-role-badge">
+                {user?.role?.replace('_', ' ')}
+              </span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+          <div className="sidebar-actions-row">
             <button
+              type="button"
               onClick={toggleTheme}
               className="btn btn-secondary btn-sm"
-              style={{ flex: 1 }}
-              title="Toggle Light/Dark Theme"
+              style={{ flex: 1, minHeight: 34 }}
+              title={`Toggle Theme. Current is ${theme}`}
               aria-label={`Toggle Theme. Current is ${theme}`}
             >
               {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-              <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+              <span className="sidebar-theme-text">
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </span>
             </button>
 
             <button
+              type="button"
               onClick={onLogout}
               className="btn btn-secondary btn-sm btn-icon"
               title="Sign Out"
               aria-label="Sign Out"
-              style={{ color: 'var(--absent)' }}
+              style={{ color: 'var(--absent)', minHeight: 34, width: 34 }}
             >
               <LogOut size={16} />
             </button>

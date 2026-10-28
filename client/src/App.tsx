@@ -14,6 +14,7 @@ import { AuditLogs } from './pages/AuditLogs';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
 import { ComponentPreview } from './ui/ComponentPreview';
+import { MobileBottomNav } from './components/MobileBottomNav';
 
 const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit', 'design-system'];
 
@@ -26,9 +27,20 @@ export function App() {
   const [user, setUser] = useState<any | null>(getCurrentUser());
   const [currentTab, setCurrentTab] = useState<string>(getInitialTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('skoolsys_sidebar_collapsed') === 'true';
+  });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('skoolsys_theme') as 'light' | 'dark') || 'light';
   });
+
+  const toggleSidebarCollapsed = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('skoolsys_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     window.location.hash = `/${currentTab}`;
@@ -137,6 +149,8 @@ export function App() {
           onClose={() => setSidebarOpen(false)}
           theme={theme}
           toggleTheme={toggleTheme}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
         />
 
         <div className="main-wrapper">
@@ -145,6 +159,8 @@ export function App() {
           <Navbar
             onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
             title={getPageTitle()}
+            currentTab={currentTab}
+            onNavigate={setCurrentTab}
             user={user}
             theme={theme}
             toggleTheme={toggleTheme}
@@ -176,6 +192,13 @@ export function App() {
               <ComponentPreview />
             )}
           </main>
+
+          <MobileBottomNav
+            currentTab={currentTab}
+            onNavigate={setCurrentTab}
+            onOpenMore={() => setSidebarOpen(true)}
+            user={user}
+          />
         </div>
       </div>
     </ToastProvider>

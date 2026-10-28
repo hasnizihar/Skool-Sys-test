@@ -1060,7 +1060,7 @@ h1, h2, h3, h4, h5, h6 {
     padding: 0 1rem;
   }
   .page-container {
-    padding: 1rem;
+    padding: 1rem 1rem 76px 1rem;
   }
   .stats-grid {
     grid-template-columns: 1fr 1fr;

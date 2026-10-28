@@ -7,8 +7,6 @@ import {
   AlertCircle,
   Sparkles,
   CheckCircle2,
-  Eye,
-  EyeOff,
   Shield,
   BookOpen,
   Calculator,
@@ -21,6 +19,8 @@ import {
 } from 'lucide-react';
 import { api, setAuthSession } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
+import { Button, Input } from '../ui';
+import './login.css';
 
 interface LoginProps {
   onLoginSuccess: (user: any) => void;
@@ -50,7 +50,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     icon: Shield,
     color: 'var(--primary)',
     bgColor: 'var(--primary-light)',
-    borderColor: 'rgba(67, 56, 202, 0.25)'
+    borderColor: 'var(--present-border)'
   },
   {
     roleTitle: 'Vice Principal Academic — Demo Account',
@@ -60,9 +60,9 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     roleTag: 'VP Academic',
     scope: 'Academic policy, school-wide moderation & examination approvals',
     icon: Award,
-    color: '#8b5cf6',
-    bgColor: '#f5f3ff',
-    borderColor: 'rgba(139, 92, 246, 0.25)'
+    color: '#0284c7',
+    bgColor: '#f0f9ff',
+    borderColor: '#bae6fd'
   },
   {
     roleTitle: 'Section Head (Grades 6–9) — Demo Account',
@@ -74,7 +74,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     icon: ClipboardCheck,
     color: '#0284c7',
     bgColor: '#f0f9ff',
-    borderColor: 'rgba(2, 132, 199, 0.25)'
+    borderColor: '#bae6fd'
   },
   {
     roleTitle: 'Section Head (Grades 10–13) — Demo Account',
@@ -86,7 +86,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     icon: ClipboardCheck,
     color: '#0369a1',
     bgColor: '#e0f2fe',
-    borderColor: 'rgba(3, 105, 161, 0.25)'
+    borderColor: '#7dd3fc'
   },
   {
     roleTitle: 'Class Teacher (Grade 8-A) — Demo Account',
@@ -110,7 +110,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     icon: Calculator,
     color: 'var(--secondary)',
     bgColor: 'var(--secondary-light)',
-    borderColor: 'rgba(13, 148, 136, 0.25)'
+    borderColor: '#99f6e4'
   },
   {
     roleTitle: 'Science & ICT Teacher — Demo Account',
@@ -127,12 +127,10 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
 ];
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  // Always active in local dev (npm run dev) or when explicitly configured
   const isDemoEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filledFeedback, setFilledFeedback] = useState<string | null>(null);
@@ -170,230 +168,91 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'var(--bg-app)',
-        padding: '2rem 1.5rem',
-        position: 'relative',
-        backgroundImage: 'radial-gradient(ellipse at 50% 10%, rgba(67, 56, 202, 0.08) 0%, transparent 60%)'
-      }}
-    >
-      <div
-        className="card"
-        style={{
-          width: '100%',
-          maxWidth: '560px',
-          padding: '2.5rem 2.25rem',
-          boxShadow: 'var(--shadow-xl)',
-          borderRadius: 'var(--radius-xl)'
-        }}
-      >
-        {/* Brand Header */}
-        <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-          <div
-            className="brand-badge"
-            style={{
-              width: 60,
-              height: 60,
-              fontSize: '1.85rem',
-              margin: '0 auto 1rem',
-              boxShadow: '0 8px 24px rgba(67, 56, 202, 0.3)'
-            }}
-          >
-            <School size={32} />
+    <div className="login-viewport">
+      <div className="login-card-container card">
+        {/* Brand & School Header */}
+        <header className="login-brand-header">
+          <div className="login-brand-emblem" aria-hidden="true">
+            <School size={30} />
           </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.2rem', color: 'var(--text-main)' }}>
+          <h1 className="login-school-title">
             {SCHOOL_PROFILE.name}
           </h1>
-          <div
-            style={{
-              fontSize: '1rem',
-              color: 'var(--primary)',
-              fontWeight: 700,
-              marginBottom: '0.35rem'
-            }}
-          >
+          <div className="login-tamil-title">
             {SCHOOL_PROFILE.nameTamil}
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.825rem', margin: 0 }}>
+          <p className="login-census-subtitle">
             {SCHOOL_PROFILE.secondaryTitle} • Census No. {SCHOOL_PROFILE.censusNo}
           </p>
-          <div
-            style={{
-              display: 'inline-block',
-              marginTop: '0.5rem',
-              padding: '0.2rem 0.65rem',
-              borderRadius: 'var(--radius-full)',
-              background: 'var(--bg-subtle)',
-              border: '1px solid var(--border-color)',
-              fontSize: '0.725rem',
-              color: 'var(--text-muted)',
-              fontWeight: 600
-            }}
-          >
-            {SCHOOL_PROFILE.systemTitle}
+          <div className="login-system-pill">
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--primary)' }} />
+            <span>{SCHOOL_PROFILE.systemTitle}</span>
           </div>
-        </div>
+        </header>
 
-        {/* Error Alert */}
+        {/* Error Feedback */}
         {error && (
-          <div
-            style={{
-              background: 'var(--absent-bg)',
-              color: 'var(--absent)',
-              border: '1px solid var(--absent-border)',
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.85rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              marginBottom: '1.25rem'
-            }}
-          >
-            <AlertCircle size={18} />
+          <div className="login-alert-banner login-alert--error" role="alert">
+            <AlertCircle size={18} aria-hidden="true" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Fill Feedback Alert */}
+        {/* Credential Fill Confirmation */}
         {filledFeedback && (
-          <div
-            style={{
-              background: 'var(--present-bg)',
-              color: 'var(--present)',
-              border: '1px solid var(--present-border)',
-              padding: '0.65rem 0.95rem',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.825rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              marginBottom: '1.25rem'
-            }}
-          >
-            <CheckCircle2 size={16} />
+          <div className="login-alert-banner login-alert--success" role="status">
+            <CheckCircle2 size={18} aria-hidden="true" />
             <span>{filledFeedback}</span>
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group" style={{ marginBottom: '1rem' }}>
-            <label className="form-label">Username or Academic ID</label>
-            <div style={{ position: 'relative' }}>
-              <User
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-muted)'
-                }}
-              />
-              <input
-                type="text"
-                className="form-input"
-                style={{ paddingLeft: '2.5rem', height: 42 }}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. admin or teacher_nimali"
-                required
-                autoComplete="username"
-              />
-            </div>
-          </div>
+        {/* Form Container with Milestone 1 UI Primitives */}
+        <form onSubmit={handleSubmit} className="login-form">
+          <Input
+            label="Username or Academic ID"
+            name="username"
+            type="text"
+            placeholder="e.g. admin or teacher_nimali"
+            required
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            leftIcon={<User size={18} />}
+          />
 
-          <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-            <label className="form-label">Password</label>
-            <div style={{ position: 'relative' }}>
-              <Lock
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-muted)'
-                }}
-              />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className="form-input"
-                style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem', height: 42 }}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                style={{
-                  position: 'absolute',
-                  right: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: 2
-                }}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
+          <Input
+            label="Password"
+            name="password"
+            type="password"
+            placeholder="••••••••"
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            leftIcon={<Lock size={18} />}
+            showPasswordToggle
+          />
 
-          <button
+          <Button
             type="submit"
-            className="btn btn-primary"
-            disabled={loading}
-            style={{ width: '100%', padding: '0.75rem', minHeight: '44px', fontWeight: 600 }}
+            variant="primary"
+            size="lg"
+            fullWidth
+            isLoading={loading}
+            className="login-submit-btn"
+            leftIcon={<LogIn size={18} />}
           >
-            <LogIn size={18} />
-            <span>{loading ? 'Authenticating...' : 'Sign In'}</span>
-          </button>
+            Sign In
+          </Button>
         </form>
 
         {/* Development & Testing Credentials Panel */}
         {isDemoEnabled && (
-          <div
-            style={{
-              marginTop: '1.75rem',
-              borderTop: '1px solid var(--border-color)',
-              paddingTop: '1.25rem'
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '0.85rem'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <KeyRound size={15} style={{ color: 'var(--primary)' }} />
-                <span
-                  style={{
-                    fontSize: '0.78rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    fontWeight: 700,
-                    color: 'var(--text-main)'
-                  }}
-                >
-                  Testing & Demo Accounts
-                </span>
+          <section className="demo-accounts-panel" aria-label="Development Demo Accounts">
+            <div className="demo-panel-header">
+              <div className="demo-panel-title">
+                <KeyRound size={16} style={{ color: 'var(--primary)' }} />
+                <span>Testing & Demo Accounts</span>
               </div>
               <span
                 className="badge"
@@ -412,34 +271,16 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               </span>
             </div>
 
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-              Click <strong>Fill</strong> to populate credentials, or <strong>Sign In ➔</strong> for instant 1-click authentication:
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+              Click <strong>Fill</strong> to populate form fields, or <strong>Sign In ➔</strong> for instant 1-click authentication:
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               {DEMO_ACCOUNTS.map((acc) => {
                 const IconComponent = acc.icon;
                 return (
-                  <div
-                    key={acc.username}
-                    style={{
-                      border: `1px solid ${acc.borderColor}`,
-                      borderRadius: 'var(--radius-md)',
-                      padding: '0.75rem 0.85rem',
-                      background: 'var(--bg-surface)',
-                      transition: 'all 0.15s ease',
-                      boxShadow: 'var(--shadow-xs)'
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        justifyContent: 'space-between',
-                        gap: '0.5rem',
-                        marginBottom: '0.4rem'
-                      }}
-                    >
+                  <div key={acc.username} className="demo-account-card">
+                    <div className="demo-card-top">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <div
                           style={{
@@ -457,23 +298,20 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                           <IconComponent size={16} />
                         </div>
                         <div>
-                          <div style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-main)' }}>
                             {acc.roleTitle}
                           </div>
-                          <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>
+                          <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
                             {acc.name}
                           </div>
                         </div>
                       </div>
 
                       <span
-                        className="badge"
+                        className="demo-role-badge"
                         style={{
                           background: acc.bgColor,
                           color: acc.color,
-                          fontSize: '0.68rem',
-                          fontWeight: 600,
-                          padding: '2px 7px',
                           border: `1px solid ${acc.borderColor}`
                         }}
                       >
@@ -481,131 +319,71 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                       </span>
                     </div>
 
-                    {/* Monospace Credentials Display */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        margin: '0.45rem 0',
-                        fontSize: '0.75rem',
-                        padding: '0.35rem 0.55rem',
-                        background: 'var(--bg-subtle)',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-color)'
-                      }}
-                    >
+                    <div className="demo-creds-box">
                       <div>
                         <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>Username:</span>
-                        <code
-                          style={{
-                            fontWeight: 700,
-                            color: 'var(--text-main)',
-                            background: 'var(--bg-surface)',
-                            padding: '1px 5px',
-                            borderRadius: 3,
-                            border: '1px solid var(--border-color)'
-                          }}
-                        >
-                          {acc.username}
-                        </code>
+                        <code style={{ fontWeight: 700, color: 'var(--text-main)' }}>{acc.username}</code>
                       </div>
                       <span style={{ color: 'var(--border-color)' }}>|</span>
                       <div>
                         <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>Password:</span>
-                        <code
-                          style={{
-                            fontWeight: 700,
-                            color: 'var(--text-main)',
-                            background: 'var(--bg-surface)',
-                            padding: '1px 5px',
-                            borderRadius: 3,
-                            border: '1px solid var(--border-color)'
-                          }}
-                        >
-                          {acc.password}
-                        </code>
+                        <code style={{ fontWeight: 700, color: 'var(--text-main)' }}>{acc.password}</code>
                       </div>
                     </div>
 
-                    {/* Scope description */}
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.55rem' }}>
+                    <div className="demo-scope-text">
                       Scope: {acc.scope}
                     </div>
 
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: '0.45rem' }}>
-                      <button
+                    <div className="demo-actions-row">
+                      <Button
                         type="button"
+                        variant="secondary"
+                        size="sm"
+                        fullWidth
                         onClick={() => handleFillCredentials(acc.username, acc.password, acc.roleTitle)}
-                        className="btn btn-secondary btn-sm"
-                        style={{
-                          flex: 1,
-                          fontSize: '0.74rem',
-                          padding: '0.35rem 0.6rem',
-                          justifyContent: 'center',
-                          gap: '0.3rem'
-                        }}
+                        leftIcon={<ClipboardCheck size={14} />}
                       >
-                        <ClipboardCheck size={13} />
-                        <span>Fill Form</span>
-                      </button>
+                        Fill Form
+                      </Button>
 
-                      <button
+                      <Button
                         type="button"
+                        variant="primary"
+                        size="sm"
+                        fullWidth
                         onClick={() => handleQuickDemo(acc.username, acc.password)}
-                        className="btn btn-primary btn-sm"
-                        style={{
-                          flex: 1,
-                          fontSize: '0.74rem',
-                          padding: '0.35rem 0.6rem',
-                          justifyContent: 'center',
-                          gap: '0.3rem'
-                        }}
+                        rightIcon={<ArrowRight size={14} />}
                       >
-                        <span>Sign In</span>
-                        <ArrowRight size={13} />
-                      </button>
+                        Sign In ➔
+                      </Button>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Official Institutional Profile Footer Card */}
-        <div
-          style={{
-            marginTop: '1.5rem',
-            paddingTop: '1.25rem',
-            borderTop: '1px solid var(--border-color)',
-            fontSize: '0.72rem',
-            color: 'var(--text-muted)',
-            lineHeight: 1.45
-          }}
-        >
+        {/* Institutional Profile Reference Footer */}
+        <footer className="login-profile-footer">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: 'var(--text-main)', fontWeight: 600 }}>
             <Info size={13} style={{ color: 'var(--primary)' }} />
             <span>Institutional Profile Reference</span>
           </div>
           <div>
-            <strong>Principal:</strong> {SCHOOL_PROFILE.principalName}{' '}
-            <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
-              (Spelling requires formal school confirmation prior to official correspondence)
-            </span>
+            <strong>Principal:</strong> {SCHOOL_PROFILE.principalName}
           </div>
           <div>
             <strong>Zone & Division:</strong> {SCHOOL_PROFILE.zone} • {SCHOOL_PROFILE.division}
           </div>
           <div>
-            <strong>Type & Classification:</strong> {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo}) • {SCHOOL_PROFILE.studentCategory} (Grades 6–13)
+            <strong>Classification:</strong> {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo}) • {SCHOOL_PROFILE.studentCategory} (Grades 6–13)
           </div>
-          <div style={{ marginTop: '0.4rem', color: 'var(--accent)', fontWeight: 600 }}>
-            {SCHOOL_PROFILE.demoResultNotice} — All records are synthetic demonstration fixtures.
+          <div style={{ marginTop: '0.35rem', color: 'var(--accent)', fontWeight: 600 }}>
+            {SCHOOL_PROFILE.demoResultNotice}
           </div>
-        </div>
+        </footer>
       </div>
     </div>
   );
