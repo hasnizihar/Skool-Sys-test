@@ -1,38 +1,22 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
+import {
+  ToastContext,
+  type ToastType,
+  type ToastAction,
+  type ToastOptions,
+  type ToastItem
+} from './toastContextDef';
 import './toast.css';
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
-
-export interface ToastAction {
-  label: string;
-  onClick: () => void;
-}
-
-export interface ToastOptions {
-  id?: string;
-  title?: string;
-  message: string;
-  type?: ToastType;
-  durationMs?: number;
-  action?: ToastAction;
-}
-
-export interface ToastItem extends ToastOptions {
-  id: string;
-}
-
-interface ToastContextValue {
-  showToast: (options: ToastOptions) => string;
-  showSuccess: (message: string, action?: ToastAction) => string;
-  showError: (message: string) => string;
-  showWarning: (message: string, action?: ToastAction) => string;
-  showInfo: (message: string) => string;
-  dismissToast: (id: string) => void;
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null);
+export {
+  type ToastType,
+  type ToastAction,
+  type ToastOptions,
+  type ToastItem,
+  type ToastContextValue
+} from './toastContextDef';
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -161,12 +145,4 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         )}
     </ToastContext.Provider>
   );
-};
-
-export const useToast = (): ToastContextValue => {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error('useToast must be used within a ToastProvider');
-  }
-  return ctx;
 };

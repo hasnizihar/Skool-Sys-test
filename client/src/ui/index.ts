@@ -5,3 +5,4 @@ export * from './StatusBadge';
 export * from './SegmentedControl';
 export * from './Modal';
 export * from './ToastContext';
+export * from './useToast';

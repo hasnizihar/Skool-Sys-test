@@ -14,10 +14,8 @@ import {
   Shield,
   Search,
   Lock,
-  Mail,
   User,
   Sparkles,
-  RotateCcw,
   Plus
 } from 'lucide-react';
 
@@ -257,6 +255,22 @@ export const ComponentPreview: React.FC = () => {
           <p style={{ margin: '12px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             👉 <strong>Try Arrow Keys:</strong> Focus any button and use <kbd>←</kbd> <kbd>→</kbd> or <kbd>↑</kbd> <kbd>↓</kbd> to change status with complete keyboard accessibility.
           </p>
+
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed var(--border-color)' }}>
+            <h4 style={{ margin: '0 0 10px', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+              Standard Tab Filter Variant:
+            </h4>
+            <SegmentedControl
+              options={[
+                { value: 'all', label: 'All Students (42)' },
+                { value: 'unmarked', label: 'Unmarked (12)' },
+                { value: 'absent', label: 'Flagged Absent (3)' }
+              ]}
+              value={filterVal}
+              onChange={(val) => setFilterVal(val as 'all' | 'unmarked' | 'absent')}
+              ariaLabel="Filter roster view"
+            />
+          </div>
         </div>
       </section>
 

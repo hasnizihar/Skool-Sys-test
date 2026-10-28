@@ -58,7 +58,6 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       resolvedLabel = label || 'Present [P]';
       break;
     case 'absent':
-    case 'a':
       resolvedIcon = <X size={size === 'sm' ? 11 : 13} />;
       resolvedLabel = label || 'Absent [A]';
       break;
