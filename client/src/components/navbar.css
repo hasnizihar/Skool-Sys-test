@@ -237,52 +237,7 @@
   border-radius: var(--radius-sm);
 }
 
-/* User Quick Status Mini-Badge */
-.navbar-user-mini {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.25rem 0.55rem 0.25rem 0.35rem;
-  border-radius: var(--radius-full);
-  background-color: var(--bg-subtle);
-  border: 1px solid var(--border-color);
-  cursor: default;
-}
-
-.navbar-user-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary) 0%, #047857 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-weight: 700;
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
-.navbar-user-name {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-main);
-  max-width: 90px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Responsive Progressive Hiding to Prevent Crowding */
-@media (max-width: 1180px) {
-  .navbar-user-name {
-    display: none;
-  }
-  .navbar-user-mini {
-    padding: 0.2rem;
-  }
-}
-
 @media (max-width: 1080px) {
   .navbar-date-badge {
     display: none;
@@ -291,9 +246,6 @@
 
 @media (max-width: 920px) {
   .navbar-admin-pill {
-    display: none;
-  }
-  .navbar-user-mini {
     display: none;
   }
 }

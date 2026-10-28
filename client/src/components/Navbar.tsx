@@ -306,19 +306,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
         )}
-
-        {/* User Quick Status */}
-        <div
-          className="navbar-user-mini"
-          title={`${user?.full_name || 'User'} (${user?.role?.replace('_', ' ') || 'Role'})`}
-        >
-          <div className="navbar-user-avatar" aria-hidden="true">
-            {user?.full_name?.charAt(0) || 'U'}
-          </div>
-          <span className="navbar-user-name">
-            {user?.full_name?.split(' ')[0] || 'User'}
-          </span>
-        </div>
       </div>
     </header>
   );
