@@ -66,7 +66,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 
   const showInfo = useCallback(
-    (message: string) => showToast({ message, type: 'info' }),
+    (message: string, action?: ToastAction) => showToast({ message, type: 'info', action }),
     [showToast]
   );
 

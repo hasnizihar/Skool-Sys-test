@@ -8,7 +8,9 @@ import {
   Search,
   Send,
   Download,
-  Info
+  Info,
+  UserCheck,
+  X
 } from 'lucide-react';
 import { api, HttpError } from '../api/client';
 import {
@@ -23,12 +25,16 @@ import {
   ConflictStudentDiff,
   buildStudentDiffList
 } from '../utils/conflictDiffUtils';
+import { useToast } from '../ui/useToast';
+import './attendance.css';
 
 interface AttendanceProps {
   user: any;
 }
 
 export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
+  const toast = useToast();
+
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(getColomboCivilDate());
@@ -230,6 +236,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   };
 
   const handleMarkAll = (status: string) => {
+    const previousMap = { ...attendanceMap };
     const newMap: Record<number, { status: string; remarks: string }> = {};
     students.forEach((st: any) => {
       newMap[st.student_id] = {
@@ -238,9 +245,20 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       };
     });
     setAttendanceMap(newMap);
+
+    if (status === 'present') {
+      toast.showSuccess(`Marked all ${students.length} students as Present.`, {
+        label: 'Undo',
+        onClick: () => {
+          setAttendanceMap(previousMap);
+          toast.showInfo('Restored previous roll-call status.');
+        }
+      });
+    }
   };
 
   const handleClearAll = () => {
+    const previousMap = { ...attendanceMap };
     const newMap: Record<number, { status: string; remarks: string }> = {};
     students.forEach((st: any) => {
       newMap[st.student_id] = {
@@ -249,6 +267,13 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       };
     });
     setAttendanceMap(newMap);
+
+    toast.showInfo('Reset all students to Unmarked.', {
+      label: 'Undo',
+      onClick: () => {
+        setAttendanceMap(previousMap);
+      }
+    });
   };
 
   // Real-time Counts
@@ -356,17 +381,18 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           notes: sessionNotes
         });
 
-        setSaveSuccessMsg(
-          mode === 'submitted'
-            ? `Finalized attendance register for ${selectedDate} submitted successfully (Revision ${res.revision}).`
-            : `Attendance draft saved successfully (Revision ${res.revision}).`
-        );
+        const successText = mode === 'submitted'
+          ? `Finalized attendance register for ${selectedDate} submitted successfully (Revision ${res.revision}).`
+          : `Attendance draft saved successfully (Revision ${res.revision}).`;
+
+        setSaveSuccessMsg(successText);
+        toast.showSuccess(successText);
       } else {
         // Offline: enqueue in IndexedDB v2
         await queueOfflineAttendance(mutationPayload);
-        setSaveSuccessMsg(
-          `Offline: ${mode === 'submitted' ? 'Final register' : 'Draft'} saved locally on device and queued for sync.`
-        );
+        const offlineText = `Offline: ${mode === 'submitted' ? 'Final register' : 'Draft'} saved locally on device and queued for sync.`;
+        setSaveSuccessMsg(offlineText);
+        toast.showWarning(offlineText);
       }
 
       setTimeout(() => setSaveSuccessMsg(null), 6000);
@@ -394,7 +420,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         console.warn('Network transport failure during save, queueing offline mutation:', err);
         await queueOfflineAttendance(mutationPayload);
         setIsOfflineMode(true);
-        setSaveSuccessMsg('Network transport failure: Register safely queued in offline browser storage.');
+        const queuedText = 'Network transport failure: Register safely queued in offline browser storage.';
+        setSaveSuccessMsg(queuedText);
+        toast.showWarning(queuedText);
       }
     } finally {
       setSaving(false);
@@ -461,7 +489,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       const targetFingerprint =
         conflictModal.latestServerSession?.rosterFingerprint || rosterFingerprint;
 
-      // BLOCKER C: Determine allowed mode from server-current register state
       // Rule ATT-014: Once a register has been finalized ('submitted') on server, it can NEVER be downgraded to draft.
       const isServerSubmitted = conflictModal.latestServerSession?.status === 'submitted';
       const isLocalSubmitted =
@@ -472,8 +499,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       const resolvedRecords = conflictModal.diffs
         .map((d) => {
           let status = d.chosen === 'server' ? d.serverStatus : d.localStatus;
-          // When reconciling against a server-finalized register, unmarked is not allowed:
-          // inherit server status if local was unmarked, or local status if valid
           if (targetMode === 'submitted' && (!status || status === 'unmarked')) {
             if (d.serverStatus && d.serverStatus !== 'unmarked') {
               status = d.serverStatus;
@@ -527,16 +552,14 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       setAttendanceMap(updatedMap);
 
       setConflictModal({ isOpen: false });
-      setSaveSuccessMsg(
-        `Conflict resolved! Deliberate choices successfully applied and saved at Revision ${res.revision} (${res.mode} mode).`
-      );
+      const confMsg = `Conflict resolved! Deliberate choices successfully applied and saved at Revision ${res.revision} (${res.mode} mode).`;
+      setSaveSuccessMsg(confMsg);
+      toast.showSuccess(confMsg);
     } catch (err: any) {
       if (err instanceof HttpError && err.status === 409) {
-        // BLOCKER B: Second optimistic revision check caught concurrent collision!
-        // Immediately fetch the fresh server state and REBUILD student diff comparisons
+        // Second optimistic revision check caught concurrent collision!
         const fresh = await api.getAttendanceSession(selectedClassId, selectedDate);
         
-        // Preserve prior choices where possible, but require re-review of newly modified records
         const priorChoices = new Map<number, 'local' | 'server'>();
         conflictModal.diffs.forEach(d => priorChoices.set(d.student_id, d.chosen));
 
@@ -569,7 +592,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     if (selectedClassId && selectedDate) {
       await loadAttendanceSession(selectedClassId, selectedDate);
     }
-    setSaveSuccessMsg('Discarded local edits and reloaded latest server register.');
+    const msg = 'Discarded local edits and reloaded latest server register.';
+    setSaveSuccessMsg(msg);
+    toast.showInfo(msg);
   };
 
   const handleExportLocalDraft = () => {
@@ -577,6 +602,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     const jsonStr = exportMutationJson(conflictModal.pendingMutation);
     navigator.clipboard.writeText(jsonStr);
     setCopiedDraft(true);
+    toast.showSuccess('Exported local draft JSON to clipboard.');
     setTimeout(() => setCopiedDraft(false), 3000);
   };
 
@@ -599,36 +625,38 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
   const isSubmittedState = existingSession?.status === 'submitted';
 
+  const getStatusColor = (st: string) => {
+    switch (st) {
+      case 'present': return 'var(--present)';
+      case 'absent': return 'var(--absent)';
+      case 'late': return 'var(--late)';
+      case 'excused': return 'var(--excused)';
+      default: return '#64748b';
+    }
+  };
+
   return (
-    <div>
-      {/* Header with Title and Dual Action Buttons */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.5rem',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0 }}>Daily Class Attendance Register</h2>
+    <div className="attendance-page">
+      {/* Header with Title and Primary Submission CTAs */}
+      <div className="attendance-header">
+        <div className="attendance-header-titles">
+          <div className="attendance-title-row">
+            <h2 className="attendance-title">Daily Class Attendance Register</h2>
             {isOfflineMode && (
-              <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', fontSize: '0.75rem' }}>
+              <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', fontSize: '0.75rem', fontWeight: 700 }}>
                 Working Offline (IndexedDB v2)
               </span>
             )}
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+          <p className="attendance-subtitle">
             Touch-friendly roll call with atomic revision concurrency, date boundaries, and offline sync.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
+        <div className="attendance-actions">
           {/* Draft Button: Allows partial records */}
           <button
+            type="button"
             onClick={() => handleSaveAttendance('draft')}
             disabled={saving || students.length === 0 || isSubmittedState}
             className="btn btn-secondary"
@@ -640,10 +668,11 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
           {/* Final Submit Button: Requires 100% complete records */}
           <button
+            type="button"
             onClick={() => handleSaveAttendance('submitted')}
             disabled={saving || students.length === 0}
             className="btn btn-primary"
-            style={{ minWidth: '170px' }}
+            style={{ minWidth: '175px' }}
             title="Submit official finalized attendance register"
           >
             <Send size={16} />
@@ -659,10 +688,10 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       </div>
 
       {/* Class & Date Selector Card */}
-      <div className="card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ minWidth: '240px', flex: '1 1 240px' }}>
-            <label className="form-label">Select Class (Grade 6–13)</label>
+      <div className="card attendance-controls-card">
+        <div className="attendance-controls-row">
+          <div className="attendance-control-group">
+            <label className="attendance-control-label">Select Class (Grade 6–13)</label>
             <select
               className="form-select"
               value={selectedClassId || ''}
@@ -676,18 +705,21 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             </select>
           </div>
 
-          <div style={{ minWidth: '180px' }}>
-            <label className="form-label">Register Date (Asia/Colombo)</label>
-            <input
-              type="date"
-              className="form-input"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-            />
+          <div className="attendance-control-group" style={{ flex: '0 1 200px' }}>
+            <label className="attendance-control-label">Register Date (Asia/Colombo)</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type="date"
+                className="form-input"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto', flexWrap: 'wrap' }}>
+          <div className="attendance-bulk-actions">
             <button
+              type="button"
               onClick={() => handleMarkAll('present')}
               className="btn btn-secondary btn-sm"
               title="Mark all enrolled students as Present"
@@ -697,6 +729,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             </button>
 
             <button
+              type="button"
               onClick={() => handleMarkAll('absent')}
               className="btn btn-secondary btn-sm"
               title="Mark all enrolled students as Absent"
@@ -706,6 +739,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             </button>
 
             <button
+              type="button"
               onClick={handleClearAll}
               className="btn btn-secondary btn-sm"
               title="Reset all students to Unmarked"
@@ -718,68 +752,28 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
         {/* Feedback / Alert Banners */}
         {saveSuccessMsg && (
-          <div
-            style={{
-              marginTop: '1rem',
-              padding: '0.85rem 1rem',
-              background: 'var(--present-bg)',
-              color: 'var(--present)',
-              border: '1px solid var(--present-border)',
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.6rem',
-              fontSize: '0.875rem'
-            }}
-          >
+          <div className="attendance-alert attendance-alert--success" role="status">
             <CheckCircle2 size={18} />
-            <strong>{saveSuccessMsg}</strong>
+            <span>{saveSuccessMsg}</span>
           </div>
         )}
 
         {errorMessage && (
-          <div
-            style={{
-              marginTop: '1rem',
-              padding: '0.85rem 1rem',
-              background: 'var(--absent-bg)',
-              color: 'var(--absent)',
-              border: '1px solid var(--absent-border)',
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.6rem',
-              fontSize: '0.875rem'
-            }}
-          >
+          <div className="attendance-alert attendance-alert--error" role="alert">
             <AlertTriangle size={18} />
-            <strong>{errorMessage}</strong>
+            <span>{errorMessage}</span>
           </div>
         )}
 
         {/* Truthful Session Status Indicator */}
         <div
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1rem',
-            background: isSubmittedState
-              ? 'rgba(5, 150, 105, 0.08)'
+          className={`attendance-status-banner ${
+            isSubmittedState
+              ? 'attendance-status-banner--submitted'
               : existingSession
-              ? 'rgba(217, 119, 6, 0.08)'
-              : 'var(--bg-subtle)',
-            borderRadius: 'var(--radius-md)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '0.825rem',
-            border: `1px solid ${
-              isSubmittedState
-                ? 'var(--present-border)'
-                : existingSession
-                ? 'rgba(217, 119, 6, 0.25)'
-                : 'var(--border-color)'
-            }`
-          }}
+              ? 'attendance-status-banner--draft'
+              : 'attendance-status-banner--unrecorded'
+          }`}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Info size={16} />
@@ -800,8 +794,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 : existingSession
                 ? 'var(--late)'
                 : 'var(--text-muted)',
-              color: 'white',
-              fontSize: '0.725rem'
+              color: '#ffffff',
+              fontSize: '0.725rem',
+              fontWeight: 700
             }}
           >
             {isSubmittedState ? `Final (Rev ${serverRevision})` : existingSession ? `Draft (Rev ${serverRevision})` : 'Not Recorded'}
@@ -810,53 +805,54 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       </div>
 
       {/* Live Roll Summary & Metrics Banner */}
-      <div
-        className="card"
-        style={{
-          padding: '1rem 1.25rem',
-          marginBottom: '1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          background: 'var(--bg-subtle)'
-        }}
-      >
-        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Class Enrolment:</span>
-            <strong style={{ marginLeft: 6, fontSize: '0.95rem' }}>{total} Students</strong>
-          </div>
+      <div className="attendance-tally-card">
+        <div className="attendance-tally-metrics">
+          <span className="attendance-tally-pill attendance-tally-pill--total">
+            <UserCheck size={14} />
+            <span>Enrolled: {total}</span>
+          </span>
 
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span className="badge badge-present" style={{ fontSize: '0.8rem' }}>
-              Present: {countPresent}
-            </span>
-            <span className="badge badge-absent" style={{ fontSize: '0.8rem' }}>
-              Absent: {countAbsent}
-            </span>
-            <span className="badge badge-late" style={{ fontSize: '0.8rem' }}>
-              Late: {countLate}
-            </span>
-            <span className="badge badge-excused" style={{ fontSize: '0.8rem' }}>
-              Excused: {countExcused}
-            </span>
-            <span className="badge badge-unmarked" style={{ fontSize: '0.8rem' }}>
-              Unmarked: {countUnmarked}
-            </span>
-          </div>
+          <span className="attendance-tally-pill attendance-tally-pill--present">
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--present)' }} />
+            <span>Present: {countPresent}</span>
+          </span>
+
+          <span className="attendance-tally-pill attendance-tally-pill--absent">
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--absent)' }} />
+            <span>Absent: {countAbsent}</span>
+          </span>
+
+          <span className="attendance-tally-pill attendance-tally-pill--late">
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--late)' }} />
+            <span>Late: {countLate}</span>
+          </span>
+
+          <span className="attendance-tally-pill attendance-tally-pill--excused">
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--excused)' }} />
+            <span>Excused: {countExcused}</span>
+          </span>
+
+          <span className="attendance-tally-pill attendance-tally-pill--unmarked">
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#64748b' }} />
+            <span>Unmarked: {countUnmarked}</span>
+          </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <span style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>Truthful Attendance:</span>
+        <div className="attendance-rate-box">
+          <div className="attendance-rate-labels">
+            <span className="attendance-rate-label">Attendance Rate</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              {isRecorded ? `${countPresent + countLate} / ${total} Pupils` : 'No Record'}
+            </span>
+          </div>
           <span
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: '1.4rem',
-              fontWeight: 800,
-              color: !isRecorded ? 'var(--text-muted)' : attendanceRate >= 80 ? 'var(--present)' : 'var(--absent)'
-            }}
+            className={`attendance-rate-value ${
+              !isRecorded
+                ? 'attendance-rate-value--none'
+                : attendanceRate >= 80
+                ? 'attendance-rate-value--high'
+                : 'attendance-rate-value--low'
+            }`}
           >
             {!isRecorded ? '—' : `${attendanceRate}%`}
           </span>
@@ -864,63 +860,55 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       </div>
 
       {/* Search & Audit Filter Toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '1rem',
-          flexWrap: 'wrap',
-          gap: '0.75rem'
-        }}
-      >
-        <div style={{ position: 'relative', width: '280px' }}>
-          <Search
-            size={16}
-            style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--text-muted)'
-            }}
-          />
+      <div className="attendance-filter-toolbar">
+        <div className="attendance-search-box">
+          <Search size={16} className="attendance-search-icon" aria-hidden="true" />
           <input
             type="text"
-            className="form-input"
-            style={{ paddingLeft: '36px', height: 38 }}
+            className="attendance-search-input"
             placeholder="Search student or roll #..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search students by name or roll number"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              className="attendance-search-clear"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear student search"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <div className="attendance-filter-tabs">
           <button
+            type="button"
             onClick={() => setFilterView('all')}
-            className={`btn btn-sm ${filterView === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`attendance-tab-btn ${filterView === 'all' ? 'active' : ''}`}
           >
             All Students ({students.length})
           </button>
           <button
+            type="button"
             onClick={() => setFilterView('unmarked')}
-            className={`btn btn-sm ${filterView === 'unmarked' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`attendance-tab-btn ${filterView === 'unmarked' ? 'active' : ''}`}
           >
             Unmarked ({countUnmarked})
           </button>
           <button
+            type="button"
             onClick={() => setFilterView('absent')}
-            className={`btn btn-sm ${filterView === 'absent' ? 'btn-danger' : 'btn-secondary'}`}
+            className={`attendance-tab-btn attendance-tab-btn--absent ${filterView === 'absent' ? 'active' : ''}`}
           >
             Absentees ({countAbsent})
           </button>
           <button
+            type="button"
             onClick={() => setFilterView('late')}
-            className={`btn btn-sm ${filterView === 'late' ? 'btn-secondary' : 'btn-secondary'}`}
-            style={{
-              background: filterView === 'late' ? 'var(--late)' : undefined,
-              color: filterView === 'late' ? 'white' : undefined
-            }}
+            className={`attendance-tab-btn attendance-tab-btn--late ${filterView === 'late' ? 'active' : ''}`}
           >
             Late ({countLate})
           </button>
@@ -928,29 +916,29 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       </div>
 
       {/* Attendance Roster Grid / List */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="attendance-roster-card card" style={{ padding: 0 }}>
         <div className="table-responsive">
-          <table className="data-table">
+          <table className="attendance-table data-table">
             <thead>
               <tr>
                 <th style={{ width: 65, textAlign: 'center' }}>Roll #</th>
                 <th>Admission & Student Name</th>
-                <th style={{ width: 340, textAlign: 'center' }}>Attendance Status (Touch / Tap)</th>
+                <th style={{ width: 350, textAlign: 'center' }}>Attendance Status (Touch / Tap)</th>
                 <th>Remarks & Quick Reason</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', padding: '3rem' }}>
-                    <div className="animate-spin" style={{ display: 'inline-block', width: 24, height: 24, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
-                    <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)' }}>Loading class roster...</p>
+                  <td colSpan={4} style={{ textAlign: 'center', padding: '3.5rem' }}>
+                    <div className="animate-spin" style={{ display: 'inline-block', width: 28, height: 28, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+                    <p style={{ marginTop: '0.85rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading class roster...</p>
                   </td>
                 </tr>
               ) : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', padding: '3rem' }}>
-                    <div style={{ color: 'var(--text-muted)' }}>
+                  <td colSpan={4} style={{ textAlign: 'center', padding: '3.5rem' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                       No students found matching current filter or search criteria.
                     </div>
                   </td>
@@ -963,44 +951,22 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                   return (
                     <tr key={st.student_id}>
                       <td style={{ textAlign: 'center' }}>
-                        <span
-                          style={{
-                            fontWeight: 700,
-                            fontSize: '0.85rem',
-                            color: 'var(--text-muted)',
-                            background: 'var(--bg-subtle)',
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: 'var(--radius-xs)'
-                          }}
-                        >
+                        <span className="attendance-roll-badge">
                           #{st.roll_number || '-'}
                         </span>
                       </td>
 
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div className="attendance-student-info">
                           <div
-                            className="user-avatar"
-                            style={{
-                              width: 36,
-                              height: 36,
-                              fontSize: '0.8rem',
-                              background:
-                                currentStatus === 'present'
-                                  ? 'var(--present)'
-                                  : currentStatus === 'absent'
-                                  ? 'var(--absent)'
-                                  : currentStatus === 'late'
-                                  ? 'var(--late)'
-                                  : currentStatus === 'excused'
-                                  ? 'var(--excused)'
-                                  : '#64748b'
-                            }}
+                            className="attendance-avatar"
+                            style={{ backgroundColor: getStatusColor(currentStatus) }}
+                            aria-hidden="true"
                           >
                             {st.calling_name?.charAt(0) || 'S'}
                           </div>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: '0.925rem' }}>
+                          <div className="attendance-name-group">
+                            <div className="attendance-full-name">
                               {st.full_name}
                               {st.is_currently_enrolled === 0 && (
                                 <span className="badge badge-unmarked" style={{ marginLeft: 6, fontSize: '0.65rem' }}>
@@ -1008,15 +974,20 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              {st.admission_no} • {st.calling_name}
+                            <div className="attendance-meta-row">
+                              <span>{st.admission_no}</span>
+                              <span>•</span>
+                              <span style={{ fontWeight: 600 }}>{st.calling_name}</span>
+                              <span className="attendance-roll-badge" style={{ display: 'none' /* Handled by mobile media query */ }}>
+                                Roll #{st.roll_number || '-'}
+                              </span>
                             </div>
                           </div>
                         </div>
                       </td>
 
                       <td style={{ textAlign: 'center' }}>
-                        {/* 5-Way Touch Segmented Control (Min 44px Touch Target) */}
+                        {/* 4-Way Touch Segmented Control (Min 44px Touch Target) */}
                         <div className="attendance-btn-group" style={{ margin: '0 auto' }}>
                           <button
                             type="button"
@@ -1061,38 +1032,29 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                       </td>
 
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        <div className="attendance-remarks-box">
                           <input
                             type="text"
-                            className="form-input"
+                            className="attendance-remarks-input"
                             style={{
-                              padding: '0.45rem 0.75rem',
-                              fontSize: '0.825rem',
-                              backgroundColor: currentStatus === 'absent' ? 'var(--absent-bg)' : 'transparent',
+                              backgroundColor: currentStatus === 'absent' ? 'var(--absent-bg)' : undefined,
                               borderColor: currentStatus === 'absent' ? 'var(--absent-border)' : undefined
                             }}
                             placeholder={currentStatus === 'absent' ? 'Reason for absence...' : 'Optional remarks...'}
                             value={currentRemark}
                             onChange={(e) => handleRemarksChange(st.student_id, e.target.value)}
+                            aria-label={`Remarks for ${st.calling_name}`}
                           />
 
                           {/* Quick Reason Chips for Absentees / Late */}
                           {(currentStatus === 'absent' || currentStatus === 'late' || currentStatus === 'excused') && (
-                            <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                            <div className="attendance-quick-chips">
                               {['Medical', 'Sick Leave', 'Transport', 'Family Event', 'Official Duty'].map((tag) => (
                                 <button
                                   key={tag}
                                   type="button"
                                   onClick={() => handleQuickRemark(st.student_id, tag)}
-                                  style={{
-                                    border: '1px solid var(--border-color)',
-                                    background: 'var(--bg-subtle)',
-                                    borderRadius: 'var(--radius-xs)',
-                                    fontSize: '0.675rem',
-                                    padding: '0.1rem 0.35rem',
-                                    color: 'var(--text-muted)',
-                                    cursor: 'pointer'
-                                  }}
+                                  className="attendance-quick-chip-btn"
                                   title={`Append reason: ${tag}`}
                                 >
                                   +{tag}
@@ -1117,7 +1079,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.7)',
+            background: 'rgba(0, 0, 0, 0.7)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1137,17 +1099,19 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
               padding: '1.75rem',
               boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
               border: '2px solid #f59e0b',
-              backgroundColor: 'var(--bg-card, #ffffff)'
+              backgroundColor: 'var(--bg-card, #ffffff)',
+              borderRadius: 'var(--radius-xl, 16px)'
             }}
           >
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <AlertTriangle size={26} color="#d97706" />
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#92400e' }}>
                   Student-by-Student Concurrency Conflict Resolution
                 </h3>
               </div>
+
               <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem' }}>
                 <span className="badge" style={{ background: 'var(--bg-subtle)', padding: '0.25rem 0.5rem' }}>
                   Base Rev: <strong>{conflictModal.pendingMutation?.baseRevision ?? serverRevision}</strong>
@@ -1171,7 +1135,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                   border: '1px solid #ef4444',
                   color: '#991b1b',
                   padding: '0.65rem 0.85rem',
-                  borderRadius: 'var(--radius-sm)',
+                  borderRadius: 'var(--radius-sm, 6px)',
                   fontSize: '0.825rem',
                   fontWeight: 600,
                   marginBottom: '0.75rem'
@@ -1189,7 +1153,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 justifyContent: 'space-between',
                 padding: '0.65rem 0.85rem',
                 background: 'var(--bg-subtle)',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: 'var(--radius-md, 8px)',
                 marginBottom: '0.85rem',
                 fontSize: '0.825rem',
                 flexWrap: 'wrap',
@@ -1241,7 +1205,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 flex: 1,
                 overflowY: 'auto',
                 border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: 'var(--radius-md, 8px)',
                 marginBottom: '1rem',
                 maxHeight: '380px'
               }}
@@ -1321,12 +1285,12 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
                           {/* Resolution Choice Toggles */}
                           <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-sm, 6px)', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                               <button
                                 type="button"
                                 onClick={() => handleToggleStudentChoice(d.student_id, 'server')}
                                 style={{
-                                  padding: '0.35rem 0.65rem',
+                                  padding: '0.4rem 0.75rem',
                                   fontSize: '0.75rem',
                                   fontWeight: d.chosen === 'server' ? 700 : 400,
                                   background: d.chosen === 'server' ? '#d97706' : 'transparent',
@@ -1342,7 +1306,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                                 type="button"
                                 onClick={() => handleToggleStudentChoice(d.student_id, 'local')}
                                 style={{
-                                  padding: '0.35rem 0.65rem',
+                                  padding: '0.4rem 0.75rem',
                                   fontSize: '0.75rem',
                                   fontWeight: d.chosen === 'local' ? 700 : 400,
                                   background: d.chosen === 'local' ? '#4f46e5' : 'transparent',
@@ -1392,7 +1356,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 onClick={handleApplyDeliberateResolution}
                 className="btn btn-primary"
                 disabled={saving}
-                style={{ padding: '0.6rem 1.25rem', fontWeight: 700 }}
+                style={{ padding: '0.65rem 1.4rem', fontWeight: 700 }}
               >
                 <CheckCircle2 size={16} />
                 <span>

@@ -11,6 +11,7 @@ import {
 } from '../api/offlineQueue';
 import { getAuthToken, getCurrentUser, api, HttpError } from '../api/client';
 import { buildStudentDiffList, ConflictStudentDiff } from '../utils/conflictDiffUtils';
+import './offlineBanner.css';
 
 export const OfflineBanner: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);

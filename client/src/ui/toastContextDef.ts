@@ -25,7 +25,7 @@ export interface ToastContextValue {
   showSuccess: (message: string, action?: ToastAction) => string;
   showError: (message: string) => string;
   showWarning: (message: string, action?: ToastAction) => string;
-  showInfo: (message: string) => string;
+  showInfo: (message: string, action?: ToastAction) => string;
   dismissToast: (id: string) => void;
 }
 
