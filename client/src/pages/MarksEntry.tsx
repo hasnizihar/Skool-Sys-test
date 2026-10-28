@@ -912,7 +912,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
               className="badge"
               style={{ background: 'var(--primary-light)', color: 'var(--primary)', fontWeight: 700 }}
             >
-              PR-005 Integrity
+              Assessment Integrity Standard
             </span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 2 }}>

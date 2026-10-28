@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
+import { SchoolCrest } from '../components/common/SchoolCrest';
 
 interface StudentReportCardProps {
   studentId: number;
@@ -250,7 +251,7 @@ export const StudentReportCard: React.FC<StudentReportCardProps> = ({
                     marginBottom: '0.35rem'
                   }}
                 >
-                  <School size={32} style={{ color: 'var(--primary)' }} />
+                  <SchoolCrest size={48} showBorder={true} alt={SCHOOL_PROFILE.name} />
                   <div>
                     <h2
                       style={{

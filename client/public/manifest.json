@@ -1,6 +1,6 @@
 {
-  "short_name": "SkoolSys",
-  "name": "SkoolSys - School Management System",
+  "short_name": "KCC SkoolSys",
+  "name": "Kattankudy Central College — SkoolSys 2.0",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -14,9 +14,9 @@
     }
   ],
   "start_url": "/",
-  "background_color": "#0f172a",
-  "theme_color": "#4f46e5",
+  "background_color": "#F7FAF7",
+  "theme_color": "#075E3B",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "description": "Grade 6-13 School Management System with Offline Attendance"
+  "description": "Kattankudy Central College — SkoolSys 2.0 Academic Management System (Grades 6–13)"
 }

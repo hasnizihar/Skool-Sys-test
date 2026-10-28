@@ -169,7 +169,7 @@ export const AttendanceReports: React.FC = () => {
           {/* Daily Summary Stats */}
           <div className="stats-grid">
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
+              <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
                 <CheckCircle size={24} />
               </div>
               <div>
@@ -181,7 +181,7 @@ export const AttendanceReports: React.FC = () => {
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+              <div className="stat-icon" style={{ background: 'var(--kcc-primary-soft)', color: 'var(--kcc-primary)' }}>
                 <UserCheck size={24} />
               </div>
               <div>
@@ -191,7 +191,7 @@ export const AttendanceReports: React.FC = () => {
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
+              <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
                 <AlertCircle size={24} />
               </div>
               <div>
@@ -201,7 +201,7 @@ export const AttendanceReports: React.FC = () => {
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#fef3c7', color: '#b45309' }}>
+              <div className="stat-icon" style={{ background: 'var(--late-bg)', color: 'var(--late)' }}>
                 <Clock size={24} />
               </div>
               <div>
@@ -484,7 +484,7 @@ export const AttendanceReports: React.FC = () => {
                         <td style={{ textAlign: 'center', fontWeight: 700 }}>
                           {sessionCount > 0
                             ? `${Math.round((presentCount / sessionCount) * 100)}%`
-                            : '100%'}
+                            : '—'}
                         </td>
                       </tr>
                     );

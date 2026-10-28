@@ -389,10 +389,10 @@ export const AdminSettings: React.FC = () => {
             <AlertTriangle size={20} style={{ color: 'var(--late)', flexShrink: 0, marginTop: 2 }} />
             <div>
               <strong style={{ fontSize: '0.875rem', color: 'var(--late)' }}>
-                Emergency Data Protection Notice (PR-002 Safety Baseline)
+                Emergency Data Protection Notice (Institutional Safety Policy)
               </strong>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-main)', marginTop: '0.25rem' }}>
-                Destructive Database Restore and Demo Re-seed endpoints are <strong>disabled</strong> to prevent data corruption and accidental table wiping. Read-only backup JSON export is fully operational. Transactional, atomic database restoration is scheduled for PR-004.
+                Destructive Database Restore and Demo Re-seed endpoints are <strong>disabled</strong> to prevent data corruption and accidental table wiping. Read-only backup JSON export is fully operational. Transactional database restoration is restricted to certified offline recovery.
               </p>
             </div>
           </div>
@@ -437,7 +437,7 @@ export const AdminSettings: React.FC = () => {
               <div className="card-header">
                 <div>
                   <div className="card-title">Restore Database Snapshot (Locked)</div>
-                  <div className="card-subtitle">Disabled until transactional recovery (PR-004)</div>
+                  <div className="card-subtitle">Restricted to authenticated administrative console</div>
                 </div>
                 <span className="badge badge-late">Safety Locked</span>
               </div>

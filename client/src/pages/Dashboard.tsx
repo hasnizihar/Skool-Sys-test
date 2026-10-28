@@ -11,13 +11,21 @@ import {
   UserCheck,
   UserX,
   PhoneCall,
-  Sparkles,
   School,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Award,
+  ClipboardCheck,
+  ShieldAlert,
+  Send,
+  Eye,
+  CheckCheck,
+  History
 } from 'lucide-react';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
+import { SchoolCrest } from '../components/common/SchoolCrest';
+import { StatusBadge } from '../components/common/StatusBadge';
 
 interface DashboardProps {
   onNavigate: (tab: string) => void;
@@ -31,17 +39,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
     attendanceRate: number | null;
     presentCount: number;
     absentCount: number;
+    pendingExamSheets: number;
   }>({
     totalStudents: 0,
     classesCount: 0,
     attendanceRate: null,
     presentCount: 0,
-    absentCount: 0
+    absentCount: 0,
+    pendingExamSheets: 0
   });
+
   const [dailyReport, setDailyReport] = useState<any[]>([]);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [pendingSheets, setPendingSheets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [classFilter, setClassFilter] = useState<'all' | 'pending'>('all');
+
+  const role = user?.role || 'teacher';
+  const isAdmin = role === 'admin';
+  const isClassTeacher = role === 'class_teacher';
+  const isSubjectTeacher = role === 'subject_teacher';
+  const isSectionHead = role === 'section_head';
 
   useEffect(() => {
     loadDashboardData();
@@ -78,17 +96,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         ? Math.round((totalPresent / totalMarked) * 100)
         : null;
 
+      // Fetch pending marks sheets for leadership or teachers
+      let pendingCount = 0;
+      let sheetsList: any[] = [];
+      try {
+        const sheetsRes = await api.getMarksSheets();
+        if (sheetsRes.sheets) {
+          sheetsList = sheetsRes.sheets;
+          pendingCount = sheetsList.filter(
+            (s: any) => s.status === 'submitted' || s.status === 'reviewed'
+          ).length;
+          setPendingSheets(sheetsList);
+        }
+      } catch {
+        // Marks sheets endpoint may require specific scope
+      }
+
       setStats({
         totalStudents: totalEnrolled,
         classesCount: classesRes.classes?.length || 18,
         attendanceRate: rate,
         presentCount: totalPresent,
-        absentCount: totalAbsent
+        absentCount: totalAbsent,
+        pendingExamSheets: pendingCount
       });
 
-      if (user.role === 'admin') {
-        const logsRes = await api.getAuditLogs();
-        setRecentLogs((logsRes.logs || []).slice(0, 5));
+      if (isAdmin) {
+        try {
+          const logsRes = await api.getAuditLogs();
+          setRecentLogs((logsRes.logs || []).slice(0, 5));
+        } catch {}
       }
     } catch (err) {
       console.error('Failed to load dashboard:', err);
@@ -103,11 +140,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
   const hour = new Date().getHours();
   const greetingTime = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const cleanName = user?.full_name?.replace(/\s*\([^)]*\)/g, '').trim() || 'Faculty Member';
+  const cleanName = user?.full_name?.replace(/\s*\([^)]*\)/g, '').trim() || user?.username || 'Faculty Member';
 
   return (
     <div>
-      {/* Header Banner Card */}
+      {/* Header Banner Card with School Brand Identity */}
       <div
         className="card"
         style={{
@@ -117,42 +154,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           marginBottom: '1.75rem',
           flexWrap: 'wrap',
           gap: '1.25rem',
-          padding: '1.25rem 1.75rem',
-          background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-subtle) 100%)',
-          border: '1px solid var(--border-color)',
+          padding: '1.5rem 1.75rem',
+          background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--kcc-primary-soft) 100%)',
+          border: '1px solid var(--kcc-border)',
           borderRadius: 'var(--radius-lg)'
         }}
       >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-              {greetingTime}, {cleanName}
-            </h2>
-            <span
-              className="badge"
-              style={{
-                background: 'var(--primary-light)',
-                color: 'var(--primary)',
-                fontWeight: 700,
-                fontSize: '0.75rem',
-                border: '1px solid rgba(67, 56, 202, 0.2)'
-              }}
-            >
-              Academic Year 2026
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+          <SchoolCrest size={48} showBorder={true} alt={SCHOOL_PROFILE.name} />
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--kcc-text)', letterSpacing: '-0.02em' }}>
+                {greetingTime}, {cleanName}
+              </h2>
+              <span
+                className="badge"
+                style={{
+                  background: 'var(--kcc-primary)',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  padding: '0.25rem 0.65rem'
+                }}
+              >
+                Academic Year 2026
+              </span>
+            </div>
+
+            <p style={{ color: 'var(--kcc-text-muted)', fontSize: '0.85rem', margin: 0 }}>
+              <strong style={{ color: 'var(--kcc-text)' }}>{SCHOOL_PROFILE.name}</strong> ({SCHOOL_PROFILE.nameTamil}) • {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo})
+            </p>
+
+            <p style={{ color: 'var(--kcc-text-muted)', fontSize: '0.78rem', marginTop: '0.25rem' }}>
+              {isAdmin
+                ? `Principal Profile: ${SCHOOL_PROFILE.principalName} • Executive institutional overview across Grades 6 to 13`
+                : isClassTeacher
+                ? `Assigned Role: Class Teacher • Homeroom Roll-Call & Classroom Register`
+                : isSubjectTeacher
+                ? `Assigned Role: Subject Teacher • Curriculum & Assessment Operations`
+                : isSectionHead
+                ? `Assigned Role: Section Head • Grade Division Moderation & Review Queue`
+                : `Assigned Role: ${user?.role?.replace('_', ' ').toUpperCase()} • Grade 6–13 Portal`}
+            </p>
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            {SCHOOL_PROFILE.name} ({SCHOOL_PROFILE.nameTamil}) • {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo})
-          </p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.2rem' }}>
-            {user?.role === 'admin'
-              ? `Principal Profile: ${SCHOOL_PROFILE.principalName} • Executive institutional overview across Grades 6 to 13`
-              : `Assigned Role: ${user?.role?.replace('_', ' ').toUpperCase()} • Grade 6–13 Portal`}
-          </p>
         </div>
 
+        {/* Primary Action Buttons */}
         <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
-          {(user?.role === 'class_teacher' || user?.role === 'admin') && (
+          {(isClassTeacher || isAdmin) && (
             <button
               onClick={() => onNavigate('attendance')}
               className="btn btn-primary"
@@ -174,23 +224,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         </div>
       </div>
 
-      {/* Primary KPI Metric Cards (Bento Style) */}
+      {/* Primary KPI Metric Cards (Role-Adaptive Bento Style) */}
       <div className="stats-grid">
         {/* Card 1: Total Enrolled */}
-        <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
-          <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--kcc-primary)' }}>
+          <div className="stat-icon" style={{ background: 'var(--kcc-primary-soft)', color: 'var(--kcc-primary)' }}>
             <Users size={24} />
           </div>
           <div style={{ flex: 1 }}>
             <div className="stat-val">{stats.totalStudents}</div>
             <div className="stat-label">Total Enrolled Students</div>
-            <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+            <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--kcc-text-muted)' }}>
               <span>Grades 6 to 13</span>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Attendance Rate */}
+        {/* Card 2: Attendance Rate (Truthful Representation) */}
         <div className="stat-card" style={{ borderLeft: '4px solid var(--present)' }}>
           <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
             <TrendingUp size={24} />
@@ -209,7 +259,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                   ? 'var(--present-bg)'
                   : 'var(--late-bg)',
                 color: stats.attendanceRate === null
-                  ? 'var(--text-muted)'
+                  ? 'var(--kcc-text-muted)'
                   : stats.attendanceRate >= 80
                   ? 'var(--present)'
                   : 'var(--late)'
@@ -225,20 +275,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         </div>
 
         {/* Card 3: Active Classes */}
-        <div className="stat-card" style={{ borderLeft: '4px solid var(--accent)' }}>
-          <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--kcc-gold)' }}>
+          <div className="stat-icon" style={{ background: 'var(--kcc-gold-soft)', color: '#92400E' }}>
             <School size={24} />
           </div>
           <div style={{ flex: 1 }}>
             <div className="stat-val">{stats.classesCount}</div>
             <div className="stat-label">Active School Classes</div>
-            <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+            <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--kcc-text-muted)' }}>
               <span>A & B Streams</span>
             </div>
           </div>
         </div>
 
-        {/* Card 4: Absentee Follow-up */}
+        {/* Card 4: Absentees / Follow-up */}
         <div
           className="stat-card card-interactive"
           onClick={() => onNavigate('attendance-reports')}
@@ -263,7 +313,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
       {/* Main 2-Column Bento Layout */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', marginBottom: '1.75rem' }}>
-        {/* Left Column: Class Attendance Register Progress */}
+        {/* Left Column: Daily Attendance Register Status */}
         <div className="card">
           <div className="card-header">
             <div>
@@ -273,12 +323,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
             <div style={{ display: 'flex', gap: '0.4rem' }}>
               <button
+                type="button"
                 onClick={() => setClassFilter('all')}
                 className={`btn btn-sm ${classFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
               >
                 All ({dailyReport.length})
               </button>
               <button
+                type="button"
                 onClick={() => setClassFilter('pending')}
                 className={`btn btn-sm ${classFilter === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
               >
@@ -289,9 +341,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '0.25rem' }}>
             {filteredDailyReport.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)' }}>
-                <CheckCircle size={32} style={{ color: 'var(--present)', margin: '0 auto 0.5rem' }} />
-                <p>All classes have submitted their attendance registers for today!</p>
+              <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--kcc-text-muted)' }}>
+                <CheckCircle size={36} style={{ color: 'var(--present)', margin: '0 auto 0.75rem' }} />
+                <p style={{ fontWeight: 600 }}>All classes have submitted attendance for today!</p>
               </div>
             ) : (
               filteredDailyReport.slice(0, 8).map((c) => {
@@ -305,192 +357,165 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     key={c.class_id}
                     style={{
                       padding: '0.85rem 1rem',
-                      background: 'var(--bg-subtle)',
                       borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--border-color)',
-                      transition: 'background var(--transition-fast)'
+                      backgroundColor: 'var(--bg-surface)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <div>
-                        <strong style={{ fontSize: '0.95rem' }}>{c.class_name}</strong>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                          {c.class_teacher_name ? `(${c.class_teacher_name})` : '(Teacher unassigned)'}
-                        </span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--kcc-text)' }}>
+                        {c.class_name}
                       </div>
-
-                      {isSubmitted ? (
-                        <span className="badge badge-present">
-                          <CheckCircle size={12} /> {pct}% Present ({present}/{total})
-                        </span>
-                      ) : (
-                        <span className="badge badge-late">
-                          <AlertTriangle size={12} /> Roll-call Pending
-                        </span>
-                      )}
+                      <div style={{ fontSize: '0.75rem', color: 'var(--kcc-text-muted)' }}>
+                        Teacher: {c.teacher_name || 'Assigned Staff'}
+                      </div>
                     </div>
 
-                    <div
-                      style={{
-                        height: 7,
-                        background: 'var(--border-color)',
-                        borderRadius: 'var(--radius-full)',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${pct}%`,
-                          background: pct >= 80 ? 'var(--present)' : pct >= 60 ? 'var(--late)' : 'var(--absent)',
-                          borderRadius: 'var(--radius-full)',
-                          transition: 'width 0.4s ease-out'
-                        }}
-                      />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      {isSubmitted ? (
+                        <>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--present)' }}>
+                              {present} / {total} ({pct}%)
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--kcc-text-muted)' }}>
+                              Recorded
+                            </div>
+                          </div>
+                          <span
+                            className="badge badge-present"
+                            style={{ fontSize: '0.7rem' }}
+                          >
+                            Submitted
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span
+                            className="badge badge-unmarked"
+                            style={{ fontSize: '0.7rem' }}
+                          >
+                            Pending Roll-Call
+                          </span>
+                          {(isClassTeacher || isAdmin) && (
+                            <button
+                              type="button"
+                              onClick={() => onNavigate('attendance')}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.725rem' }}
+                            >
+                              Mark
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 );
               })
             )}
           </div>
-
-          <div style={{ marginTop: '1rem', paddingTop: '0.85rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              onClick={() => onNavigate('attendance-reports')}
-              className="btn btn-secondary btn-sm"
-            >
-              View Full Attendance Matrix <ArrowRight size={14} />
-            </button>
-          </div>
         </div>
 
-        {/* Right Column: Quick Operational Actions & Workflows */}
+        {/* Right Column: Role-Specific Operational Hub */}
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Core Management Workflows</div>
-              <div className="card-subtitle">Fast 1-click access to essential faculty features</div>
+              <div className="card-title">
+                {isAdmin
+                  ? 'Examination Moderation & Approvals'
+                  : isSectionHead
+                  ? 'Section Review Queue'
+                  : isSubjectTeacher
+                  ? 'My Examination Marks Sheets'
+                  : 'Homeroom Academic Overview'}
+              </div>
+              <div className="card-subtitle">
+                {isAdmin
+                  ? 'Endorsed marks sheets ready for Principal approval and publication'
+                  : isSectionHead
+                  ? 'Submitted subject marks sheets awaiting Section Head endorsement'
+                  : isSubjectTeacher
+                  ? 'Marks sheets assigned for your subject curriculum'
+                  : 'Student performance and examination readiness'}
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('marks')}
+              className="btn btn-secondary btn-sm"
+            >
+              Open Workspace →
+            </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            {/* Action 1 */}
-            <div
-              className="card-interactive"
-              onClick={() => onNavigate('attendance')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1rem',
-                padding: '1rem',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)'
-              }}
-            >
-              <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-                <CalendarCheck size={22} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '420px', overflowY: 'auto' }}>
+            {pendingSheets.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--kcc-text-muted)' }}>
+                <CheckCheck size={36} style={{ color: 'var(--present)', margin: '0 auto 0.75rem' }} />
+                <p style={{ fontWeight: 600 }}>All examination marks sheets are up to date!</p>
               </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700 }}>Daily Attendance Roll-Call</h4>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Touch-friendly 44px segmented register with offline browser auto-sync
-                </p>
-              </div>
-              <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
-            </div>
+            ) : (
+              pendingSheets.slice(0, 6).map((sheet: any) => (
+                <div
+                  key={sheet.id}
+                  style={{
+                    padding: '0.85rem 1rem',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.75rem'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--kcc-text)' }}>
+                      {sheet.class_name} • {sheet.subject_name}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--kcc-text-muted)' }}>
+                      {sheet.examination_title || 'Term 1 Assessment 2026'}
+                    </div>
+                  </div>
 
-            {/* Action 2 */}
-            <div
-              className="card-interactive"
-              onClick={() => onNavigate('students')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1rem',
-                padding: '1rem',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)'
-              }}
-            >
-              <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-                <Users size={22} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700 }}>Student Records & Directory</h4>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Instant search, guardian profiles, attendance history, and bulk CSV import
-                </p>
-              </div>
-              <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
-            </div>
-
-            {/* Action 3 */}
-            <div
-              className="card-interactive"
-              onClick={() => onNavigate('marks')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1rem',
-                padding: '1rem',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)'
-              }}
-            >
-              <div className="stat-icon" style={{ background: 'var(--secondary-light)', color: 'var(--secondary)' }}>
-                <GraduationCap size={22} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700 }}>Marks Entry & Official Report Cards</h4>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Keyboard-friendly spreadsheet scoring and printable terminal report cards
-                </p>
-              </div>
-              <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
-            </div>
-
-            {/* Action 4 */}
-            <div
-              className="card-interactive"
-              onClick={() => onNavigate('attendance-reports')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1rem',
-                padding: '1rem',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)'
-              }}
-            >
-              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
-                <FileSpreadsheet size={22} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700 }}>Monthly Attendance Registry</h4>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Monthly presence matrices, class rankings, and CSV export
-                </p>
-              </div>
-              <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
-            </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <StatusBadge status={sheet.status} size="sm" />
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('marks')}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.725rem' }}
+                    >
+                      View
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      {/* Recent Audit Activity (Admin Only) */}
-      {user.role === 'admin' && recentLogs.length > 0 && (
-        <div className="card">
+      {/* Recent System Audit Logs (Admin / Leadership) */}
+      {isAdmin && recentLogs.length > 0 && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
           <div className="card-header">
             <div>
-              <div className="card-title">Recent Audit Log Activity</div>
-              <div className="card-subtitle">Tamper-evident record of faculty actions and database updates</div>
+              <div className="card-title">Recent System Audit Trail</div>
+              <div className="card-subtitle">Verified immutable security logs of administrative activity</div>
             </div>
-            <button onClick={() => onNavigate('audit')} className="btn btn-secondary btn-sm">
-              View All Logs <ArrowRight size={14} />
+            <button
+              type="button"
+              onClick={() => onNavigate('audit')}
+              className="btn btn-secondary btn-sm"
+            >
+              View Full Audit Log →
             </button>
           </div>
 
@@ -499,34 +524,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               <thead>
                 <tr>
                   <th>Timestamp</th>
-                  <th>Faculty User</th>
+                  <th>Actor</th>
                   <th>Action</th>
-                  <th>Entity</th>
                   <th>Details</th>
                 </tr>
               </thead>
               <tbody>
                 {recentLogs.map((log) => (
                   <tr key={log.id}>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                      {log.timestamp}
+                    <td style={{ fontSize: '0.775rem', whiteSpace: 'nowrap' }}>
+                      {new Date(log.created_at).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     </td>
-                    <td><strong>{log.username}</strong></td>
+                    <td style={{ fontWeight: 600 }}>{log.username}</td>
                     <td>
-                      <span
-                        className="badge"
-                        style={{
-                          background: 'var(--bg-subtle)',
-                          border: '1px solid var(--border-color)',
-                          color: 'var(--text-main)'
-                        }}
-                      >
+                      <span className="badge" style={{ background: 'var(--kcc-primary-soft)', color: 'var(--kcc-primary)' }}>
                         {log.action}
                       </span>
                     </td>
-                    <td><span style={{ fontWeight: 600 }}>{log.entity_type}</span></td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {typeof log.details === 'string' ? log.details.slice(0, 80) : JSON.stringify(log.details)}
+                    <td style={{ fontSize: '0.825rem', color: 'var(--kcc-text-muted)' }}>
+                      {log.details || log.target || '—'}
                     </td>
                   </tr>
                 ))}

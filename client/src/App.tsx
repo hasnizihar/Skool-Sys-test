@@ -11,6 +11,7 @@ import { AttendanceReports } from './pages/AttendanceReports';
 import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
+import { ToastProvider } from './components/common/Toast';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 
 const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
@@ -106,7 +107,11 @@ export function App() {
   };
 
   if (!user) {
-    return <Login onLoginSuccess={(u) => setUser(u)} />;
+    return (
+      <ToastProvider>
+        <Login onLoginSuccess={(u) => setUser(u)} />
+      </ToastProvider>
+    );
   }
 
   const getPageTitle = () => {
@@ -123,54 +128,56 @@ export function App() {
   };
 
   return (
-    <div className="app-container">
-      <Sidebar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-        user={user}
-        onLogout={handleLogout}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        theme={theme}
-        toggleTheme={toggleTheme}
-      />
-
-      <div className="main-wrapper">
-        <OfflineBanner />
-
-        <Navbar
-          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-          title={getPageTitle()}
+    <ToastProvider>
+      <div className="app-container">
+        <Sidebar
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
           user={user}
+          onLogout={handleLogout}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
           theme={theme}
           toggleTheme={toggleTheme}
         />
 
-        <main className="page-container">
-          {currentTab === 'dashboard' && (
-            <Dashboard onNavigate={setCurrentTab} user={user} />
-          )}
-          {currentTab === 'students' && (
-            <Students user={user} />
-          )}
-          {currentTab === 'attendance' && (
-            <Attendance user={user} />
-          )}
-          {currentTab === 'attendance-reports' && (
-            <AttendanceReports />
-          )}
-          {currentTab === 'marks' && (
-            <MarksEntry user={user} />
-          )}
-          {currentTab === 'admin' && user.role === 'admin' && (
-            <AdminSettings />
-          )}
-          {currentTab === 'audit' && user.role === 'admin' && (
-            <AuditLogs />
-          )}
-        </main>
+        <div className="main-wrapper">
+          <OfflineBanner />
+
+          <Navbar
+            onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+            title={getPageTitle()}
+            user={user}
+            theme={theme}
+            toggleTheme={toggleTheme}
+          />
+
+          <main className="page-container">
+            {currentTab === 'dashboard' && (
+              <Dashboard onNavigate={setCurrentTab} user={user} />
+            )}
+            {currentTab === 'students' && (
+              <Students user={user} />
+            )}
+            {currentTab === 'attendance' && (
+              <Attendance user={user} />
+            )}
+            {currentTab === 'attendance-reports' && (
+              <AttendanceReports />
+            )}
+            {currentTab === 'marks' && (
+              <MarksEntry user={user} />
+            )}
+            {currentTab === 'admin' && user.role === 'admin' && (
+              <AdminSettings />
+            )}
+            {currentTab === 'audit' && user.role === 'admin' && (
+              <AuditLogs />
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }
 

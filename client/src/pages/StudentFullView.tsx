@@ -159,7 +159,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
   }
 
   const { student, attendance, marks } = data;
-  const attRate = attendance?.attendanceRate !== undefined ? attendance.attendanceRate : 100;
+  const attRate = (attendance?.attendanceRate !== undefined && attendance?.attendanceRate !== null) ? attendance.attendanceRate : null;
   const isFemale = student.gender === 'Female';
 
   return (
@@ -324,7 +324,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                   color: attRate >= 80 ? 'var(--present)' : attRate >= 60 ? 'var(--late)' : 'var(--absent)'
                 }}
               >
-                {attRate}%
+                {attRate !== null ? `${attRate}%` : 'Not Recorded'}
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem', fontWeight: 600 }}>
                 Attendance Rate
@@ -484,7 +484,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Class Teacher:</span>
-              <strong>{student.class_teacher_name || 'Mrs. Nimali Perera'}</strong>
+              <strong>{student.class_teacher_name || 'Assigned Faculty'}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
@@ -562,7 +562,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
             }}
           >
             <CheckCircle2 size={16} color="var(--primary)" />
-            <span>Cumulative Term Attendance Rate: {attRate}%</span>
+            <span>Cumulative Term Attendance Rate: {attRate !== null ? `${attRate}%` : 'Not Recorded'}</span>
           </div>
         </div>
       </div>

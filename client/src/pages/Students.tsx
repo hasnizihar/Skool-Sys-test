@@ -143,22 +143,84 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
     }
   };
 
+  
+// RFC 4180 compliant CSV parser supporting quoted strings with commas and escaped quotes
+function parseCsvRFC(text: string): string[][] {
+  const result: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < text.length) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') {
+        field += '"';
+        i += 2;
+      } else if (char === '"') {
+        inQuotes = false;
+        i++;
+      } else {
+        field += char;
+        i++;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+        i++;
+      } else if (char === ',') {
+        row.push(field.trim());
+        field = '';
+        i++;
+      } else if (char === '\r') {
+        i++;
+      } else if (char === '\n') {
+        row.push(field.trim());
+        if (row.some((f) => f.length > 0)) {
+          result.push(row);
+        }
+        row = [];
+        field = '';
+        i++;
+      } else {
+        field += char;
+        i++;
+      }
+    }
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field.trim());
+    if (row.some((f) => f.length > 0)) {
+      result.push(row);
+    }
+  }
+
+  return result;
+}
+
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [csvSuccess, setCsvSuccess] = useState<string | null>(null);
+
   const handleCsvPreview = async () => {
     if (!csvText.trim()) return;
+    setCsvError(null);
+    setCsvSuccess(null);
 
-    // Parse CSV lines into objects
-    const lines = csvText.trim().split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) {
-      alert('CSV must contain a header line and at least one data row.');
+    const parsedRows = parseCsvRFC(csvText.trim());
+    if (parsedRows.length < 2) {
+      setCsvError('CSV must contain a header line and at least one student data row.');
       return;
     }
 
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-    const rows = lines.slice(1).map(line => {
-      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    const headers = parsedRows[0].map((h) => h.trim().replace(/^"|"$/g, ''));
+    const rows = parsedRows.slice(1).map((vals) => {
       const obj: any = {};
       headers.forEach((h, i) => {
-        obj[h] = vals[i] || '';
+        obj[h] = vals[i] !== undefined ? vals[i].replace(/^"|"$/g, '') : '';
       });
       return obj;
     });
@@ -168,7 +230,7 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
       const preview = await api.importCsv(rows, false);
       setImportPreview(preview);
     } catch (err: any) {
-      alert(`CSV validation failed: ${err.message}`);
+      setCsvError(`CSV validation failed: ${err.message}`);
     } finally {
       setImporting(false);
     }
@@ -180,13 +242,13 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
       setImporting(true);
       const rows = importPreview.preview.map((p: any) => p.data);
       const res = await api.importCsv(rows, true);
-      alert(`Success: Imported ${res.importedCount} student records!`);
+      setCsvSuccess(`Successfully imported ${res.importedCount} student records into school directory!`);
       setShowImportModal(false);
       setCsvText('');
       setImportPreview(null);
       fetchStudents();
     } catch (err: any) {
-      alert(`Import failed: ${err.message}`);
+      setCsvError(`Import failed: ${err.message}`);
     } finally {
       setImporting(false);
     }
@@ -486,7 +548,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-grid-2">
                   <div className="form-group">
                     <label className="form-label">Admission Number *</label>
                     <input
@@ -494,7 +556,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                       className="form-input"
                       value={formData.admission_no}
                       onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
-                      placeholder="e.g. SCH-2026-031"
+                      placeholder="e.g. KCC-2026-08A-031"
                       required
                     />
                   </div>
@@ -524,7 +586,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-grid-2">
                   <div className="form-group">
                     <label className="form-label">Date of Birth *</label>
                     <input
@@ -550,7 +612,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-grid-2">
                   <div className="form-group">
                     <label className="form-label">Class Assignment</label>
                     <select
@@ -591,7 +653,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                 <div style={{ borderTop: '1px solid var(--border-color)', margin: '1rem 0', paddingTop: '1rem' }}>
                   <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>Guardian & Emergency Contact</h4>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-grid-2">
                     <div className="form-group">
                       <label className="form-label">Guardian Name *</label>
                       <input
@@ -617,7 +679,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-grid-2">
                     <div className="form-group">
                       <label className="form-label">Guardian Phone Number *</label>
                       <input

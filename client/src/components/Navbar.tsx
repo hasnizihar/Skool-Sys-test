@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, ShieldCheck, Wifi, WifiOff, Sun, Moon, Calendar, School } from 'lucide-react';
+import { Menu, ShieldCheck, Wifi, WifiOff, Sun, Moon, Calendar, Award } from 'lucide-react';
 import { api } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
+import { SchoolCrest } from './common/SchoolCrest';
 
 interface NavbarProps {
   onToggleSidebar: () => void;
@@ -20,9 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [currentDateStr, setCurrentDateStr] = useState('');
   const [nodeStatus, setNodeStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
-  const [academicPeriodStr, setAcademicPeriodStr] = useState<string>('Loading academic period...');
+  const [academicPeriodStr, setAcademicPeriodStr] = useState<string>('Loading academic context...');
 
-  // Date formatted locally
   useEffect(() => {
     const d = new Date();
     setCurrentDateStr(
@@ -34,7 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     );
   }, []);
 
-  // Grounded node health verification (probes real /api/health endpoint)
+  // Probes genuine /api/health endpoint
   useEffect(() => {
     let isMounted = true;
 
@@ -76,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, []);
 
-  // Grounded academic year and active term discovery
+  // Academic year and term context
   useEffect(() => {
     let isMounted = true;
     const fetchAcademicContext = async () => {
@@ -137,7 +137,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                backgroundColor: 'var(--primary)'
+                backgroundColor: 'var(--kcc-primary)'
               }}
             />
             {academicPeriodStr}
@@ -146,6 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        {/* Date Badge */}
         <div
           className="badge"
           style={{
@@ -155,13 +156,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             fontSize: '0.75rem',
             padding: '0.3rem 0.65rem'
           }}
-          title="Current date"
+          title="Current civil date"
         >
-          <Calendar size={13} style={{ color: 'var(--primary)' }} />
+          <Calendar size={13} style={{ color: 'var(--kcc-primary)' }} />
           <span>{currentDateStr || 'Today'}</span>
         </div>
 
-        {/* Truthful Grounded Node Health Indicator */}
+        {/* Grounded Local Server Health */}
         <div
           className="badge"
           style={{
@@ -192,68 +193,38 @@ export const Navbar: React.FC<NavbarProps> = ({
           }}
           title={
             nodeStatus === 'connected'
-              ? 'Local School Server: Connected and responding to /api/health'
+              ? 'Local School Node: Connected and healthy'
               : nodeStatus === 'disconnected'
-              ? 'Local School Server: Unreachable / Offline'
+              ? 'Local School Node: Unreachable / Offline'
               : 'Verifying local node status...'
           }
         >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background:
-                nodeStatus === 'connected'
-                  ? 'var(--present)'
-                  : nodeStatus === 'disconnected'
-                  ? 'var(--absent)'
-                  : 'var(--text-muted)',
-              display: 'inline-block'
-            }}
-          />
-          {nodeStatus === 'disconnected' ? <WifiOff size={12} /> : <Wifi size={12} />}
-          <span>
-            {nodeStatus === 'connected'
-              ? 'Local Node Online'
-              : nodeStatus === 'disconnected'
-              ? 'Local Node Offline'
-              : 'Checking Node...'}
-          </span>
+          {nodeStatus === 'connected' ? (
+            <Wifi size={13} />
+          ) : (
+            <WifiOff size={13} />
+          )}
+          <span>{nodeStatus === 'connected' ? 'Connected' : 'Offline'}</span>
         </div>
 
-        {user?.role === 'admin' && (
-          <div
-            className="badge"
-            style={{
-              background: 'var(--primary-light)',
-              color: 'var(--primary)',
-              fontWeight: 600,
-              fontSize: '0.75rem',
-              border: '1px solid rgba(67, 56, 202, 0.25)',
-              padding: '0.3rem 0.65rem'
-            }}
-          >
-            <ShieldCheck size={13} />
-            <span>Administrator</span>
-          </div>
-        )}
-
-        {toggleTheme && (
-          <button
-            onClick={toggleTheme}
-            className="btn btn-secondary btn-icon"
-            style={{ width: 36, height: 36, minHeight: 36 }}
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-          >
-            {theme === 'dark' ? (
-              <Sun size={17} style={{ color: '#f59e0b' }} />
-            ) : (
-              <Moon size={17} style={{ color: 'var(--primary)' }} />
-            )}
-          </button>
-        )}
+        {/* User Role Tag */}
+        <div
+          className="badge"
+          style={{
+            background: 'var(--kcc-primary-soft)',
+            color: 'var(--kcc-primary)',
+            border: '1px solid rgba(7, 94, 59, 0.25)',
+            fontSize: '0.75rem',
+            padding: '0.3rem 0.65rem',
+            fontWeight: 700
+          }}
+          title={`Active Role: ${user?.role}`}
+        >
+          <ShieldCheck size={13} />
+          <span style={{ textTransform: 'capitalize' }}>
+            {user?.role ? user.role.replace('_', ' ') : 'Faculty'}
+          </span>
+        </div>
       </div>
     </header>
   );

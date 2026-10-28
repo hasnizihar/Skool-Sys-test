@@ -14,6 +14,7 @@ export interface SchoolProfile {
   systemVersion: string;
   type: string;
   censusNo: string;
+  crestUrl: string;
   address: {
     line1: string;
     line2: string;
@@ -48,6 +49,7 @@ export const SCHOOL_PROFILE: SchoolProfile = {
   systemVersion: '2.0.0-mvp',
   type: 'National School, 1AB',
   censusNo: '14145',
+  crestUrl: '/school-logo.jpg',
   address: {
     line1: 'No. 322, Beach Road',
     line2: 'New Kattankudy 06',
@@ -71,8 +73,8 @@ export const SCHOOL_PROFILE: SchoolProfile = {
   principalName: 'Mr. A. L. M. Sabry',
   principalSpellingNote:
     'Exact formal spelling of the Principal’s name (e.g. A. L. M. Sabry / A. L. Sabry / L. M. Sabri) requires formal school confirmation prior to issuing official external correspondence.',
-  emblemStatus: 'pending',
+  emblemStatus: 'verified',
   emblemPendingNote:
-    'Official school crest pending authorized high-resolution vector asset from Kattankudy Central College administration. Elegant institutional shield in use.',
+    'Official school crest verified from Kattankudy Central College administration archives. Original circular composition with gold ribbon, Tamil lettering, crescent and star.',
   demoResultNotice: 'DEMONSTRATION — NOT AN OFFICIAL SCHOOL RESULT'
 };
