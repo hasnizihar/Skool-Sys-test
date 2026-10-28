@@ -513,7 +513,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 </div>
               </div>
               <div className="stat-content">
-                <div className="stat-val" style={{ fontSize: stats.attendanceRate !== null ? undefined : '1.35rem' }}>
+                <div className={`stat-val ${stats.attendanceRate === null ? 'stat-val--text' : ''}`}>
                   {stats.attendanceRate !== null ? `${stats.attendanceRate}%` : 'Not Recorded'}
                 </div>
                 <div className="stat-meta">
@@ -601,13 +601,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 <span className="summary-pill-dot" style={{ background: 'var(--primary)' }} />
                 <span>Registers Submitted</span>
               </div>
-            </div>
-
-            <div className="attendance-summary-progress-track">
-              <div
-                className="attendance-summary-progress-bar"
-                style={{ width: `${stats.attendanceRate || 0}%` }}
-              />
             </div>
           </div>
 
