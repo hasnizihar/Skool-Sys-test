@@ -60,40 +60,6 @@
   flex-wrap: wrap;
 }
 
-.dashboard-banner-badges {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.badge-meta {
-  background: var(--bg-subtle) !important;
-  color: var(--text-muted) !important;
-  border: 1px solid var(--border-color) !important;
-  font-size: 0.74rem !important;
-  font-weight: 500 !important;
-  padding: 0.3rem 0.65rem !important;
-  border-radius: var(--radius-sm) !important;
-}
-
-.badge-connectivity {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.72rem !important;
-  font-weight: 600 !important;
-  padding: 0.25rem 0.65rem !important;
-  border-radius: var(--radius-sm) !important;
-  border: 1px solid transparent !important;
-}
-
-.connectivity-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-}
 
 /* Operational Toolbar in Header */
 .dashboard-banner-toolbar {

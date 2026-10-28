@@ -86,25 +86,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceMutation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
   // Teacher selected class (Screen 03)
   const [teacherSelectedClassId, setTeacherSelectedClassId] = useState<number | null>(null);
-
-  // Network connectivity listener
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -318,12 +303,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const now = new Date();
   const hour = now.getHours();
   const greetingTime = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const todayFormatted = now.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
   const todayCivil = getColomboCivilDate();
 
   return (
@@ -332,7 +311,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           SHARED INSTITUTIONAL HEADER & BANNER
           ==================================================================== */}
       <div className="dashboard-banner">
-        {/* Top Header Row: School Title & Context on Left, Status Badges on Right */}
+        {/* Top Header Row: School Title & Context */}
         <div className="dashboard-banner-top">
           <div className="dashboard-banner-title-area">
             <h2 className="dashboard-title">
@@ -341,31 +320,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <p className="dashboard-school-info">
               <strong>{SCHOOL_PROFILE.name}</strong> • {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo})
             </p>
-          </div>
-
-          <div className="dashboard-banner-badges">
-            <span className="badge badge-meta">
-              Academic Year 2026 • Term 1
-            </span>
-            <span className="badge badge-meta">
-              <Clock size={12} style={{ marginRight: 4, display: 'inline' }} />
-              {todayFormatted} (Asia/Colombo)
-            </span>
-            <span
-              className="badge badge-connectivity"
-              style={{
-                background: isOnline ? 'var(--present-bg)' : 'var(--absent-bg)',
-                color: isOnline ? 'var(--present)' : 'var(--absent)',
-                borderColor: isOnline ? 'var(--present-border)' : 'var(--absent-border)'
-              }}
-              title={isOnline ? 'Connected to local network & backend' : 'Working in local offline mode'}
-            >
-              <span
-                className="connectivity-dot"
-                style={{ background: isOnline ? 'var(--present)' : 'var(--absent)' }}
-              />
-              {isOnline ? 'Online' : 'Offline'}
-            </span>
           </div>
         </div>
 
