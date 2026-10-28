@@ -1,0 +1,663 @@
+/* ==========================================================================
+   SkoolSys 2.0 — Modern Role-Based Dashboard Stylesheet
+   Kattankudy Central College (Grades 6–13)
+   ========================================================================== */
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Header / Hero Banner
+   -------------------------------------------------------------------------- */
+.dashboard-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  padding: 1.5rem 1.75rem;
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-subtle) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 50%, var(--secondary) 100%);
+}
+
+.dashboard-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 280px;
+}
+
+.dashboard-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.dashboard-school-info {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-role-info {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dashboard-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-view-toggle {
+  display: inline-flex;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 2px;
+}
+
+.dashboard-view-toggle-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: calc(var(--radius-md) - 2px);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.dashboard-view-toggle-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+/* --------------------------------------------------------------------------
+   KPI Bento Grid (4 Cards)
+   -------------------------------------------------------------------------- */
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.stat-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.4rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-hover);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-val {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.stat-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+/* --------------------------------------------------------------------------
+   Two-Column Bento Grid Layout (65% / 35%)
+   -------------------------------------------------------------------------- */
+.dashboard-grid-dual {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.2fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* --------------------------------------------------------------------------
+   Class Attendance Matrix Table & Controls
+   -------------------------------------------------------------------------- */
+.matrix-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.matrix-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  min-width: 200px;
+  flex: 1;
+}
+
+.matrix-search-box input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  width: 100%;
+}
+
+.matrix-filter-pills {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.matrix-table-wrap {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  max-height: 520px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.matrix-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--bg-subtle);
+  z-index: 10;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.matrix-table th {
+  padding: 0.65rem 0.9rem;
+  text-align: left;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.matrix-table td {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.matrix-table tr:hover {
+  background: var(--bg-subtle);
+}
+
+.matrix-progress-bar {
+  width: 100%;
+  min-width: 80px;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.matrix-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+/* --------------------------------------------------------------------------
+   Absentee Follow-Up Call Registry
+   -------------------------------------------------------------------------- */
+.absentee-call-registry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.absentee-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--absent);
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.absentee-card:hover {
+  border-color: var(--absent);
+  background: var(--bg-surface);
+}
+
+.absentee-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.absentee-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.absentee-sub {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.btn-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  background: var(--absent-bg);
+  color: var(--absent);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-call:hover {
+  background: var(--absent);
+  color: #ffffff;
+  border-color: var(--absent);
+}
+
+/* --------------------------------------------------------------------------
+   Honest Device & Offline Sync Status Card
+   -------------------------------------------------------------------------- */
+.sync-monitor-card {
+  padding: 1.15rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.sync-monitor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sync-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+}
+
+.sync-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.65rem;
+}
+
+.sync-metric-item {
+  text-align: center;
+}
+
+.sync-metric-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.sync-metric-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* --------------------------------------------------------------------------
+   Teacher Dashboard: Hero Morning Register Card
+   -------------------------------------------------------------------------- */
+.teacher-hero-card {
+  position: relative;
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-subtle) 100%);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.75rem 2rem;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.teacher-hero-card.status-unmarked {
+  border-color: var(--late);
+  box-shadow: 0 4px 20px rgba(217, 119, 6, 0.12);
+}
+
+.teacher-hero-card.status-draft {
+  border-color: #f59e0b;
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.16);
+}
+
+.teacher-hero-card.status-submitted {
+  border-color: var(--present);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.12);
+}
+
+.hero-left-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 640px;
+}
+
+.hero-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.3rem 0.85rem;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.01em;
+  width: fit-content;
+}
+
+.hero-class-title {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -0.025em;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.hero-class-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.hero-action-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+
+.btn-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.95rem 1.75rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  min-height: 52px;
+  box-shadow: var(--shadow-md);
+  transition: all var(--transition-fast);
+  text-decoration: none;
+}
+
+.btn-hero-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-hero-cta.cta-take {
+  background: var(--present);
+  color: #ffffff;
+}
+
+.btn-hero-cta.cta-take:hover {
+  background: #059669;
+}
+
+.btn-hero-cta.cta-resume {
+  background: #f59e0b;
+  color: #ffffff;
+}
+
+.btn-hero-cta.cta-resume:hover {
+  background: #d97706;
+}
+
+.btn-hero-cta.cta-view {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--present);
+  color: var(--present);
+}
+
+.btn-hero-cta.cta-view:hover {
+  background: var(--present-bg);
+}
+
+/* --------------------------------------------------------------------------
+   Teacher Secondary Cards & Assignments
+   -------------------------------------------------------------------------- */
+.teacher-assignments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.assignment-chip-card {
+  padding: 1rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  transition: all var(--transition-fast);
+}
+
+.assignment-chip-card:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-surface);
+  transform: translateY(-1px);
+}
+
+.assignment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.assignment-class-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.assignment-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive Breakpoints
+   -------------------------------------------------------------------------- */
+@media (max-width: 1024px) {
+  .dashboard-grid-dual {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-hero-card {
+    padding: 1.5rem;
+  }
+
+  .hero-action-section {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .btn-hero-cta {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-banner {
+    padding: 1.25rem;
+  }
+
+  .dashboard-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
+  .matrix-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .matrix-search-box {
+    width: 100%;
+  }
+
+  .matrix-filter-pills {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .teacher-hero-card {
+    padding: 1.25rem;
+  }
+
+  .hero-class-title {
+    font-size: 1.35rem;
+  }
+
+  .btn-hero-cta {
+    font-size: 0.95rem;
+    min-height: 48px;
+    padding: 0.75rem 1.25rem;
+  }
+}
