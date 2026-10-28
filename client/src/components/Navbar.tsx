@@ -153,7 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isSyncing = (syncSummary?.syncing || 0) > 0;
   const pendingCount = (syncSummary?.pending || 0);
 
-  const getBreadcrumbs = () => {
+  const getBreadcrumbs = (): [string, string] | null => {
     switch (currentTab) {
       case 'students':
         return ['Students', 'Directory & Records'];
@@ -171,7 +171,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         return ['System', 'UI Primitives Preview'];
       case 'dashboard':
       default:
-        return ['Overview', 'School Operations'];
+        return null;
     }
   };
 
@@ -191,21 +191,23 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         <div className="navbar-heading-group">
-          {/* Subtle Top Breadcrumb Trail */}
-          <nav aria-label="Breadcrumbs" className="navbar-crumb-trail navbar-brand-crumb">
-            <span
-              className="navbar-crumb-item navbar-crumb-parent"
-              onClick={() => onNavigate?.('dashboard')}
-              style={{ cursor: onNavigate ? 'pointer' : 'default' }}
-              title={SCHOOL_PROFILE.name}
-            >
-              KCC
-            </span>
-            <ChevronRight size={11} className="navbar-crumb-divider navbar-crumb-sep" aria-hidden="true" />
-            <span className="navbar-crumb-item">{crumbs[0]}</span>
-            <ChevronRight size={11} className="navbar-crumb-divider" aria-hidden="true" />
-            <span className="navbar-crumb-current" aria-current="page">{crumbs[1]}</span>
-          </nav>
+          {/* Subtle Top Breadcrumb Trail (omitted on Dashboard for clean minimalist header) */}
+          {crumbs && (
+            <nav aria-label="Breadcrumbs" className="navbar-crumb-trail navbar-brand-crumb">
+              <span
+                className="navbar-crumb-item navbar-crumb-parent"
+                onClick={() => onNavigate?.('dashboard')}
+                style={{ cursor: onNavigate ? 'pointer' : 'default' }}
+                title={SCHOOL_PROFILE.name}
+              >
+                KCC
+              </span>
+              <ChevronRight size={11} className="navbar-crumb-divider navbar-crumb-sep" aria-hidden="true" />
+              <span className="navbar-crumb-item">{crumbs[0]}</span>
+              <ChevronRight size={11} className="navbar-crumb-divider" aria-hidden="true" />
+              <span className="navbar-crumb-current" aria-current="page">{crumbs[1]}</span>
+            </nav>
+          )}
 
           {/* Primary View Title & Academic Context */}
           <div className="navbar-title-row">
