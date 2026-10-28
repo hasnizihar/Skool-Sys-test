@@ -13,10 +13,9 @@ import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
-import { ComponentPreview } from './ui/ComponentPreview';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
-const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit', 'design-system'];
+const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
 
 function getInitialTab(): string {
   const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
@@ -132,7 +131,6 @@ export function App() {
       case 'marks': return 'Examination Marks & Reports';
       case 'admin': return 'School Administration & Security';
       case 'audit': return 'System Audit Trail';
-      case 'design-system': return 'Design Tokens & UI Primitives Preview';
       default: return 'SkoolSys Management Portal';
     }
   };
@@ -187,9 +185,6 @@ export function App() {
             )}
             {currentTab === 'audit' && user.role === 'admin' && (
               <AuditLogs />
-            )}
-            {currentTab === 'design-system' && (
-              <ComponentPreview />
             )}
           </main>
 

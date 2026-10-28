@@ -70,7 +70,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
       <button
         type="button"
-        className={`mobile-nav-btn ${['admin', 'audit', 'design-system'].includes(currentTab) ? 'active' : ''}`}
+        className={`mobile-nav-btn ${['admin', 'audit'].includes(currentTab) ? 'active' : ''}`}
         onClick={onOpenMore}
         aria-label="More navigation options"
       >

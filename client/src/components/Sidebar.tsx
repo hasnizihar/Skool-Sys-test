@@ -9,7 +9,6 @@ import {
   History,
   LogOut,
   X,
-  Sparkles,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -219,18 +218,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <History size={18} aria-hidden="true" />
                 <span className="nav-item-label">Audit Trail</span>
-              </button>
-
-              <button
-                type="button"
-                className={navClass('design-system')}
-                onClick={() => handleNav('design-system')}
-                aria-current={currentTab === 'design-system' ? 'page' : undefined}
-                data-tooltip="UI Primitives Preview"
-                title={isCollapsed ? 'UI Primitives Preview' : undefined}
-              >
-                <Sparkles size={18} aria-hidden="true" />
-                <span className="nav-item-label">UI Primitives Preview</span>
               </button>
             </>
           )}
