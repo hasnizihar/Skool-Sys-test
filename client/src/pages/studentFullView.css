@@ -1,0 +1,303 @@
+/* ============================================================================
+   SkoolSys 2.0 — Milestone 4: Student Dossier / Full View Styles
+   Design Tokens & Privacy Compliant (WCAG 2.2 AA)
+   ============================================================================ */
+
+.dossier-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+  width: 100%;
+  padding-bottom: 3rem;
+}
+
+/* Navigation & Action Bar */
+.dossier-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem);
+}
+
+.dossier-action-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+}
+
+/* Main Hero Card */
+.dossier-hero-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl, 16px);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.dossier-hero-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+  flex: 1 1 340px;
+}
+
+.dossier-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-full, 9999px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+
+.dossier-hero-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dossier-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dossier-full-name {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.dossier-sub-id {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.dossier-badges-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.dossier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* Attendance Metric Ring / KPI */
+.dossier-kpi-box {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-left: 1px solid var(--border-color);
+  padding-left: 1.5rem;
+  min-width: 190px;
+}
+
+.dossier-kpi-value {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.dossier-kpi-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dossier-kpi-title {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.dossier-kpi-subtitle {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Multi-Column Section Grid */
+.dossier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--space-4, 1rem);
+}
+
+.dossier-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dossier-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.75rem;
+}
+
+.dossier-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.dossier-data-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.dossier-data-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+.dossier-data-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.dossier-data-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.dossier-data-value {
+  font-weight: 600;
+  color: var(--text-main);
+  text-align: right;
+}
+
+/* Attendance Mini Grid */
+.dossier-att-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem;
+}
+
+.dossier-att-stat {
+  padding: 0.75rem;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md, 8px);
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+.dossier-att-count {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.dossier-att-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+  font-weight: 600;
+}
+
+/* Data Table Container */
+.dossier-table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.dossier-table-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* ==========================================================================
+   Responsive Adaptations (< 768px)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .dossier-hero-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dossier-kpi-box {
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    padding-left: 0;
+    padding-top: 1rem;
+    width: 100%;
+  }
+
+  .dossier-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dossier-action-group {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .dossier-action-group .btn {
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+}
+
+/* Print Styles */
+@media print {
+  .btn-no-print {
+    display: none !important;
+  }
+}

@@ -386,13 +386,13 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           : `Attendance draft saved successfully (Revision ${res.revision}).`;
 
         setSaveSuccessMsg(successText);
-        toast.showSuccess(successText);
+        toast.showSuccess(mode === 'submitted' ? 'Final register submitted.' : 'Draft saved to server.');
       } else {
         // Offline: enqueue in IndexedDB v2
         await queueOfflineAttendance(mutationPayload);
         const offlineText = `Offline: ${mode === 'submitted' ? 'Final register' : 'Draft'} saved locally on device and queued for sync.`;
         setSaveSuccessMsg(offlineText);
-        toast.showWarning(offlineText);
+        toast.showWarning(mode === 'submitted' ? 'Final register queued offline.' : 'Draft queued offline.');
       }
 
       setTimeout(() => setSaveSuccessMsg(null), 6000);
@@ -422,7 +422,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         setIsOfflineMode(true);
         const queuedText = 'Network transport failure: Register safely queued in offline browser storage.';
         setSaveSuccessMsg(queuedText);
-        toast.showWarning(queuedText);
+        toast.showWarning('Network failure: Saved to offline storage.');
       }
     } finally {
       setSaving(false);
@@ -554,7 +554,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       setConflictModal({ isOpen: false });
       const confMsg = `Conflict resolved! Deliberate choices successfully applied and saved at Revision ${res.revision} (${res.mode} mode).`;
       setSaveSuccessMsg(confMsg);
-      toast.showSuccess(confMsg);
+      toast.showSuccess(`Revision ${res.revision} applied.`);
     } catch (err: any) {
       if (err instanceof HttpError && err.status === 409) {
         // Second optimistic revision check caught concurrent collision!
@@ -935,7 +935,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                     <p style={{ marginTop: '0.85rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading class roster...</p>
                   </td>
                 </tr>
-              ) : filteredStudents.length === 0 ? (
+              ) : students.length === 0 ? null : filteredStudents.length === 0 ? (
                 <tr>
                   <td colSpan={4} style={{ textAlign: 'center', padding: '3.5rem' }}>
                     <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>

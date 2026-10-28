@@ -11,17 +11,13 @@ import {
   User,
   Shield,
   CheckCircle2,
-  XCircle,
-  Clock,
-  HelpCircle,
-  FileText,
   School,
   X,
-  Save,
   AlertCircle
 } from 'lucide-react';
 import { api } from '../api/client';
 import { StudentReportCard } from './StudentReportCard';
+import './studentFullView.css';
 
 interface StudentFullViewProps {
   studentId: number;
@@ -136,9 +132,10 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
-        <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>Loading comprehensive student record...</div>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+      <div style={{ textAlign: 'center', padding: '4.5rem 1rem' }}>
+        <div className="animate-spin" style={{ display: 'inline-block', width: 28, height: 28, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+        <div style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '0.85rem' }}>Loading comprehensive student record...</div>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
           Retrieving academic enrollment, guardian contacts, and attendance history.
         </p>
       </div>
@@ -151,7 +148,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
         <AlertCircle size={36} style={{ color: 'var(--absent)', margin: '0 auto 1rem' }} />
         <h3>Failed to Load Student Record</h3>
         <p style={{ color: 'var(--text-muted)', margin: '0.5rem 0 1.5rem' }}>{error || 'Student not found.'}</p>
-        <button onClick={onBack} className="btn btn-primary">
+        <button type="button" onClick={onBack} className="btn btn-primary">
           <ArrowLeft size={16} /> Back to Student Directory
         </button>
       </div>
@@ -163,38 +160,34 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
   const isFemale = student.gender === 'Female';
 
   return (
-    <div style={{ paddingBottom: '3rem' }}>
+    <div className="dossier-page">
       {/* Top Breadcrumb & Navigation */}
-      <div
-        className="btn-no-print"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.25rem',
-          flexWrap: 'wrap',
-          gap: '0.75rem'
-        }}
-      >
+      <div className="dossier-nav-bar btn-no-print">
         <button
+          type="button"
           onClick={onBack}
           className="btn btn-secondary btn-sm"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}
         >
           <ArrowLeft size={16} />
           <span>Back to Student Directory</span>
         </button>
 
-        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <button onClick={() => window.print()} className="btn btn-secondary btn-sm">
+        <div className="dossier-action-group">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="btn btn-secondary btn-sm"
+          >
             <Printer size={15} />
             <span>Print Student Dossier</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setShowReportCard(true)}
             className="btn btn-secondary btn-sm"
-            style={{ color: 'var(--primary)', borderColor: 'var(--border-focus)' }}
+            style={{ color: 'var(--primary)', borderColor: 'var(--primary-light)' }}
           >
             <Award size={15} />
             <span>Terminal Report Card</span>
@@ -202,6 +195,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
 
           {user?.role === 'admin' && (
             <button
+              type="button"
               onClick={() => setShowEditModal(true)}
               className="btn btn-primary btn-sm"
             >
@@ -212,48 +206,24 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
         </div>
       </div>
 
-      {/* Main Student Header Hero Card */}
-      <div
-        className="card"
-        style={{
-          padding: '1.75rem',
-          marginBottom: '1.5rem',
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-md)',
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '1.5rem',
-            flexWrap: 'wrap'
-          }}
-        >
-          {/* Avatar */}
+      {/* Main Student Hero Card */}
+      <div className="dossier-hero-card">
+        <div className="dossier-hero-left">
           <div
-            className="user-avatar"
+            className="dossier-avatar"
             style={{
-              width: 80,
-              height: 80,
-              fontSize: '2rem',
-              fontWeight: 800,
               background: isFemale
                 ? 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)'
-                : 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
-              boxShadow: 'var(--shadow-glow)'
+                : 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)'
             }}
+            aria-hidden="true"
           >
-            {student.calling_name?.charAt(0) || student.full_name?.charAt(0)}
+            {student.calling_name?.charAt(0) || student.full_name?.charAt(0) || 'S'}
           </div>
 
-          {/* Student Info */}
-          <div style={{ flex: '1 1 320px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
-              <h2 style={{ fontSize: '1.75rem', lineHeight: 1.2 }}>{student.full_name}</h2>
+          <div className="dossier-hero-identity">
+            <div className="dossier-name-row">
+              <h2 className="dossier-full-name">{student.full_name}</h2>
               <span
                 className={`badge ${
                   student.status === 'Active'
@@ -262,163 +232,146 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                     ? 'badge-late'
                     : 'badge-absent'
                 }`}
-                style={{ fontSize: '0.8rem', padding: '0.25rem 0.75rem' }}
+                style={{ fontSize: '0.8rem', padding: '0.25rem 0.75rem', fontWeight: 700 }}
               >
                 {student.status}
               </span>
             </div>
 
-            <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+            <p className="dossier-sub-id">
               Calling Name: <strong style={{ color: 'var(--text-main)' }}>{student.calling_name}</strong> • Permanent Admission ID:{' '}
               <strong style={{ color: 'var(--primary)', fontFamily: 'var(--font-display)' }}>
                 {student.admission_no}
               </strong>
             </p>
 
-            {/* Quick Badges */}
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <span className="badge" style={{ background: 'var(--bg-subtle)', color: 'var(--text-main)' }}>
-                <School size={13} style={{ marginRight: 3, color: 'var(--primary)' }} />
-                {student.class_name || 'Class Unassigned'}
+            <div className="dossier-badges-row">
+              <span className="dossier-pill">
+                <School size={13} style={{ color: 'var(--primary)' }} />
+                <span>{student.class_name || 'Class Unassigned'}</span>
               </span>
 
               {student.roll_number && (
-                <span className="badge" style={{ background: 'var(--bg-subtle)' }}>
+                <span className="dossier-pill">
                   Roll #{student.roll_number}
                 </span>
               )}
 
-              <span className="badge" style={{ background: 'var(--bg-subtle)' }}>
+              <span className="dossier-pill">
                 {student.gender}
               </span>
 
-              <span className="badge" style={{ background: 'var(--bg-subtle)' }}>
-                <Calendar size={13} style={{ marginRight: 3 }} />
-                DOB: {student.dob} {calculateAge(student.dob) ? `(${calculateAge(student.dob)})` : ''}
+              <span className="dossier-pill">
+                <Calendar size={13} />
+                <span>DOB: {student.dob} {calculateAge(student.dob) ? `(${calculateAge(student.dob)})` : ''}</span>
               </span>
 
-              <span className="badge" style={{ background: 'var(--bg-subtle)' }}>
+              <span className="dossier-pill">
                 Year: {student.academic_year || '2026'}
               </span>
             </div>
           </div>
+        </div>
 
-          {/* Key Stat Rings */}
+        {/* Key Attendance Metric Box */}
+        <div className="dossier-kpi-box">
           <div
+            className="dossier-kpi-value"
             style={{
-              display: 'flex',
-              gap: '1rem',
-              alignItems: 'center',
-              borderLeft: '1px solid var(--border-color)',
-              paddingLeft: '1.5rem',
-              minWidth: '200px'
+              color: attRate >= 80 ? 'var(--present)' : attRate >= 60 ? 'var(--late)' : 'var(--absent)'
             }}
           >
-            <div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '2.25rem',
-                  fontWeight: 800,
-                  lineHeight: 1,
-                  color: attRate >= 80 ? 'var(--present)' : attRate >= 60 ? 'var(--late)' : 'var(--absent)'
-                }}
-              >
-                {attRate}%
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem', fontWeight: 600 }}>
-                Attendance Rate
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                {attendance?.present_days || 0} / {attendance?.total_days || 0} days recorded
-              </div>
-            </div>
+            {attRate}%
+          </div>
+          <div className="dossier-kpi-labels">
+            <span className="dossier-kpi-title">Attendance Rate</span>
+            <span className="dossier-kpi-subtitle">
+              {attendance?.present_days || 0} / {attendance?.total_days || 0} days recorded
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Grid of Detailed Sections */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        {/* Card 1: Personal & Demographics */}
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <User size={18} style={{ color: 'var(--primary)' }} />
-                <span>Personal & Demographic Information</span>
-              </div>
-              <div className="card-subtitle">Official Ministry enrollment registry data</div>
-            </div>
+      {/* Grid of Information Sections */}
+      <div className="dossier-grid">
+        {/* Card 1: Personal & Demographic Information */}
+        <div className="dossier-card">
+          <div className="dossier-card-header">
+            <h3 className="dossier-card-title">
+              <User size={18} style={{ color: 'var(--primary)' }} />
+              <span>Personal & Demographic Information</span>
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Official Registry</span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.875rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Full Name:</span>
-              <strong>{student.full_name}</strong>
+          <div className="dossier-data-list">
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Full Name:</span>
+              <span className="dossier-data-value">{student.full_name}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Calling Name:</span>
-              <strong>{student.calling_name}</strong>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Calling Name:</span>
+              <span className="dossier-data-value">{student.calling_name}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Permanent Admission No:</span>
-              <strong style={{ color: 'var(--primary)', fontFamily: 'var(--font-display)' }}>{student.admission_no}</strong>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Permanent Admission No:</span>
+              <span className="dossier-data-value" style={{ color: 'var(--primary)', fontFamily: 'var(--font-display)' }}>
+                {student.admission_no}
+              </span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Date of Birth:</span>
-              <span>{student.dob} ({calculateAge(student.dob)})</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Date of Birth:</span>
+              <span className="dossier-data-value">{student.dob} ({calculateAge(student.dob)})</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Gender:</span>
-              <span>{student.gender}</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Gender:</span>
+              <span className="dossier-data-value">{student.gender}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Enrollment Status:</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Enrollment Status:</span>
               <span className={`badge ${student.status === 'Active' ? 'badge-present' : 'badge-absent'}`}>
                 {student.status}
               </span>
             </div>
 
-            <div>
-              <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>Residential Address:</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
-                <MapPin size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <div className="dossier-data-row" style={{ alignItems: 'flex-start' }}>
+              <span className="dossier-data-label">Residential Address:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+                <MapPin size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 <span>{student.address || 'No residential address on file'}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Guardian & Emergency Contact Details */}
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Shield size={18} style={{ color: 'var(--present)' }} />
-                <span>Guardian & Emergency Contacts</span>
-              </div>
-              <div className="card-subtitle">Primary parental and emergency contact details</div>
-            </div>
+        {/* Card 2: Guardian & Emergency Contacts */}
+        <div className="dossier-card">
+          <div className="dossier-card-header">
+            <h3 className="dossier-card-title">
+              <Shield size={18} style={{ color: 'var(--present)' }} />
+              <span>Guardian & Emergency Contacts</span>
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Verified Contact</span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.875rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Primary Guardian:</span>
-              <strong>{student.guardian_name}</strong>
+          <div className="dossier-data-list">
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Primary Guardian:</span>
+              <span className="dossier-data-value">{student.guardian_name}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Relationship:</span>
-              <span>{student.guardian_relation}</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Relationship:</span>
+              <span className="dossier-data-value">{student.guardian_relation}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Guardian Telephone:</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Guardian Telephone:</span>
               <a
                 href={`tel:${student.guardian_phone}`}
                 className="btn btn-secondary btn-sm"
@@ -429,12 +382,12 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
               </a>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Guardian Email:</span>
-              <span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Guardian Email:</span>
+              <span className="dossier-data-value">
                 {student.guardian_email ? (
-                  <a href={`mailto:${student.guardian_email}`} style={{ color: 'var(--primary)' }}>
-                    {student.guardian_email}
+                  <a href={`mailto:${student.guardian_email}`} style={{ color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <Mail size={12} /> {student.guardian_email}
                   </a>
                 ) : (
                   'Not provided'
@@ -442,109 +395,98 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
               </span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>National Identity Card (NIC):</span>
-              <span>{student.guardian_nic || 'Not registered'}</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">National Identity Card (NIC):</span>
+              <span className="dossier-data-value">{student.guardian_nic || 'Not registered'}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Emergency Contact:</span>
-              <span>{student.emergency_contact || student.guardian_phone}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Academic Placement */}
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <School size={18} style={{ color: 'var(--excused)' }} />
-                <span>Classroom & Academic Placement</span>
-              </div>
-              <div className="card-subtitle">Class division and assigned educator</div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.875rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Assigned Class:</span>
-              <strong>{student.class_name || 'Unassigned'}</strong>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Grade Level:</span>
-              <span>Grade {student.grade}</span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Classroom Location:</span>
-              <span>{student.room_number || 'Main School Block'}</span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Class Teacher:</span>
-              <strong>{student.class_teacher_name || 'Mrs. Nimali Perera'}</strong>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Roll Number:</span>
-              <strong>#{student.roll_number || 'Unassigned'}</strong>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Current Academic Year:</span>
-              <span>{student.academic_year || '2026'}</span>
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Emergency Contact:</span>
+              <span className="dossier-data-value">{student.emergency_contact || student.guardian_phone}</span>
             </div>
           </div>
         </div>
 
-        {/* Card 4: Attendance Summary Stats */}
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <CheckCircle2 size={18} style={{ color: 'var(--present)' }} />
-                <span>Attendance Statistics</span>
-              </div>
-              <div className="card-subtitle">Daily register attendance metrics</div>
-            </div>
+        {/* Card 3: Classroom & Academic Placement */}
+        <div className="dossier-card">
+          <div className="dossier-card-header">
+            <h3 className="dossier-card-title">
+              <School size={18} style={{ color: 'var(--excused)' }} />
+              <span>Classroom & Academic Placement</span>
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Curriculum Assignment</span>
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '0.75rem',
-              marginBottom: '1rem'
-            }}
-          >
-            <div style={{ padding: '0.75rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--present)' }}>
+          <div className="dossier-data-list">
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Assigned Class:</span>
+              <strong className="dossier-data-value">{student.class_name || 'Grade 8-A'}</strong>
+            </div>
+
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Grade Level:</span>
+              <span className="dossier-data-value">Grade {student.grade || 8}</span>
+            </div>
+
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Classroom Location:</span>
+              <span className="dossier-data-value">{student.room_number || 'Main School Block'}</span>
+            </div>
+
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Class Teacher:</span>
+              <strong className="dossier-data-value">{student.class_teacher_name || 'Mrs. Nimali Jayasinghe'}</strong>
+            </div>
+
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Roll Number:</span>
+              <strong className="dossier-data-value">#{student.roll_number || '1'}</strong>
+            </div>
+
+            <div className="dossier-data-row">
+              <span className="dossier-data-label">Current Academic Year:</span>
+              <span className="dossier-data-value">{student.academic_year || '2026'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: Attendance Summary Statistics */}
+        <div className="dossier-card">
+          <div className="dossier-card-header">
+            <h3 className="dossier-card-title">
+              <CheckCircle2 size={18} style={{ color: 'var(--present)' }} />
+              <span>Attendance Statistics</span>
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Term Attendance Metrics</span>
+          </div>
+
+          <div className="dossier-att-grid">
+            <div className="dossier-att-stat">
+              <div className="dossier-att-count" style={{ color: 'var(--present)' }}>
                 {attendance?.present_days || 0}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Present</div>
+              <div className="dossier-att-label">Days Present</div>
             </div>
 
-            <div style={{ padding: '0.75rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--absent)' }}>
+            <div className="dossier-att-stat">
+              <div className="dossier-att-count" style={{ color: 'var(--absent)' }}>
                 {attendance?.absent_days || 0}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Absent</div>
+              <div className="dossier-att-label">Days Absent</div>
             </div>
 
-            <div style={{ padding: '0.75rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--late)' }}>
+            <div className="dossier-att-stat">
+              <div className="dossier-att-count" style={{ color: 'var(--late)' }}>
                 {attendance?.late_days || 0}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Late</div>
+              <div className="dossier-att-label">Days Late</div>
             </div>
 
-            <div style={{ padding: '0.75rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--excused)' }}>
+            <div className="dossier-att-stat">
+              <div className="dossier-att-count" style={{ color: 'var(--excused)' }}>
                 {attendance?.excused_days || 0}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Excused</div>
+              <div className="dossier-att-label">Days Excused</div>
             </div>
           </div>
 
@@ -558,7 +500,8 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem'
+              gap: '0.4rem',
+              border: `1px solid ${attRate >= 80 ? 'var(--present-border)' : 'var(--absent-border)'}`
             }}
           >
             <CheckCircle2 size={16} color="var(--primary)" />
@@ -569,15 +512,17 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
 
       {/* Recent Attendance Register History */}
       {attendance?.history && attendance.history.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: '1.5rem' }}>
-          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-            <h3 style={{ fontSize: '1.1rem' }}>Daily Attendance History Log</h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Individual attendance session logs recorded by the class teacher
-            </p>
+        <div className="dossier-table-card card" style={{ padding: 0 }}>
+          <div className="dossier-table-header">
+            <div>
+              <h3 style={{ fontSize: '1.05rem', margin: 0, fontWeight: 700 }}>Daily Attendance History Log</h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
+                Recent roll-call entries recorded for this student
+              </p>
+            </div>
           </div>
 
-          <div className="table-responsive" style={{ maxHeight: '220px' }}>
+          <div className="table-responsive" style={{ maxHeight: '240px' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -599,7 +544,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                       <td><strong>{h.date}</strong></td>
                       <td>{h.class_name}</td>
                       <td>
-                        <span className={`badge ${badge}`} style={{ textTransform: 'capitalize' }}>
+                        <span className={`badge ${badge}`} style={{ textTransform: 'capitalize', fontWeight: 600 }}>
                           {h.status}
                         </span>
                       </td>
@@ -616,30 +561,22 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
       )}
 
       {/* Examination Performance & Marks Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div
-          style={{
-            padding: '1.25rem 1.5rem',
-            borderBottom: '1px solid var(--border-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '0.75rem'
-          }}
-        >
+      <div className="dossier-table-card card" style={{ padding: 0 }}>
+        <div className="dossier-table-header">
           <div>
-            <h3 style={{ fontSize: '1.1rem' }}>Examination Marks & Academic Performance</h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Official examination marks entries, distinction grades, and terminal summaries
+            <h3 style={{ fontSize: '1.05rem', margin: 0, fontWeight: 700 }}>Examination Marks & Academic Performance</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
+              Official examination marks, subject assignments (Mathematics, Science), and grade allocations
             </p>
           </div>
 
           <button
+            type="button"
             onClick={() => setShowReportCard(true)}
             className="btn btn-primary btn-sm btn-no-print"
           >
-            <Award size={15} /> View Full Report Card
+            <Award size={15} />
+            <span>View Full Report Card</span>
           </button>
         </div>
 
@@ -650,31 +587,21 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                 <th>Examination</th>
                 <th>Subject Code</th>
                 <th>Subject Name</th>
-                <th style={{ textAlign: 'center', width: 120 }}>Score (100)</th>
-                <th style={{ textAlign: 'center', width: 90 }}>Grade</th>
+                <th style={{ textAlign: 'center' }}>Term</th>
+                <th style={{ textAlign: 'center' }}>Score / Result</th>
+                <th style={{ textAlign: 'center' }}>Grade</th>
               </tr>
             </thead>
             <tbody>
-              {!marks || marks.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                    No examination marks entered for this student yet.
-                  </td>
-                </tr>
-              ) : (
+              {marks && marks.length > 0 ? (
                 marks.map((m: any) => (
                   <tr key={m.id}>
-                    <td><strong>{m.examination_name}</strong> (Term {m.term})</td>
+                    <td><strong>{m.examination_name}</strong></td>
                     <td><code>{m.subject_code}</code></td>
                     <td>{m.subject_name}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, fontSize: '0.95rem' }}>
-                      {m.is_absent ? (
-                        <span style={{ color: 'var(--absent)' }}>AB (Absent)</span>
-                      ) : m.score !== null ? (
-                        m.score
-                      ) : (
-                        '-'
-                      )}
+                    <td style={{ textAlign: 'center' }}>Term {m.term}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <strong>{m.is_absent ? 'ABSENT' : m.score}</strong>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <span className={`grade-badge grade-${m.grade_letter?.toLowerCase() || 's'}`}>
@@ -683,19 +610,30 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                     </td>
                   </tr>
                 ))
+              ) : (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+                    No examination records submitted for this student yet.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Edit Student Record Modal */}
+      {/* Edit Student Modal */}
       {showEditModal && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>Edit Student Record</h3>
-              <button onClick={() => setShowEditModal(false)} className="btn btn-secondary btn-icon btn-sm">
+              <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Edit Student Record</h3>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="btn btn-secondary btn-icon btn-sm"
+                aria-label="Close edit modal"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -719,17 +657,6 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
-                    <label className="form-label">Full Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editFormData.full_name || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
                     <label className="form-label">Calling Name *</label>
                     <input
                       type="text"
@@ -739,21 +666,33 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                       required
                     />
                   </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Full Name *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editFormData.full_name || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
-                    <label className="form-label">Date of Birth</label>
+                    <label className="form-label">Date of Birth *</label>
                     <input
                       type="date"
                       className="form-input"
                       value={editFormData.dob || ''}
                       onChange={(e) => setEditFormData({ ...editFormData, dob: e.target.value })}
+                      required
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Gender</label>
+                    <label className="form-label">Gender *</label>
                     <select
                       className="form-select"
                       value={editFormData.gender || 'Male'}
@@ -793,20 +732,6 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Enrollment Status</label>
-                  <select
-                    className="form-select"
-                    value={editFormData.status || 'Active'}
-                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Transferred">Transferred</option>
-                    <option value="Graduated">Graduated</option>
-                    <option value="Suspended">Suspended</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
                   <label className="form-label">Residential Address</label>
                   <input
                     type="text"
@@ -817,38 +742,41 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                 </div>
 
                 <div style={{ borderTop: '1px solid var(--border-color)', margin: '1rem 0', paddingTop: '1rem' }}>
-                  <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>Guardian & Contact Info</h4>
+                  <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>Guardian Contacts</h4>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group">
-                      <label className="form-label">Guardian Name</label>
+                      <label className="form-label">Guardian Name *</label>
                       <input
                         type="text"
                         className="form-input"
                         value={editFormData.guardian_name || ''}
                         onChange={(e) => setEditFormData({ ...editFormData, guardian_name: e.target.value })}
+                        required
                       />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">Relation</label>
+                      <label className="form-label">Relation *</label>
                       <input
                         type="text"
                         className="form-input"
                         value={editFormData.guardian_relation || ''}
                         onChange={(e) => setEditFormData({ ...editFormData, guardian_relation: e.target.value })}
+                        required
                       />
                     </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group">
-                      <label className="form-label">Guardian Phone</label>
+                      <label className="form-label">Guardian Phone *</label>
                       <input
                         type="tel"
                         className="form-input"
                         value={editFormData.guardian_phone || ''}
                         onChange={(e) => setEditFormData({ ...editFormData, guardian_phone: e.target.value })}
+                        required
                       />
                     </div>
 
@@ -870,8 +798,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
                   Cancel
                 </button>
                 <button type="submit" disabled={savingEdit} className="btn btn-primary">
-                  <Save size={15} />
-                  <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
+                  {savingEdit ? 'Saving...' : 'Save Updates'}
                 </button>
               </div>
             </form>
@@ -880,10 +807,10 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
       )}
 
       {/* Terminal Report Card Modal */}
-      {showReportCard && selectedExamId && (
+      {showReportCard && (
         <StudentReportCard
           studentId={studentId}
-          examId={selectedExamId}
+          examId={selectedExamId || 1}
           onClose={() => setShowReportCard(false)}
         />
       )}

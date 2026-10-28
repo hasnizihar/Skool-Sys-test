@@ -1,23 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   Search,
-  Filter,
   Plus,
   Upload,
   Download,
   Eye,
-  Edit,
   X,
-  AlertCircle,
-  CheckCircle2,
   Phone,
   Calendar,
   FileSpreadsheet,
-  Maximize2
+  Maximize2,
+  CheckCircle2,
+  UserCheck,
+  Building,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../api/client';
 import { StudentFullView } from './StudentFullView';
+import './students.css';
 
 interface StudentsProps {
   user: any;
@@ -44,7 +45,6 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentDetails, setStudentDetails] = useState<any | null>(null);
-
 
   // Add Student Form State
   const [formData, setFormData] = useState({
@@ -146,16 +146,15 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const handleCsvPreview = async () => {
     if (!csvText.trim()) return;
 
-    // Parse CSV lines into objects
-    const lines = csvText.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = csvText.trim().split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length < 2) {
       alert('CSV must contain a header line and at least one data row.');
       return;
     }
 
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-    const rows = lines.slice(1).map(line => {
-      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+    const rows = lines.slice(1).map((line) => {
+      const vals = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
       const obj: any = {};
       headers.forEach((h, i) => {
         obj[h] = vals[i] || '';
@@ -195,7 +194,7 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const handleExportCsv = () => {
     if (students.length === 0) return;
     const headers = ['Admission No', 'Full Name', 'Calling Name', 'Class', 'Gender', 'Guardian Name', 'Guardian Phone', 'Status'];
-    const rows = students.map(s => [
+    const rows = students.map((s) => [
       s.admission_no,
       `"${s.full_name}"`,
       s.calling_name,
@@ -206,7 +205,7 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
       s.status
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -216,11 +215,32 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
     document.body.removeChild(link);
   };
 
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedGrade('');
+    setSelectedClass('');
+    setSelectedStatus('');
+  };
+
   const sampleCsvTemplate = `admission_no,full_name,calling_name,dob,gender,guardian_name,guardian_relation,guardian_phone,class_name
 SCH-2026-101,Ravindu Nirmal Perera,Ravindu,2012-06-14,Male,Kamal Perera,Father,0771122334,Grade 8-A
 SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,Mother,0712233445,Grade 8-A`;
 
-  // Render Full View if a student is selected for full view
+  // Summary Metrics
+  const metrics = useMemo(() => {
+    const total = students.length;
+    const active = students.filter((s) => s.status === 'Active').length;
+    const male = students.filter((s) => s.gender === 'Male').length;
+    const female = students.filter((s) => s.gender === 'Female').length;
+    const uniqueClasses = new Set(students.map((s) => s.class_name).filter(Boolean)).size;
+    return { total, active, male, female, uniqueClasses };
+  }, [students]);
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || selectedGrade || selectedClass || selectedStatus
+  );
+
+  // Render Full View if a student is selected
   if (fullViewStudentId !== null) {
     return (
       <StudentFullView
@@ -233,90 +253,148 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
   }
 
   return (
-    <div>
+    <div className="students-page">
       {/* Header & Action Bar */}
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.5rem',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}
-      >
-        <div>
-          <h2>Student Management (Grades 6–13)</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            Manage permanent admission records, enrollment classes, and emergency guardian contacts.
+      <div className="students-header">
+        <div className="students-header-titles">
+          <div className="students-title-row">
+            <h2 className="students-title">Student Information Records</h2>
+            <span className="students-count-badge">
+              <Users size={13} />
+              <span>{students.length} Records</span>
+            </span>
+          </div>
+          <p className="students-subtitle">
+            Permanent admission registry, class enrollment rosters, and verified guardian contact records.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <button onClick={handleExportCsv} className="btn btn-secondary btn-sm">
-            <Download size={15} /> Export CSV
+        <div className="students-header-actions">
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="btn btn-secondary btn-sm"
+            title="Export filtered student records as CSV"
+          >
+            <Download size={14} />
+            <span>Export CSV</span>
           </button>
 
           {user.role === 'admin' && (
             <>
-              <button onClick={() => setShowImportModal(true)} className="btn btn-secondary btn-sm">
-                <Upload size={15} /> Bulk CSV Import
+              <button
+                type="button"
+                onClick={() => setShowImportModal(true)}
+                className="btn btn-secondary btn-sm"
+                title="Bulk import students via CSV"
+              >
+                <Upload size={14} />
+                <span>Bulk CSV Import</span>
               </button>
 
-              <button onClick={() => setShowAddModal(true)} className="btn btn-primary btn-sm">
-                <Plus size={15} /> Add New Student
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="btn btn-primary btn-sm"
+                title="Register a new student admission"
+              >
+                <Plus size={14} />
+                <span>Add New Student</span>
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="card" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', gap: '0.85rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: '1 1 240px' }}>
-            <Search
-              size={16}
-              style={{
-                position: 'absolute',
-                left: 10,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-muted)'
-              }}
-            />
+      {/* Summary KPI Metric Cards */}
+      <div className="students-kpi-grid">
+        <div className="students-kpi-card">
+          <div className="students-kpi-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+            <Users size={22} />
+          </div>
+          <div className="students-kpi-info">
+            <span className="students-kpi-value">{metrics.total}</span>
+            <span className="students-kpi-label">Total Enrolled</span>
+          </div>
+        </div>
+
+        <div className="students-kpi-card">
+          <div className="students-kpi-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
+            <UserCheck size={22} />
+          </div>
+          <div className="students-kpi-info">
+            <span className="students-kpi-value">{metrics.active}</span>
+            <span className="students-kpi-label">Active Pupils</span>
+          </div>
+        </div>
+
+        <div className="students-kpi-card">
+          <div className="students-kpi-icon" style={{ background: 'var(--late-bg)', color: 'var(--late)' }}>
+            <Calendar size={22} />
+          </div>
+          <div className="students-kpi-info">
+            <span className="students-kpi-value">{metrics.male}M / {metrics.female}F</span>
+            <span className="students-kpi-label">Gender Breakdown</span>
+          </div>
+        </div>
+
+        <div className="students-kpi-card">
+          <div className="students-kpi-icon" style={{ background: 'var(--excused-bg)', color: 'var(--excused)' }}>
+            <Building size={22} />
+          </div>
+          <div className="students-kpi-info">
+            <span className="students-kpi-value">{metrics.uniqueClasses}</span>
+            <span className="students-kpi-label">Classes Represented</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter & Search Toolbar */}
+      <div className="students-filter-card">
+        <div className="students-filter-row">
+          <div className="students-search-wrapper">
+            <Search size={16} className="students-search-icon" aria-hidden="true" />
             <input
               type="text"
-              className="form-input"
-              style={{ paddingLeft: '2.2rem', paddingRight: '0.5rem' }}
+              className="students-search-input"
               placeholder="Search by Admission No, Name, or Phone..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search students"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                className="students-search-clear"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear student search"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
-          <div style={{ width: '130px' }}>
+          <div className="students-filter-select-group">
             <select
-              className="form-select"
+              className="form-select students-select"
               value={selectedGrade}
               onChange={(e) => {
                 setSelectedGrade(e.target.value);
                 setSelectedClass('');
               }}
+              aria-label="Filter by Grade"
             >
               <option value="">All Grades</option>
               {grades.map((g) => (
                 <option key={g} value={g}>Grade {g}</option>
               ))}
             </select>
-          </div>
 
-          <div style={{ width: '160px' }}>
             <select
-              className="form-select"
+              className="form-select students-select"
               value={selectedClass}
               onChange={(e) => setSelectedClass(e.target.value)}
+              aria-label="Filter by Class"
             >
               <option value="">All Classes</option>
               {classes
@@ -325,13 +403,12 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
             </select>
-          </div>
 
-          <div style={{ width: '130px' }}>
             <select
-              className="form-select"
+              className="form-select students-select"
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
+              aria-label="Filter by Status"
             >
               <option value="">All Statuses</option>
               <option value="Active">Active</option>
@@ -340,116 +417,212 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             </select>
           </div>
         </div>
+
+        {/* Active Filters Display */}
+        {hasActiveFilters && (
+          <div className="students-active-filters-bar">
+            <span className="students-active-filters-label">Active Filters:</span>
+            {searchQuery && (
+              <span className="students-filter-tag">
+                Query: "{searchQuery}"
+                <button
+                  type="button"
+                  className="students-filter-tag-close"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Remove search filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+            {selectedGrade && (
+              <span className="students-filter-tag">
+                Grade: {selectedGrade}
+                <button
+                  type="button"
+                  className="students-filter-tag-close"
+                  onClick={() => setSelectedGrade('')}
+                  aria-label="Remove grade filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+            {selectedClass && (
+              <span className="students-filter-tag">
+                Class: {classes.find((c) => c.id === Number(selectedClass))?.name || selectedClass}
+                <button
+                  type="button"
+                  className="students-filter-tag-close"
+                  onClick={() => setSelectedClass('')}
+                  aria-label="Remove class filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+            {selectedStatus && (
+              <span className="students-filter-tag">
+                Status: {selectedStatus}
+                <button
+                  type="button"
+                  className="students-filter-tag-close"
+                  onClick={() => setSelectedStatus('')}
+                  aria-label="Remove status filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            <button
+              type="button"
+              className="students-reset-filters-btn"
+              onClick={handleResetFilters}
+            >
+              Reset Filters
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Student Records Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      {/* Student Records Table Card */}
+      <div className="students-table-card card" style={{ padding: 0 }}>
         <div className="table-responsive">
-          <table className="data-table">
+          <table className="students-table data-table">
             <thead>
               <tr>
-                <th>Admission No</th>
+                <th style={{ width: '130px' }}>Admission No</th>
                 <th>Student Full Name</th>
-                <th>Class</th>
-                <th>Gender</th>
+                <th style={{ width: '120px' }}>Class</th>
+                <th style={{ width: '90px' }}>Gender</th>
                 <th>Guardian Contact</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ width: '110px' }}>Status</th>
+                <th style={{ textAlign: 'right', width: '170px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}>
-                    Loading student records...
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '3.5rem' }}>
+                    <div className="animate-spin" style={{ display: 'inline-block', width: 26, height: 26, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+                    <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                      Loading student records...
+                    </p>
                   </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '2.5rem' }}>
-                    <div style={{ color: 'var(--text-muted)' }}>No student records matching criteria found.</div>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '3.5rem' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      No student records matching criteria found.
+                    </div>
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={handleResetFilters}
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginTop: '0.75rem' }}
+                      >
+                        <RotateCcw size={14} /> Clear Active Filters
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
                 students.map((st) => (
                   <tr key={st.id}>
                     <td>
-                      <strong
+                      <span
+                        className="students-adm-badge"
                         onClick={() => setFullViewStudentId(st.id)}
-                        style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)', cursor: 'pointer' }}
-                        title="Click to view comprehensive full record"
+                        title="Click to view comprehensive student dossier"
                       >
                         {st.admission_no}
-                      </strong>
+                      </span>
                     </td>
+
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <div className="students-identity-cell">
                         <div
-                          className="user-avatar"
+                          className="students-avatar"
                           onClick={() => setFullViewStudentId(st.id)}
                           style={{
-                            width: 32,
-                            height: 32,
-                            fontSize: '0.75rem',
-                            cursor: 'pointer',
-                            background: st.gender === 'Female' ? '#db2777' : '#4f46e5'
+                            backgroundColor: st.gender === 'Female' ? '#db2777' : '#4f46e5'
                           }}
                           title="Click to view full record"
+                          aria-hidden="true"
                         >
-                          {st.calling_name?.charAt(0) || 'S'}
+                          {st.calling_name?.charAt(0) || st.full_name?.charAt(0) || 'S'}
                         </div>
-                        <div>
+                        <div className="students-identity-info">
                           <div
+                            className="students-name-link"
                             onClick={() => setFullViewStudentId(st.id)}
-                            style={{ fontWeight: 600, cursor: 'pointer' }}
                             title="Click to view comprehensive full record"
                           >
                             {st.full_name}
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            Call Name: {st.calling_name} • DOB: {st.dob}
+                          <div className="students-sub-info">
+                            Call Name: <strong>{st.calling_name}</strong> • DOB: {st.dob}
                           </div>
                         </div>
                       </div>
                     </td>
+
                     <td>
-                      <span className="badge" style={{ background: 'var(--bg-subtle)' }}>
+                      <span className="badge" style={{ background: 'var(--bg-subtle)', fontWeight: 600 }}>
                         {st.class_name || 'Unassigned'}
                       </span>
                     </td>
+
                     <td>{st.gender}</td>
+
                     <td>
-                      <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{st.guardian_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Phone size={11} /> {st.guardian_phone} ({st.guardian_relation})
+                      <div className="students-guardian-cell">
+                        <span className="students-guardian-name">{st.guardian_name}</span>
+                        <a
+                          href={`tel:${st.guardian_phone}`}
+                          className="students-guardian-phone"
+                          title="Tap to call guardian"
+                        >
+                          <Phone size={12} />
+                          <span>{st.guardian_phone}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>({st.guardian_relation})</span>
+                        </a>
                       </div>
                     </td>
+
                     <td>
                       <span className={`badge ${st.status === 'Active' ? 'badge-present' : 'badge-absent'}`}>
                         {st.status}
                       </span>
                     </td>
+
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
                         <button
+                          type="button"
                           onClick={() => setFullViewStudentId(st.id)}
                           className="btn btn-primary btn-sm"
-                          style={{ padding: '0.35rem 0.65rem' }}
-                          title="Open full view dossier"
+                          style={{ padding: '0.4rem 0.75rem', fontWeight: 600 }}
+                          title="Open comprehensive student dossier"
                         >
-                          <Maximize2 size={13} /> Full View
+                          <Maximize2 size={13} />
+                          <span>Full View</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleOpenProfile(st)}
                           className="btn btn-secondary btn-sm"
-                          style={{ padding: '0.35rem 0.55rem' }}
+                          style={{ padding: '0.4rem 0.6rem' }}
                           title="Quick preview modal"
+                          aria-label={`Quick preview for ${st.calling_name}`}
                         >
-                          <Eye size={13} />
+                          <Eye size={14} />
                         </button>
                       </div>
                     </td>
-
                   </tr>
                 ))
               )}
@@ -464,7 +637,12 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
           <div className="modal-content" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
               <h3 style={{ fontSize: '1.15rem' }}>Add New Student Admission</h3>
-              <button onClick={() => setShowAddModal(false)} className="btn btn-secondary btn-icon btn-sm">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="btn btn-secondary btn-icon btn-sm"
+                aria-label="Close add student modal"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -657,18 +835,18 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
         </div>
       )}
 
-      {/* Student Profile Modal */}
+      {/* Student Profile Quick Modal */}
       {showProfileModal && selectedStudent && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '680px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div className="brand-badge" style={{ width: 44, height: 44 }}>
+                <div className="brand-badge" style={{ width: 44, height: 44, borderRadius: '50%' }}>
                   {selectedStudent.calling_name?.charAt(0)}
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.2rem' }}>{selectedStudent.full_name}</h3>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <h3 style={{ fontSize: '1.2rem', margin: 0 }}>{selectedStudent.full_name}</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.15rem 0 0' }}>
                     Admission ID: <strong>{selectedStudent.admission_no}</strong> • Class: {selectedStudent.class_name || 'N/A'}
                   </p>
                 </div>
@@ -683,14 +861,19 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                   className="btn btn-primary btn-sm"
                   title="Expand to Full View Dossier"
                 >
-                  <Maximize2 size={13} /> Full View
+                  <Maximize2 size={13} />
+                  <span>Full View</span>
                 </button>
-                <button onClick={() => setShowProfileModal(false)} className="btn btn-secondary btn-icon btn-sm">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="btn btn-secondary btn-icon btn-sm"
+                  aria-label="Close quick preview modal"
+                >
                   <X size={18} />
                 </button>
               </div>
             </div>
-
 
             <div className="modal-body">
               {studentDetails ? (
@@ -792,7 +975,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             </div>
 
             <div className="modal-footer">
-              <button onClick={() => setShowProfileModal(false)} className="btn btn-secondary">
+              <button type="button" onClick={() => setShowProfileModal(false)} className="btn btn-secondary">
                 Close
               </button>
               <button
@@ -803,10 +986,10 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                 }}
                 className="btn btn-primary"
               >
-                <Maximize2 size={15} /> Open Comprehensive Full View
+                <Maximize2 size={15} />
+                <span>Open Comprehensive Full View</span>
               </button>
             </div>
-
           </div>
         </div>
       )}
@@ -818,9 +1001,14 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <FileSpreadsheet size={22} style={{ color: 'var(--primary)' }} />
-                <h3 style={{ fontSize: '1.15rem' }}>Bulk CSV Student Import & Validation</h3>
+                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Bulk CSV Student Import & Validation</h3>
               </div>
-              <button onClick={() => setShowImportModal(false)} className="btn btn-secondary btn-icon btn-sm">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="btn btn-secondary btn-icon btn-sm"
+                aria-label="Close import modal"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -847,7 +1035,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                 value={csvText}
                 onChange={(e) => setCsvText(e.target.value)}
                 placeholder="Paste CSV rows here..."
-                style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}
+                style={{ fontFamily: 'monospace', fontSize: '0.8rem', width: '100%' }}
               />
 
               <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end' }}>
@@ -861,41 +1049,40 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                 </button>
               </div>
 
-              {/* Validation Results Preview */}
+              {/* Preview Results Table */}
               {importPreview && (
-                <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                  <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
-                    <span className="badge badge-present">Valid: {importPreview.validCount}</span>
-                    <span className="badge badge-absent">Duplicates/Errors: {importPreview.errorCount}</span>
-                    <span>Total Rows: {importPreview.totalRows}</span>
+                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <h4 style={{ fontSize: '0.9rem' }}>CSV Validation Summary</h4>
+                    <span className="badge" style={{ background: importPreview.hasErrors ? 'var(--absent-bg)' : 'var(--present-bg)', color: importPreview.hasErrors ? 'var(--absent)' : 'var(--present)' }}>
+                      {importPreview.preview?.length || 0} rows parsed • {importPreview.hasErrors ? 'Errors detected' : 'All rows valid'}
+                    </span>
                   </div>
 
                   <div className="table-responsive" style={{ maxHeight: '200px' }}>
-                    <table className="data-table">
+                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
                       <thead>
                         <tr>
                           <th>Row</th>
                           <th>Admission</th>
-                          <th>Name</th>
+                          <th>Student Name</th>
                           <th>Class</th>
-                          <th>Validation Status</th>
+                          <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {importPreview.preview.map((p: any) => (
-                          <tr key={p.index}>
-                            <td>{p.index}</td>
-                            <td>{p.data.admission_no}</td>
-                            <td>{p.data.full_name}</td>
-                            <td>{p.data.class_name}</td>
+                        {importPreview.preview?.map((p: any) => (
+                          <tr key={p.rowNumber}>
+                            <td>{p.rowNumber}</td>
+                            <td>{p.data?.admission_no}</td>
+                            <td>{p.data?.full_name}</td>
+                            <td>{p.data?.class_name}</td>
                             <td>
-                              {p.isValid ? (
-                                <span className="badge badge-present">
-                                  <CheckCircle2 size={12} /> Ready
-                                </span>
+                              {p.errors?.length > 0 ? (
+                                <span style={{ color: 'var(--absent)' }}>{p.errors.join(', ')}</span>
                               ) : (
-                                <span className="badge badge-absent" title={p.errors.join(', ')}>
-                                  <AlertCircle size={12} /> {p.errors[0]}
+                                <span style={{ color: 'var(--present)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <CheckCircle2 size={12} /> Valid
                                 </span>
                               )}
                             </td>
@@ -909,18 +1096,17 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             </div>
 
             <div className="modal-footer">
-              <button onClick={() => setShowImportModal(false)} className="btn btn-secondary">
+              <button type="button" onClick={() => setShowImportModal(false)} className="btn btn-secondary">
                 Cancel
               </button>
-              {importPreview && importPreview.validCount > 0 && (
-                <button
-                  onClick={handleCsvCommit}
-                  disabled={importing}
-                  className="btn btn-primary"
-                >
-                  {importing ? 'Importing...' : `Confirm Import (${importPreview.validCount} Students)`}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleCsvCommit}
+                disabled={importing || !importPreview || importPreview.hasErrors}
+                className="btn btn-primary"
+              >
+                {importing ? 'Importing...' : 'Commit & Import Valid Students'}
+              </button>
             </div>
           </div>
         </div>
