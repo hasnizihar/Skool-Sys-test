@@ -371,7 +371,7 @@ export const OfflineBanner: React.FC = () => {
           {!isOnline ? (
             <WifiOff size={18} />
           ) : isConflictState ? (
-            <AlertTriangle size={18} color="#d97706" />
+            <AlertTriangle size={18} color="var(--late)" />
           ) : isRejectedState ? (
             <AlertCircle size={18} color="#dc2626" />
           ) : isStaleState ? (

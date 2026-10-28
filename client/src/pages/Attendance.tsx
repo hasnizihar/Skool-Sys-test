@@ -1143,7 +1143,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <AlertTriangle size={26} color="#d97706" />
+                <AlertTriangle size={26} color="var(--late)" />
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#92400e' }}>
                   Student-by-Student Concurrency Conflict Resolution
                 </h3>
@@ -1329,7 +1329,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                                   padding: '0.35rem 0.65rem',
                                   fontSize: '0.75rem',
                                   fontWeight: d.chosen === 'server' ? 700 : 400,
-                                  background: d.chosen === 'server' ? '#d97706' : 'transparent',
+                                  background: d.chosen === 'server' ? 'var(--late)' : 'transparent',
                                   color: d.chosen === 'server' ? '#ffffff' : 'inherit',
                                   border: 'none',
                                   cursor: 'pointer'

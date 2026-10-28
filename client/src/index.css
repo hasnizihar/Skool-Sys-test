@@ -74,6 +74,7 @@
   --bg-surface-elevated: var(--kcc-surface-elevated);
   --bg-subtle: var(--kcc-subtle);
   --border-color: var(--kcc-border);
+  --input-border: #86978B; /* WCAG 2.2 AA non-text contrast 3.08:1 against white */
   --border-focus: var(--kcc-primary);
 
   /* Typography Colors */
@@ -722,7 +723,7 @@ h1, h2, h3, h4, h5, h6 {
   width: 100%;
   padding: 0.65rem 0.9rem;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
+  border: 1.5px solid var(--input-border, #86978B);
   background-color: var(--bg-surface);
   color: var(--text-main);
   font-family: var(--font-sans);
