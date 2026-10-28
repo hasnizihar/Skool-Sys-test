@@ -46,7 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   });
 
   const [nodeStatus, setNodeStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
-  const [academicPeriodStr, setAcademicPeriodStr] = useState<string>('Academic Year 2026 • Assessment Period');
+  const [academicPeriodStr, setAcademicPeriodStr] = useState<string>('Academic Year 2026 • Term 1 Assessment Period');
   const [syncSummary, setSyncSummary] = useState<UnsyncedWorkSummary | null>(null);
 
   // Poll real IndexedDB offline queue state without duplicating sources
@@ -158,27 +158,27 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'students':
         return ['Students', 'Directory & Records'];
       case 'attendance':
-        return ['Attendance', 'Daily Class Register'];
+        return ['Academics', 'Daily Class Register'];
       case 'attendance-reports':
-        return ['Attendance', 'Reports & Registry'];
+        return ['Academics', 'Attendance Reports & Registry'];
       case 'marks':
         return ['Academics', 'Examination & Marks'];
       case 'admin':
-        return ['System & Security', 'Administration'];
+        return ['Administration', 'School Security & Settings'];
       case 'audit':
-        return ['System & Security', 'Audit Trail'];
+        return ['Administration', 'System Audit Trail'];
       case 'design-system':
-        return ['Development', 'UI Primitives Preview'];
+        return ['System', 'UI Primitives Preview'];
       case 'dashboard':
       default:
-        return ['Operations', 'Dashboard'];
+        return ['Overview', 'School Operations'];
     }
   };
 
   const crumbs = getBreadcrumbs();
 
   return (
-    <header className="top-navbar">
+    <header className="top-navbar" role="banner">
       <div className="navbar-left">
         <button
           type="button"
@@ -186,13 +186,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="btn btn-secondary btn-icon mobile-menu-toggle"
           aria-label="Toggle navigation menu"
           title="Toggle navigation menu"
-          style={{ flexShrink: 0 }}
         >
           <Menu size={20} />
         </button>
 
-        <div className="navbar-breadcrumbs">
-          <div className="navbar-crumb-trail navbar-brand-crumb">
+        <div className="navbar-heading-group">
+          {/* Subtle Top Breadcrumb Trail */}
+          <nav aria-label="Breadcrumbs" className="navbar-crumb-trail navbar-brand-crumb">
             <span
               className="navbar-crumb-item navbar-crumb-parent"
               onClick={() => onNavigate?.('dashboard')}
@@ -201,15 +201,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               KCC
             </span>
-            <ChevronRight size={12} className="navbar-crumb-divider navbar-crumb-sep" />
+            <ChevronRight size={11} className="navbar-crumb-divider navbar-crumb-sep" aria-hidden="true" />
             <span className="navbar-crumb-item">{crumbs[0]}</span>
-            <ChevronRight size={12} className="navbar-crumb-divider" />
-            <h1 className="navbar-page-title navbar-title">{title}</h1>
-          </div>
+            <ChevronRight size={11} className="navbar-crumb-divider" aria-hidden="true" />
+            <span className="navbar-crumb-current" aria-current="page">{crumbs[1]}</span>
+          </nav>
 
-          <div className="navbar-academic-badge navbar-subtitle">
-            <span className="navbar-academic-dot" />
-            <span>{academicPeriodStr}</span>
+          {/* Primary View Title & Academic Context */}
+          <div className="navbar-title-row">
+            <h1 className="navbar-page-title navbar-title">{title}</h1>
+            <div className="navbar-academic-badge navbar-subtitle">
+              <span className="navbar-academic-dot" aria-hidden="true" />
+              <span>{academicPeriodStr}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -228,6 +232,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="sync-status-chip sync-status-chip--conflicted"
             onClick={() => onNavigate?.('attendance')}
             title="Concurrency conflict detected between local changes and server. Tap to review."
+            aria-label="Concurrency conflict detected. Tap to review attendance."
           >
             <AlertTriangle size={13} />
             <span>Conflict Detected</span>
@@ -236,6 +241,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div
             className="sync-status-chip sync-status-chip--syncing"
             title="Uploading queued offline changes to school server..."
+            role="status"
+            aria-live="polite"
           >
             <RefreshCw size={13} className="sk-spin" />
             <span>Syncing...</span>
@@ -246,6 +253,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="sync-status-chip sync-status-chip--pending"
             onClick={() => onNavigate?.('attendance')}
             title={`${pendingCount} record(s) queued locally on device. Ready for synchronization.`}
+            aria-label={`${pendingCount} records queued offline. Tap to review.`}
           >
             <Clock size={13} />
             <span>{pendingCount} Pending Sync</span>
@@ -254,6 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div
             className="sync-status-chip sync-status-chip--offline"
             title="School server unreachable. Working in offline mode; local changes safely persisted in IndexedDB."
+            role="status"
           >
             <WifiOff size={13} />
             <span>Offline (Local Mode)</span>
@@ -262,6 +271,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div
             className="sync-status-chip sync-status-chip--synced"
             title="Online and connected to school server. All local mutations synchronized."
+            role="status"
           >
             <span className="sync-chip-dot" />
             <CheckCircle2 size={13} />
@@ -272,15 +282,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Administrator Role Pill */}
         {user?.role === 'admin' && (
           <div
-            className="badge"
-            style={{
-              background: 'var(--primary-light)',
-              color: 'var(--primary)',
-              fontWeight: 600,
-              fontSize: '0.75rem',
-              border: '1px solid var(--present-border)',
-              padding: '0.3rem 0.65rem'
-            }}
+            className="navbar-admin-pill badge"
+            title="Logged in with Administrator privileges"
           >
             <ShieldCheck size={13} />
             <span>Administrator</span>
@@ -292,8 +295,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={toggleTheme}
-            className="btn btn-secondary btn-icon"
-            style={{ width: 36, height: 36, minHeight: 36 }}
+            className="btn btn-secondary btn-icon navbar-theme-toggle"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           >
@@ -304,6 +306,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
         )}
+
+        {/* User Quick Status */}
+        <div
+          className="navbar-user-mini"
+          title={`${user?.full_name || 'User'} (${user?.role?.replace('_', ' ') || 'Role'})`}
+        >
+          <div className="navbar-user-avatar" aria-hidden="true">
+            {user?.full_name?.charAt(0) || 'U'}
+          </div>
+          <span className="navbar-user-name">
+            {user?.full_name?.split(' ')[0] || 'User'}
+          </span>
+        </div>
       </div>
     </header>
   );

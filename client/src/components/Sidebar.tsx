@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -46,6 +46,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = user?.role === 'admin';
   const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
 
+  // Handle Escape key to close mobile drawer
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleNav = (tab: string) => {
     setCurrentTab(tab);
     if (window.innerWidth < 768) {
@@ -66,12 +78,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
+        id="app-sidebar"
         className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''} ${isOpen ? 'open' : ''}`}
         aria-label="Main Navigation"
       >
         <div className="sidebar-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
-            <div className="brand-badge" title="Kattankudy Central College">
+          <div className="brand-wrapper" title="Kattankudy Central College">
+            <div className="brand-badge">
               <School size={22} />
             </div>
             <div className="brand-info">
@@ -87,7 +100,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               onClick={onToggleCollapse}
               className="sidebar-collapse-toggle"
-              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!isCollapsed}
+              aria-controls="app-sidebar"
+              aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
               title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
@@ -99,8 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-secondary btn-icon"
-              style={{ width: 32, height: 32, minHeight: 32, marginLeft: 'auto' }}
+              className="btn btn-secondary btn-icon sidebar-mobile-close"
               aria-label="Close navigation"
             >
               <X size={16} />
@@ -108,32 +122,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        <nav className="nav-links">
-          <div className="nav-section-title">Core Management</div>
+        <nav className="nav-links" aria-label="Primary Navigation">
+          {/* SECTION 1: OVERVIEW */}
+          <div className="nav-section-title">Overview</div>
 
           <button
             type="button"
             className={navClass('dashboard')}
             onClick={() => handleNav('dashboard')}
             aria-current={currentTab === 'dashboard' ? 'page' : undefined}
+            data-tooltip="Dashboard"
             title={isCollapsed ? 'Dashboard' : undefined}
           >
             <LayoutDashboard size={18} aria-hidden="true" />
-            <span>Dashboard</span>
+            <span className="nav-item-label">Dashboard</span>
           </button>
+
+          {/* SECTION 2: STUDENTS */}
+          <div className="nav-section-title">Students</div>
 
           <button
             type="button"
             className={navClass('students')}
             onClick={() => handleNav('students')}
             aria-current={currentTab === 'students' ? 'page' : undefined}
+            data-tooltip="Student Records"
             title={isCollapsed ? 'Student Records' : undefined}
           >
             <Users size={18} aria-hidden="true" />
-            <span>Student Records</span>
+            <span className="nav-item-label">Student Records</span>
           </button>
 
-          <div className="nav-section-title">Attendance (Daily Register)</div>
+          {/* SECTION 3: ACADEMICS */}
+          <div className="nav-section-title">Academics</div>
 
           {isClassTeacher && (
             <button
@@ -141,10 +162,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={navClass('attendance')}
               onClick={() => handleNav('attendance')}
               aria-current={currentTab === 'attendance' ? 'page' : undefined}
+              data-tooltip="Take Attendance"
               title={isCollapsed ? 'Take Attendance' : undefined}
             >
               <CalendarCheck size={18} aria-hidden="true" />
-              <span>Take Attendance</span>
+              <span className="nav-item-label">Take Attendance</span>
             </button>
           )}
 
@@ -153,38 +175,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className={navClass('attendance-reports')}
             onClick={() => handleNav('attendance-reports')}
             aria-current={currentTab === 'attendance-reports' ? 'page' : undefined}
+            data-tooltip="Attendance Reports"
             title={isCollapsed ? 'Attendance Reports' : undefined}
           >
             <FileSpreadsheet size={18} aria-hidden="true" />
-            <span>Attendance Reports</span>
+            <span className="nav-item-label">Attendance Reports</span>
           </button>
-
-          <div className="nav-section-title">Academics & Exams</div>
 
           <button
             type="button"
             className={navClass('marks')}
             onClick={() => handleNav('marks')}
             aria-current={currentTab === 'marks' ? 'page' : undefined}
+            data-tooltip="Marks Management"
             title={isCollapsed ? 'Marks Management' : undefined}
           >
             <GraduationCap size={18} aria-hidden="true" />
-            <span>Marks Management</span>
+            <span className="nav-item-label">Marks Management</span>
           </button>
 
+          {/* SECTION 4: ADMINISTRATION (Admin Only) */}
           {isAdmin && (
             <>
-              <div className="nav-section-title">System & Security</div>
+              <div className="nav-section-title">Administration</div>
 
               <button
                 type="button"
                 className={navClass('admin')}
                 onClick={() => handleNav('admin')}
                 aria-current={currentTab === 'admin' ? 'page' : undefined}
+                data-tooltip="School Administration"
                 title={isCollapsed ? 'School Administration' : undefined}
               >
                 <ShieldCheck size={18} aria-hidden="true" />
-                <span>School Administration</span>
+                <span className="nav-item-label">School Administration</span>
               </button>
 
               <button
@@ -192,10 +216,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={navClass('audit')}
                 onClick={() => handleNav('audit')}
                 aria-current={currentTab === 'audit' ? 'page' : undefined}
+                data-tooltip="Audit Trail"
                 title={isCollapsed ? 'Audit Trail' : undefined}
               >
                 <History size={18} aria-hidden="true" />
-                <span>Audit Trail</span>
+                <span className="nav-item-label">Audit Trail</span>
               </button>
 
               <button
@@ -203,10 +228,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={navClass('design-system')}
                 onClick={() => handleNav('design-system')}
                 aria-current={currentTab === 'design-system' ? 'page' : undefined}
+                data-tooltip="UI Primitives Preview"
                 title={isCollapsed ? 'UI Primitives Preview' : undefined}
               >
                 <Sparkles size={18} aria-hidden="true" />
-                <span>UI Primitives Preview</span>
+                <span className="nav-item-label">UI Primitives Preview</span>
               </button>
             </>
           )}
@@ -234,10 +260,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={toggleTheme}
-              className="btn btn-secondary btn-sm"
-              style={{ flex: 1, minHeight: 34 }}
+              className="btn btn-secondary btn-sm sidebar-theme-toggle"
               title={`Toggle Theme. Current is ${theme}`}
               aria-label={`Toggle Theme. Current is ${theme}`}
+              data-tooltip={`Theme: ${theme === 'dark' ? 'Light Mode' : 'Dark Mode'}`}
             >
               {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
               <span className="sidebar-theme-text">
@@ -248,10 +274,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="btn btn-secondary btn-sm btn-icon"
+              className="btn btn-secondary btn-sm btn-icon sidebar-logout-btn"
               title="Sign Out"
               aria-label="Sign Out"
-              style={{ color: 'var(--absent)', minHeight: 34, width: 34 }}
+              data-tooltip="Sign Out"
             >
               <LogOut size={16} />
             </button>
