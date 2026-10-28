@@ -103,6 +103,13 @@
   box-shadow: var(--shadow-xs);
   overflow-x: auto;
   gap: 0.5rem;
+  margin-bottom: var(--space-4, 1rem);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.exam-lifecycle-stepper::-webkit-scrollbar {
+  display: none;
 }
 
 .lifecycle-step {
@@ -170,24 +177,29 @@
 .workspace-tabs {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.1rem;
   border-bottom: 2px solid var(--border-color);
-  margin-bottom: 0.25rem;
+  margin-bottom: 1.25rem;
   overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
+  padding-bottom: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.workspace-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .workspace-tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 1.15rem;
+  gap: 0.3rem;
+  padding: 0.48rem 0.52rem;
   border: none;
   background: transparent;
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 0.775rem;
   cursor: pointer;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   position: relative;
@@ -220,6 +232,81 @@
 .workspace-tab-btn.active .workspace-tab-badge {
   background: var(--primary-light);
   color: var(--primary);
+}
+
+/* Filter Card & Layout */
+.marks-filter-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  padding: 0.85rem 1.25rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.25rem;
+}
+
+.marks-filter-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.marks-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.marks-filter-label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.marks-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.marks-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.marks-search-input {
+  height: 40px;
+  padding-left: 2.25rem;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.marks-filter-select {
+  height: 40px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: var(--text-sm, 0.875rem);
+  padding: 0 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .marks-filter-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 580px) {
+  .marks-filter-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Filter & Selector Bar */

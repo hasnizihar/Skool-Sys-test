@@ -321,6 +321,21 @@ async function capture() {
         console.log('✓ Captured: attendance_reports_closeup.png');
       }
 
+      // ------------------------------------------------------------------------
+      // Capture 8: Examination Workspace Close-up
+      // ------------------------------------------------------------------------
+      const marksNav = page.locator('.nav-item').filter({ hasText: 'Marks Management' });
+      if ((await marksNav.count()) > 0) {
+        await marksNav.click();
+        await page.waitForSelector('.marks-workspace', { timeout: 10000 });
+        await page.waitForTimeout(600);
+        const filePath8 = path.join(docsDir, 'examinations_workspace_closeup.png');
+        const outPath8 = path.join(outDir, 'examinations_workspace_closeup.png');
+        await page.screenshot({ path: filePath8 });
+        fs.copyFileSync(filePath8, outPath8);
+        console.log('✓ Captured: examinations_workspace_closeup.png');
+      }
+
       await context.close();
     }
 

@@ -974,12 +974,6 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
         <div className="marks-workspace-title-group">
           <div className="marks-workspace-title-row">
             <h2>Examination Management Workspace</h2>
-            <span
-              className="badge"
-              style={{ background: 'var(--primary-light)', color: 'var(--primary)', fontWeight: 700 }}
-            >
-              PR-005 Integrity
-            </span>
           </div>
           <p className="marks-workspace-subtitle">
             Kattankudy Central College • Authoritative examination scheduling, marks entry, independent review, assessment policy, and results publication.
@@ -987,30 +981,6 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          {/* User Appointments Badges */}
-          <div className="marks-appointment-pills">
-            {isAdmin && (
-              <span className="badge marks-appointment-pill admin">
-                <ShieldCheck size={12} /> Administrator
-              </span>
-            )}
-            {isPrincipal && (
-              <span className="badge marks-appointment-pill principal">
-                <Award size={12} /> Principal
-              </span>
-            )}
-            {isVP && (
-              <span className="badge marks-appointment-pill vp">
-                <Award size={12} /> VP Academic
-              </span>
-            )}
-            {isSectionHead && (
-              <span className="badge marks-appointment-pill section-head">
-                <Award size={12} /> Section Head
-              </span>
-            )}
-          </div>
-
           {(isAdmin || hasAcademicLeadership) && (
             <button
               onClick={() => {
@@ -1081,7 +1051,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
-          <GraduationCap size={16} />
+          <GraduationCap size={14} />
           <span>Overview & Exams</span>
           <span className="workspace-tab-badge">{exams.length}</span>
         </button>
@@ -1090,7 +1060,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'schedules' ? 'active' : ''}`}
           onClick={() => setActiveTab('schedules')}
         >
-          <Calendar size={16} />
+          <Calendar size={14} />
           <span>Schedules</span>
           {schedulesData?.summary && (
             <span className="workspace-tab-badge">{schedulesData.summary.total}</span>
@@ -1101,7 +1071,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'entry' ? 'active' : ''}`}
           onClick={() => setActiveTab('entry')}
         >
-          <Edit3 size={16} />
+          <Edit3 size={14} />
           <span>Marks Entry</span>
           {activeSheet && (
             <span
@@ -1130,7 +1100,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'review' ? 'active' : ''}`}
           onClick={() => setActiveTab('review')}
         >
-          <CheckCircle2 size={16} />
+          <CheckCircle2 size={14} />
           <span>Review & Approvals</span>
           {reviewSheets.length > 0 && (
             <span className="workspace-tab-badge">{reviewSheets.length}</span>
@@ -1141,7 +1111,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'policies' ? 'active' : ''}`}
           onClick={() => setActiveTab('policies')}
         >
-          <Scale size={16} />
+          <Scale size={14} />
           <span>Assessment Policies</span>
           <span className="workspace-tab-badge">{policies.length}</span>
         </button>
@@ -1150,7 +1120,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'publication' ? 'active' : ''}`}
           onClick={() => setActiveTab('publication')}
         >
-          <Send size={16} />
+          <Send size={14} />
           <span>Publication & Release</span>
           {readinessData?.status && (
             <span
@@ -1169,7 +1139,7 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
           className={`workspace-tab-btn ${activeTab === 'corrections' ? 'active' : ''}`}
           onClick={() => setActiveTab('corrections')}
         >
-          <History size={16} />
+          <History size={14} />
           <span>Post-Publication Corrections</span>
           {correctionsList.length > 0 && (
             <span className="workspace-tab-badge">{correctionsList.length}</span>
@@ -1183,27 +1153,26 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
       {activeTab === 'overview' && (
         <div>
           {/* Filters Bar */}
-          <div className="card" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem' }}>
-              <div>
-                <label className="form-label">Search Examination</label>
-                <div style={{ position: 'relative' }}>
+          <div className="card marks-filter-card">
+            <div className="marks-filter-row">
+              <div className="marks-filter-group marks-filter-group--search">
+                <label className="marks-filter-label">Search Examination</label>
+                <div className="marks-search-wrapper">
+                  <Search size={15} className="marks-search-icon" />
                   <input
                     type="text"
-                    className="form-input"
+                    className="form-input marks-search-input"
                     placeholder="Search title..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    style={{ paddingLeft: '2.2rem' }}
                   />
-                  <Search size={15} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
                 </div>
               </div>
 
-              <div>
-                <label className="form-label">Academic Year</label>
+              <div className="marks-filter-group">
+                <label className="marks-filter-label">Academic Year</label>
                 <select
-                  className="form-select"
+                  className="form-select marks-filter-select"
                   value={yearFilter}
                   onChange={(e) => setYearFilter(e.target.value)}
                 >
@@ -1214,10 +1183,10 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                 </select>
               </div>
 
-              <div>
-                <label className="form-label">Academic Term</label>
+              <div className="marks-filter-group">
+                <label className="marks-filter-label">Academic Term</label>
                 <select
-                  className="form-select"
+                  className="form-select marks-filter-select"
                   value={termFilter}
                   onChange={(e) => setTermFilter(e.target.value)}
                 >
@@ -1228,10 +1197,10 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                 </select>
               </div>
 
-              <div>
-                <label className="form-label">Lifecycle Status</label>
+              <div className="marks-filter-group">
+                <label className="marks-filter-label">Lifecycle Status</label>
                 <select
-                  className="form-select"
+                  className="form-select marks-filter-select"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
@@ -1273,6 +1242,8 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                     filteredExams.map((ex) => {
                       const isPub = ex.is_published === 1 || ex.status === 'published';
                       const isSel = ex.id === selectedExamId;
+                      const isSynthetic = ex.name.toLowerCase().includes('demo') || ex.name.toLowerCase().includes('synthetic');
+                      const displayName = ex.name.replace(/\s*\((Demo\s*\/?\s*Synthetic|Synthetic|Demo)\)/gi, '').trim();
 
                       return (
                         <tr
@@ -1280,8 +1251,15 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                           style={{ background: isSel ? 'var(--bg-subtle)' : undefined }}
                         >
                           <td>
-                            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{ex.name}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{displayName}</span>
+                              {isSynthetic && (
+                                <span className="badge" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', fontSize: '0.675rem', fontWeight: 600 }}>
+                                  Synthetic Demo
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                               ID #{ex.id} • {ex.start_date || 'TBD'} to {ex.end_date || 'TBD'}
                             </div>
                           </td>
@@ -1310,27 +1288,29 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ user }) => {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <span
-                              className="badge"
+                              className={`badge ${isPub ? 'badge-present' : ex.status === 'approved' ? 'badge-present' : ex.status === 'under_review' ? 'badge-late' : ''}`}
                               style={{
-                                background: isPub
-                                  ? 'var(--present-bg)'
-                                  : ex.status === 'approved'
-                                  ? '#eff6ff'
-                                  : ex.status === 'under_review'
-                                  ? 'var(--late-bg)'
-                                  : 'var(--bg-subtle)',
-                                color: isPub
-                                  ? 'var(--present)'
-                                  : ex.status === 'approved'
-                                  ? 'var(--primary)'
-                                  : ex.status === 'under_review'
-                                  ? 'var(--late)'
-                                  : 'var(--text-muted)',
-                                border: '1px solid currentColor',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
                                 textTransform: 'capitalize'
                               }}
                             >
-                              {isPub ? 'Published' : ex.status || 'Draft'}
+                              <span
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: '50%',
+                                  background: isPub
+                                    ? 'var(--present)'
+                                    : ex.status === 'approved'
+                                    ? 'var(--present)'
+                                    : ex.status === 'under_review'
+                                    ? 'var(--late)'
+                                    : 'var(--text-muted)'
+                                }}
+                              />
+                              <span>{isPub ? 'Published' : ex.status || 'Draft'}</span>
                             </span>
                           </td>
                           <td style={{ textAlign: 'right' }}>

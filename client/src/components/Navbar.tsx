@@ -239,7 +239,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Administrator Role Pill */}
         {user?.role === 'admin' && (
           <div
-            className="navbar-admin-pill"
+            className="navbar-admin-pill badge"
             title="Logged in with Administrator privileges"
           >
             <ShieldCheck size={13} />
