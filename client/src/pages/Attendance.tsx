@@ -687,66 +687,74 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Class & Date Selector Card */}
+      {/* Class, Date & Quick Actions Controls Card */}
       <div className="card attendance-controls-card">
         <div className="attendance-controls-row">
-          <div className="attendance-control-group">
-            <label className="attendance-control-label">Select Class (Grade 6–13)</label>
+          <div className="attendance-control-group attendance-control-group--class">
+            <label className="attendance-control-label">Class (Grade 6–13)</label>
             <select
-              className="form-select"
+              className="form-select attendance-select"
               value={selectedClassId || ''}
               onChange={(e) => setSelectedClassId(Number(e.target.value))}
             >
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.class_teacher_name ? `• ${c.class_teacher_name}` : ''}
-                </option>
-              ))}
+              {classes.map((c) => {
+                const cleanTeacher = c.class_teacher_name
+                  ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim()
+                  : '';
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {cleanTeacher ? `• ${cleanTeacher}` : ''}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
-          <div className="attendance-control-group" style={{ flex: '0 1 200px' }}>
-            <label className="attendance-control-label">Register Date (Asia/Colombo)</label>
+          <div className="attendance-control-group attendance-control-group--date">
+            <label className="attendance-control-label">Attendance Date</label>
             <div style={{ position: 'relative' }}>
               <input
                 type="date"
-                className="form-input"
+                className="form-input attendance-date-input"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
               />
             </div>
           </div>
 
-          <div className="attendance-bulk-actions">
-            <button
-              type="button"
-              onClick={() => handleMarkAll('present')}
-              className="btn btn-secondary btn-sm"
-              title="Mark all enrolled students as Present"
-            >
-              <CheckCircle2 size={14} style={{ color: 'var(--present)' }} />
-              <span>Mark All Present</span>
-            </button>
+          <div className="attendance-control-group attendance-control-group--actions">
+            <label className="attendance-control-label">Quick Roll Actions</label>
+            <div className="attendance-bulk-actions">
+              <button
+                type="button"
+                onClick={() => handleMarkAll('present')}
+                className="btn btn-secondary attendance-bulk-btn attendance-bulk-btn--present"
+                title="Mark all enrolled students as Present"
+              >
+                <CheckCircle2 size={15} className="attendance-bulk-icon--present" />
+                <span>Mark All Present</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleMarkAll('absent')}
-              className="btn btn-secondary btn-sm"
-              title="Mark all enrolled students as Absent"
-            >
-              <XCircle size={14} style={{ color: 'var(--absent)' }} />
-              <span>Mark All Absent</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleMarkAll('absent')}
+                className="btn btn-secondary attendance-bulk-btn attendance-bulk-btn--absent"
+                title="Mark all enrolled students as Absent"
+              >
+                <XCircle size={15} className="attendance-bulk-icon--absent" />
+                <span>Mark All Absent</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleClearAll}
-              className="btn btn-secondary btn-sm"
-              title="Reset all students to Unmarked"
-            >
-              <RotateCcw size={14} />
-              <span>Clear to Unmarked</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="btn btn-secondary attendance-bulk-btn attendance-bulk-btn--clear"
+                title="Reset all students to Unmarked"
+              >
+                <RotateCcw size={15} />
+                <span>Clear to Unmarked</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -787,19 +795,22 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           </div>
 
           <span
-            className="badge"
-            style={{
-              background: isSubmittedState
-                ? 'var(--present)'
+            className={`attendance-status-pill ${
+              isSubmittedState
+                ? 'attendance-status-pill--submitted'
                 : existingSession
-                ? 'var(--late)'
-                : 'var(--text-muted)',
-              color: '#ffffff',
-              fontSize: '0.725rem',
-              fontWeight: 700
-            }}
+                ? 'attendance-status-pill--draft'
+                : 'attendance-status-pill--unrecorded'
+            }`}
           >
-            {isSubmittedState ? `Final (Rev ${serverRevision})` : existingSession ? `Draft (Rev ${serverRevision})` : 'Not Recorded'}
+            <span className="attendance-status-dot" />
+            <span>
+              {isSubmittedState
+                ? `Final (Rev ${serverRevision})`
+                : existingSession
+                ? `Draft (Rev ${serverRevision})`
+                : 'Not Recorded'}
+            </span>
           </span>
         </div>
       </div>
@@ -841,7 +852,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         <div className="attendance-rate-box">
           <div className="attendance-rate-labels">
             <span className="attendance-rate-label">Attendance Rate</span>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            <span className="attendance-rate-subtext">
               {isRecorded ? `${countPresent + countLate} / ${total} Pupils` : 'No Record'}
             </span>
           </div>

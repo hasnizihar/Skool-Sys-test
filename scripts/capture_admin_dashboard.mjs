@@ -160,6 +160,20 @@ async function setupRoutes(page, currentUser) {
       });
     }
 
+    if (path.includes('/attendance/session')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          session: null,
+          students: [
+            { student_id: 1, full_name: 'Kasun Ranasinghe', admission_no: 'SCH-001', roll_number: 1, attendance_status: 'unmarked' },
+            { student_id: 2, full_name: 'Fazil Rifky', admission_no: 'SCH-002', roll_number: 2, attendance_status: 'unmarked' }
+          ]
+        })
+      });
+    }
+
     if (path.includes('/attendance/reports/daily')) {
       return route.fulfill({
         status: 200,
@@ -275,6 +289,21 @@ async function capture() {
         await filterCard.screenshot({ path: filePath5 });
         fs.copyFileSync(filePath5, outPath5);
         console.log('✓ Captured: students_filter_card.png (Filter toolbar close-up)');
+      }
+
+      // ------------------------------------------------------------------------
+      // Capture 6: Attendance Controls & Top Cards Close-up
+      // ------------------------------------------------------------------------
+      const attendanceNav = page.locator('.nav-item').filter({ hasText: 'Take Attendance' });
+      if ((await attendanceNav.count()) > 0) {
+        await attendanceNav.click();
+        await page.waitForSelector('.attendance-controls-card', { timeout: 10000 });
+        await page.waitForTimeout(600);
+        const filePath6 = path.join(docsDir, 'attendance_controls_closeup.png');
+        const outPath6 = path.join(outDir, 'attendance_controls_closeup.png');
+        await page.screenshot({ path: filePath6 });
+        fs.copyFileSync(filePath6, outPath6);
+        console.log('✓ Captured: attendance_controls_closeup.png');
       }
 
       await context.close();
