@@ -595,38 +595,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           </div>
 
           {/* Institutional Roll-Call Summary Bar */}
-          <div className="attendance-summary-bar">
+          <div className="attendance-summary-bar" role="region" aria-label="Daily attendance summary">
             <div className="summary-pill-item">
-              <div className="summary-pill-dot" style={{ background: 'var(--present)' }} />
-              <div className="summary-pill-text">
-                <span className="summary-pill-count">{stats.presentCount}</span>
-                <span className="summary-pill-label">Present pupils</span>
+              <div className="summary-pill-count">{stats.presentCount}</div>
+              <div className="summary-pill-label">
+                <span className="summary-pill-dot" style={{ background: 'var(--present)' }} />
+                <span>Present Pupils</span>
               </div>
             </div>
 
             <div className="summary-pill-item">
-              <div className="summary-pill-dot" style={{ background: 'var(--absent)' }} />
-              <div className="summary-pill-text">
-                <span className="summary-pill-count">{stats.absentCount}</span>
-                <span className="summary-pill-label">Unexcused absents</span>
+              <div className="summary-pill-count">{stats.absentCount}</div>
+              <div className="summary-pill-label">
+                <span className="summary-pill-dot" style={{ background: 'var(--absent)' }} />
+                <span>Unexcused Absences</span>
               </div>
             </div>
 
             <div className="summary-pill-item">
-              <div className="summary-pill-dot" style={{ background: 'var(--late)' }} />
-              <div className="summary-pill-text">
-                <span className="summary-pill-count">{stats.lateCount}</span>
-                <span className="summary-pill-label">Late arrivals</span>
+              <div className="summary-pill-count">{stats.lateCount}</div>
+              <div className="summary-pill-label">
+                <span className="summary-pill-dot" style={{ background: 'var(--late)' }} />
+                <span>Late Arrivals</span>
               </div>
             </div>
 
             <div className="summary-pill-item">
-              <div className="summary-pill-dot" style={{ background: 'var(--primary)' }} />
-              <div className="summary-pill-text">
-                <span className="summary-pill-count">
-                  {stats.submittedClassesCount} / {stats.classesCount}
-                </span>
-                <span className="summary-pill-label">Registers submitted</span>
+              <div className="summary-pill-count">
+                {stats.submittedClassesCount}
+                <span className="summary-pill-denom">/ {stats.classesCount}</span>
+              </div>
+              <div className="summary-pill-label">
+                <span className="summary-pill-dot" style={{ background: 'var(--primary)' }} />
+                <span>Registers Submitted</span>
               </div>
             </div>
 

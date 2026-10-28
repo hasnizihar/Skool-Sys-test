@@ -272,46 +272,66 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   position: relative;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
 }
 
 .summary-pill-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.85rem 1.25rem;
+  justify-content: center;
+  text-align: center;
+  padding: 1.15rem 1.25rem 1.25rem;
   background: transparent;
   border-right: 1px solid var(--border-color);
+  gap: 0.35rem;
+  transition: background var(--transition-fast);
 }
 
 .summary-pill-item:last-child {
   border-right: none;
 }
 
-.summary-pill-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-}
-
-.summary-pill-text {
-  display: flex;
-  flex-direction: column;
+.summary-pill-item:hover {
+  background: var(--bg-subtle);
 }
 
 .summary-pill-count {
-  font-size: 1.15rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+}
+
+.summary-pill-denom {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 0.35rem;
+  letter-spacing: normal;
 }
 
 .summary-pill-label {
-  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-size: 0.775rem;
   font-weight: 500;
   color: var(--text-muted);
-  margin-top: 2px;
+}
+
+.summary-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .attendance-summary-progress-track {
@@ -320,12 +340,12 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--bg-subtle);
+  background: var(--border-color);
 }
 
 .attendance-summary-progress-bar {
   height: 100%;
-  background: var(--present);
+  background: var(--primary);
   transition: width 0.4s ease;
 }
 
@@ -938,6 +958,22 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .summary-pill-item {
+    padding: 0.95rem 0.65rem 1.05rem;
+  }
+
+  .summary-pill-count {
+    font-size: 1.45rem;
+  }
+
+  .summary-pill-denom {
+    font-size: 0.875rem;
+  }
+
+  .summary-pill-label {
+    font-size: 0.725rem;
+  }
+
   .summary-pill-item:nth-child(2) {
     border-right: none;
   }
@@ -1001,6 +1037,22 @@
 
   .attendance-summary-bar {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .summary-pill-item {
+    padding: 0.95rem 0.65rem 1.05rem;
+  }
+
+  .summary-pill-count {
+    font-size: 1.45rem;
+  }
+
+  .summary-pill-denom {
+    font-size: 0.875rem;
+  }
+
+  .summary-pill-label {
+    font-size: 0.725rem;
   }
 
   .admin-actions-grid {
