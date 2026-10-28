@@ -68,3 +68,4 @@ The objective is to refine the Administrator Dashboard into a mission-critical, 
 - Clean skeleton loading states for KPI cards during initial fetch.
 - Tablet (768px–1024px) and mobile (<768px) layout optimizations.
 - WCAG 2.2 AA improvements: `scope="col"`, visible `:focus-visible` rings, and 44px+ touch targets.
+

@@ -369,11 +369,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <span
               className="badge"
               style={{
-                background: 'var(--primary-light)',
-                color: 'var(--primary)',
-                fontWeight: 700,
+                background: 'var(--bg-subtle)',
+                color: 'var(--text-main)',
+                fontWeight: 600,
                 fontSize: '0.75rem',
-                border: '1px solid rgba(2, 101, 54, 0.25)'
+                border: '1px solid var(--border-color)'
               }}
             >
               Academic Year 2026 • Term 1
@@ -383,8 +383,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               style={{
                 background: 'var(--bg-subtle)',
                 color: 'var(--text-muted)',
-                fontWeight: 600,
-                fontSize: '0.75rem'
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                border: '1px solid var(--border-color)'
               }}
             >
               <Clock size={12} style={{ marginRight: 4, display: 'inline' }} />
@@ -396,7 +397,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 background: isOnline ? 'var(--present-bg)' : 'var(--absent-bg)',
                 color: isOnline ? 'var(--present)' : 'var(--absent)',
                 fontSize: '0.72rem',
-                fontWeight: 700
+                fontWeight: 600,
+                border: '1px solid var(--border-color)'
               }}
               title={isOnline ? 'Connected to local network & backend' : 'Working in local offline mode'}
             >
@@ -531,13 +533,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           {/* High-Priority KPI Bento Grid (4 Cards) */}
           <div className="dashboard-stats-grid">
             {/* Card 1: Total Enrolled Students (Required Test Invariant) */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
-              <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-                <Users size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Total Enrolled Students</span>
+                <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                  <Users size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.totalStudents}</div>
-                <div className="stat-label">Total Enrolled Students</div>
                 <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
                   <span>Grades 6 to 13 • Active Census</span>
                 </div>
@@ -545,15 +549,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
 
             {/* Card 2: Today's Attendance Rate */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--present)' }}>
-              <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-                <TrendingUp size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Today's Attendance Rate</span>
+                <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
+                  <TrendingUp size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val" style={{ fontSize: stats.attendanceRate !== null ? undefined : '1.35rem' }}>
                   {stats.attendanceRate !== null ? `${stats.attendanceRate}%` : 'Not Recorded'}
                 </div>
-                <div className="stat-label">Today's Attendance Rate</div>
                 <div
                   className="stat-trend"
                   style={{
@@ -579,13 +585,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
 
             {/* Card 3: Active School Classes (Required Test Invariant) */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--accent)' }}>
-              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
-                <School size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Active School Classes</span>
+                <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
+                  <School size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.classesCount}</div>
-                <div className="stat-label">Active School Classes</div>
                 <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
                   <span>A & B Streams • Grades 6–13</span>
                 </div>
@@ -593,13 +601,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
 
             {/* Card 4: Teaching Staff on Duty */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--secondary)' }}>
-              <div className="stat-icon" style={{ background: 'var(--secondary-light)', color: 'var(--secondary)' }}>
-                <UserCheck size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Teaching Staff on Duty</span>
+                <div className="stat-icon" style={{ background: 'var(--secondary-light)', color: 'var(--secondary)' }}>
+                  <UserCheck size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.staffCount > 0 ? stats.staffCount : stats.classesCount}</div>
-                <div className="stat-label">Teaching Staff on Duty</div>
                 <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
                   <span>Class & Subject Faculty</span>
                 </div>
@@ -613,7 +623,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               <div className="summary-pill-dot" style={{ background: 'var(--present)' }} />
               <div className="summary-pill-text">
                 <span className="summary-pill-count">{stats.presentCount}</span>
-                <span className="summary-pill-label">Present Pupils</span>
+                <span className="summary-pill-label">Present pupils</span>
               </div>
             </div>
 
@@ -621,7 +631,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               <div className="summary-pill-dot" style={{ background: 'var(--absent)' }} />
               <div className="summary-pill-text">
                 <span className="summary-pill-count">{stats.absentCount}</span>
-                <span className="summary-pill-label">Unexcused Absents</span>
+                <span className="summary-pill-label">Unexcused absents</span>
               </div>
             </div>
 
@@ -629,7 +639,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               <div className="summary-pill-dot" style={{ background: 'var(--late)' }} />
               <div className="summary-pill-text">
                 <span className="summary-pill-count">{stats.lateCount}</span>
-                <span className="summary-pill-label">Late Arrivals</span>
+                <span className="summary-pill-label">Late arrivals</span>
               </div>
             </div>
 
@@ -639,8 +649,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 <span className="summary-pill-count">
                   {stats.submittedClassesCount} / {stats.classesCount}
                 </span>
-                <span className="summary-pill-label">Registers Submitted</span>
+                <span className="summary-pill-label">Registers submitted</span>
               </div>
+            </div>
+
+            <div className="attendance-summary-progress-track">
+              <div
+                className="attendance-summary-progress-bar"
+                style={{ width: `${stats.attendanceRate || 0}%` }}
+              />
             </div>
           </div>
 
@@ -824,24 +841,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                             </td>
                             <td>
                               {isSubmitted ? (
-                                <span className="badge badge-present" style={{ fontSize: '0.72rem' }}>
-                                  <CheckCircle size={11} /> Completed
+                                <span className="status-indicator-pill status-completed">
+                                  <CheckCircle size={12} /> Completed
                                 </span>
                               ) : hasLocalDraft ? (
-                                <span
-                                  className="badge"
-                                  style={{
-                                    background: 'var(--late-bg)',
-                                    color: 'var(--late)',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 700
-                                  }}
-                                >
-                                  <Clock size={11} /> Draft Saved
+                                <span className="status-indicator-pill status-draft">
+                                  <Clock size={12} /> Draft Saved
                                 </span>
                               ) : (
-                                <span className="badge badge-late" style={{ fontSize: '0.72rem' }}>
-                                  <AlertTriangle size={11} /> Pending
+                                <span className="status-indicator-pill status-pending">
+                                  <AlertTriangle size={12} /> Pending
                                 </span>
                               )}
                             </td>
@@ -1273,15 +1282,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           {/* Teacher Metric Summary Cards (.stat-card) */}
           <div className="dashboard-stats-grid">
             {/* Card 1: Total Enrolled Students (Required Test Invariant) */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
-              <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-                <Users size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Total Enrolled Students</span>
+                <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                  <Users size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">
                   {teacherPrimaryClass?.daily?.enrolled_count || stats.totalStudents}
                 </div>
-                <div className="stat-label">Total Enrolled Students</div>
                 <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
                   <span>{teacherPrimaryClass?.className || 'Grade 8-A'} Roster</span>
                 </div>
@@ -1289,9 +1300,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
 
             {/* Card 2: Today's Class Presence Rate */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--present)' }}>
-              <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-                <TrendingUp size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Today's Attendance Rate</span>
+                <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
+                  <TrendingUp size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">
@@ -1299,7 +1313,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     ? `${Math.round((Number(teacherPrimaryClass.daily.present_count) / Math.max(Number(teacherPrimaryClass.daily.enrolled_count), 1)) * 100)}%`
                     : 'Pending'}
                 </div>
-                <div className="stat-label">Today's Attendance Rate</div>
                 <div className="stat-trend" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
                   <span>
                     {teacherPrimaryClass?.daily?.present_count !== undefined && teacherPrimaryClass.daily.session_id
@@ -1311,13 +1324,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
 
             {/* Card 3: Active School Classes (Required Test Invariant) */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--accent)' }}>
-              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
-                <School size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Active School Classes</span>
+                <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
+                  <School size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.classesCount}</div>
-                <div className="stat-label">Active School Classes</div>
                 <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
                   <span>Kattankudy Central College</span>
                 </div>
@@ -1325,9 +1340,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
 
             {/* Card 4: Absentees in My Class Today */}
-            <div className="stat-card" style={{ borderLeft: '4px solid var(--absent)' }}>
-              <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
-                <PhoneCall size={24} />
+            <div className="stat-card">
+              <div className="stat-header-row">
+                <span className="stat-label">Absentees in My Class</span>
+                <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
+                  <PhoneCall size={20} />
+                </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">
@@ -1335,7 +1353,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     ? teacherPrimaryClass.daily.absent_count
                     : '0'}
                 </div>
-                <div className="stat-label">Absentees in My Class</div>
                 <div className="stat-trend" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
                   <span>Guardian follow-up ready</span>
                 </div>

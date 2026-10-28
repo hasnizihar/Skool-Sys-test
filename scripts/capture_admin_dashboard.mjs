@@ -334,3 +334,4 @@ capture().catch((err) => {
   console.error('Failed to capture screenshots:', err);
   process.exit(1);
 });
+
