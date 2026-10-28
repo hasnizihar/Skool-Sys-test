@@ -71,8 +71,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [examinations, setExaminations] = useState<any[]>([]);
   const [syncSummary, setSyncSummary] = useState<UnsyncedWorkSummary | null>(null);
-  const [pendingDraft, setPendingDraft] = useState<OfflineAttendanceMutation | null>(null);
+  const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceMutation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Matrix controls (Screen 02)
   const [classFilter, setClassFilter] = useState<'all' | 'pending' | 'completed'>('all');
@@ -84,6 +85,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const today = getColomboCivilDate();
 
       const [studentsRes, classesRes, dailyRes, examsRes] = await Promise.all([
@@ -138,19 +140,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         }
       }
 
-      // Check IndexedDB v2 offline storage accounting
+      // Check IndexedDB v2 offline storage accounting scoped strictly to current user
       try {
-        const summary = await getUnsyncedWorkSummary(user?.id);
-        setSyncSummary(summary);
+        if (user?.id) {
+          const summary = await getUnsyncedWorkSummary(user.id);
+          setSyncSummary(summary);
 
-        const queue = await getPendingAttendanceQueue(user?.id);
-        const draft = queue.find((item) => item.mode === 'draft' && item.date === today);
-        setPendingDraft(draft || null);
+          const queue = await getPendingAttendanceQueue(user.id);
+          setPendingQueue(queue);
+        }
       } catch (idbErr) {
         console.warn('Could not check offline storage status:', idbErr);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load dashboard data:', err);
+      setError(err?.message || 'Failed to load school dashboard metrics. Please check network connection.');
     } finally {
       setLoading(false);
     }
@@ -169,7 +173,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
     classTeacherIds.forEach((id) => setIds.add(id));
     assignments.forEach((a) => setIds.add(a.class_id));
 
-    if (setIds.size === 0 && classesList.length > 0) {
+    // If an administrator is previewing teacher view and has no assignments, fall back to first class for demonstration preview
+    if (setIds.size === 0 && isLeadership && classesList.length > 0) {
       setIds.add(classesList[0].id);
     }
 
@@ -180,7 +185,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         name: found?.class_name || found?.name || `Class ${id}`
       };
     });
-  }, [user, classesList, dailyReport]);
+  }, [user, isLeadership, classesList, dailyReport]);
 
   // Identify teacher's primary assigned class
   const teacherPrimaryClass = useMemo(() => {
@@ -207,33 +212,52 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   // Determine Daily Register State for Teacher's Class
   const teacherRegisterState = useMemo(() => {
     if (!teacherPrimaryClass) {
-      return { status: 'unmarked' as const, label: 'Not Yet Marked', cta: 'Take Morning Register' };
+      return {
+        status: 'unmarked' as const,
+        label: 'Not Yet Marked',
+        cta: 'Take Morning Register',
+        draftInfo: null
+      };
     }
 
+    const today = getColomboCivilDate();
     const isSubmitted = !!teacherPrimaryClass.daily?.session_id;
     if (isSubmitted) {
       return {
         status: 'submitted' as const,
         label: 'Submitted & Verified',
-        cta: 'View Submitted Register'
+        cta: 'View Submitted Register',
+        draftInfo: null
       };
     }
 
-    const hasDraft = pendingDraft && pendingDraft.classId === teacherPrimaryClass.classId;
-    if (hasDraft) {
+    // Identify authentic local attendance draft:
+    // Strictly matching user, class, date, mode === 'draft', and active pending/syncing status
+    const matchingDraft = pendingQueue.find(
+      (item) =>
+        item.userId === user?.id &&
+        item.classId === teacherPrimaryClass.classId &&
+        item.date === today &&
+        item.mode === 'draft' &&
+        (item.status === 'pending' || item.status === 'syncing')
+    );
+
+    if (matchingDraft) {
       return {
         status: 'draft' as const,
         label: 'Draft Saved on Device',
-        cta: 'Resume Register Draft'
+        cta: 'Resume Register Draft',
+        draftInfo: matchingDraft
       };
     }
 
     return {
       status: 'unmarked' as const,
       label: 'Not Yet Marked',
-      cta: 'Take Morning Register'
+      cta: 'Take Morning Register',
+      draftInfo: null
     };
-  }, [teacherPrimaryClass, pendingDraft]);
+  }, [teacherPrimaryClass, pendingQueue, user]);
 
   // Filtered attendance matrix for Screen 02
   const filteredDailyReport = useMemo(() => {
@@ -263,6 +287,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
     month: 'long',
     year: 'numeric'
   });
+  const todayCivil = getColomboCivilDate();
 
   return (
     <div className="dashboard-container">
@@ -321,7 +346,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         <div className="dashboard-banner-actions">
           {/* Administrator / Leadership Role View Switcher */}
           {isLeadership && (
-            <div className="dashboard-view-toggle" title="Switch between Executive Overview and Teacher Cockpit preview">
+            <div className="dashboard-view-toggle" title="Switch presentation between Executive Overview and Teacher Cockpit preview">
               <button
                 type="button"
                 className={`dashboard-view-toggle-btn ${activeView === 'admin' ? 'active' : ''}`}
@@ -388,10 +413,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         </div>
       </div>
 
-      {loading && (
-        <div style={{ padding: '0.5rem 0', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {/* Error Alert Banner */}
+      {error && (
+        <div
+          className="card"
+          style={{
+            borderLeft: '4px solid var(--absent)',
+            padding: '1rem 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--absent-bg)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', color: 'var(--absent)' }}>
+            <AlertTriangle size={20} />
+            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{error}</span>
+          </div>
+          <button onClick={loadDashboardData} className="btn btn-secondary btn-sm">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Loading Synchronization Indicator */}
+      {loading && !error && (
+        <div style={{ padding: '0.35rem 0', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <RefreshCw size={14} className="spin" />
-          <span>Synchronizing institutional metrics...</span>
+          <span>Synchronizing institutional metrics & offline storage status...</span>
         </div>
       )}
 
@@ -592,6 +641,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                         const pct = total > 0 ? Math.round((present / total) * 100) : 0;
                         const isSubmitted = !!c.session_id;
 
+                        // Check if an uncommitted draft exists on this device for this class
+                        const hasLocalDraft = pendingQueue.some(
+                          (item) =>
+                            item.classId === c.class_id &&
+                            item.date === todayCivil &&
+                            item.mode === 'draft' &&
+                            (item.status === 'pending' || item.status === 'syncing')
+                        );
+
                         return (
                           <tr key={c.class_id}>
                             <td>
@@ -635,6 +693,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                               {isSubmitted ? (
                                 <span className="badge badge-present" style={{ fontSize: '0.72rem' }}>
                                   <CheckCircle size={11} /> Submitted
+                                </span>
+                              ) : hasLocalDraft ? (
+                                <span
+                                  className="badge"
+                                  style={{
+                                    background: 'var(--late-bg)',
+                                    color: 'var(--late)',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700
+                                  }}
+                                >
+                                  <Clock size={11} /> Draft Saved
                                 </span>
                               ) : (
                                 <span className="badge badge-late" style={{ fontSize: '0.72rem' }}>
@@ -924,8 +994,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                   <strong>Official Status:</strong>{' '}
                   {teacherRegisterState.status === 'submitted'
                     ? `${teacherPrimaryClass?.daily?.present_count || 0} Present, ${teacherPrimaryClass?.daily?.absent_count || 0} Absent`
-                    : teacherRegisterState.status === 'draft'
-                    ? 'Offline draft stored on this device'
+                    : teacherRegisterState.status === 'draft' && teacherRegisterState.draftInfo
+                    ? `Local draft saved (${teacherRegisterState.draftInfo.records.length} pupils marked)`
                     : 'Morning roll-call awaiting submission'}
                 </span>
               </div>
@@ -1042,7 +1112,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               </div>
 
               <div className="teacher-assignments-grid">
-                {(user?.assignments && user.assignments.length > 0) ? (
+                {user?.assignments && user.assignments.length > 0 ? (
                   user.assignments.map((a: any, idx: number) => (
                     <div key={idx} className="assignment-chip-card">
                       <div className="assignment-header">
@@ -1087,14 +1157,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                       </div>
                     </div>
                   ))
-                ) : (
+                ) : isLeadership ? (
                   <div className="assignment-chip-card">
                     <div className="assignment-header">
                       <span className="assignment-class-name">{teacherPrimaryClass?.className || 'Grade 8-A'}</span>
-                      <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>Class Teacher</span>
+                      <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>Administrator Preview</span>
                     </div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      Grades 6–13 Secondary Division
+                      Executive preview of faculty class assignment view
                     </div>
                     <div className="assignment-actions">
                       <button
@@ -1114,6 +1184,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                         <span>Marks</span>
                       </button>
                     </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No teaching allocations assigned to this account. Contact school administration.
                   </div>
                 )}
               </div>

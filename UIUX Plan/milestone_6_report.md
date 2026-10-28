@@ -112,3 +112,4 @@ The following 4 visual verification captures have been generated via Playwright 
 - [x] All 28 browser E2E tests passing, including Step 3 of `principal_walkthrough_browser_real.test.ts`.
 - [x] Visual evidence captured and committed.
 - [x] Implementation report delivered.
+
