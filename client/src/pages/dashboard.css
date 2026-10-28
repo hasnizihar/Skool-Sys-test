@@ -1,6 +1,7 @@
 /* ==========================================================================
    SkoolSys 2.0 — Modern Role-Based Dashboard Stylesheet
    Kattankudy Central College (Grades 6–13)
+   Institutional Palette: Primary Green #026536, Accent Gold #F1EF22
    ========================================================================== */
 
 .dashboard-container {
@@ -35,7 +36,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 50%, var(--secondary) 100%);
+  background: linear-gradient(90deg, var(--primary) 0%, var(--accent-gold) 50%, var(--secondary) 100%);
 }
 
 .dashboard-banner-content {
@@ -181,6 +182,70 @@
   margin-top: 0.5rem;
 }
 
+/* Skeleton Loading State for Stat Cards */
+.stat-card-skeleton {
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--bg-surface) 50%, var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: pulse-skeleton 1.5s infinite ease-in-out;
+  min-height: 110px;
+}
+
+@keyframes pulse-skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* --------------------------------------------------------------------------
+   Institutional Roll-Call Summary Bar
+   -------------------------------------------------------------------------- */
+.attendance-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  padding: 0.95rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  align-items: center;
+}
+
+.summary-pill-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.summary-pill-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.summary-pill-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-pill-count {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.1;
+}
+
+.summary-pill-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 /* --------------------------------------------------------------------------
    Two-Column Bento Grid Layout (65% / 35%)
    -------------------------------------------------------------------------- */
@@ -210,9 +275,9 @@
   background: var(--bg-subtle);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 0.35rem 0.75rem;
+  padding: 0.4rem 0.75rem;
   font-size: 0.85rem;
-  min-width: 200px;
+  min-width: 220px;
   flex: 1;
 }
 
@@ -225,9 +290,46 @@
   width: 100%;
 }
 
+.matrix-search-box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
 .matrix-filter-pills {
   display: flex;
   gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.stream-filter-pills {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.stream-pill-btn {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.stream-pill-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-main);
+  border-color: var(--border-hover);
+}
+
+.stream-pill-btn.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 .matrix-table-wrap {
@@ -298,7 +400,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  max-height: 360px;
+  max-height: 340px;
   overflow-y: auto;
   padding-right: 0.25rem;
 }
@@ -346,6 +448,13 @@
   flex-wrap: wrap;
 }
 
+.absentee-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
 .btn-call {
   display: inline-flex;
   align-items: center;
@@ -359,7 +468,6 @@
   color: var(--absent);
   text-decoration: none;
   white-space: nowrap;
-  flex-shrink: 0;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -368,6 +476,82 @@
   background: var(--absent);
   color: #ffffff;
   border-color: var(--absent);
+}
+
+.btn-copy-phone {
+  padding: 0.4rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.btn-copy-phone:hover {
+  color: var(--text-main);
+  border-color: var(--border-hover);
+  background: var(--bg-subtle);
+}
+
+/* --------------------------------------------------------------------------
+   Administrative Quick Actions Panel (Bento Cluster)
+   -------------------------------------------------------------------------- */
+.admin-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.admin-action-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.admin-action-item:hover {
+  border-color: var(--primary);
+  background: var(--bg-surface);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-action-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.admin-action-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.admin-action-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.admin-action-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 /* --------------------------------------------------------------------------
@@ -427,6 +611,33 @@
   text-transform: uppercase;
   font-weight: 600;
   letter-spacing: 0.03em;
+}
+
+/* --------------------------------------------------------------------------
+   Recent Audit Feed & Action Chips
+   -------------------------------------------------------------------------- */
+.badge-audit-login {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-color: #bfdbfe !important;
+}
+
+.badge-audit-attendance {
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+  border-color: #a7f3d0 !important;
+}
+
+.badge-audit-exam {
+  background: #f5f3ff !important;
+  color: #6d28d9 !important;
+  border-color: #ddd6fe !important;
+}
+
+.badge-audit-user {
+  background: #fff7ed !important;
+  color: #c2410c !important;
+  border-color: #fed7aa !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -609,6 +820,10 @@
     grid-template-columns: 1fr;
   }
 
+  .admin-actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .teacher-hero-card {
     padding: 1.5rem;
   }
@@ -631,6 +846,14 @@
   .dashboard-stats-grid {
     grid-template-columns: 1fr;
     gap: 0.85rem;
+  }
+
+  .attendance-summary-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .admin-actions-grid {
+    grid-template-columns: 1fr;
   }
 
   .matrix-filter-bar {
@@ -661,4 +884,3 @@
     padding: 0.75rem 1.25rem;
   }
 }
-

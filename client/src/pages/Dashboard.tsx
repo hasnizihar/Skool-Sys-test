@@ -16,7 +16,13 @@ import {
   RefreshCw,
   Eye,
   Edit3,
-  Smartphone
+  Smartphone,
+  Copy,
+  Check,
+  Wifi,
+  WifiOff,
+  Layers,
+  FileSpreadsheet
 } from 'lucide-react';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
@@ -55,14 +61,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
     attendanceRate: number | null;
     presentCount: number;
     absentCount: number;
+    lateCount: number;
+    excusedCount: number;
     submittedClassesCount: number;
+    staffCount: number;
   }>({
     totalStudents: 0,
     classesCount: 0,
     attendanceRate: null,
     presentCount: 0,
     absentCount: 0,
-    submittedClassesCount: 0
+    lateCount: 0,
+    excusedCount: 0,
+    submittedClassesCount: 0,
+    staffCount: 0
   });
 
   const [classesList, setClassesList] = useState<any[]>([]);
@@ -74,13 +86,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceMutation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
   // Matrix controls (Screen 02)
   const [classFilter, setClassFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [gradeBandFilter, setGradeBandFilter] = useState<'all' | 'junior' | 'ol' | 'al'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Teacher selected class (Screen 03)
   const [teacherSelectedClassId, setTeacherSelectedClassId] = useState<number | null>(null);
+
+  // Network connectivity listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -101,6 +130,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
       let totalPresent = 0;
       let totalAbsent = 0;
+      let totalLate = 0;
+      let totalExcused = 0;
       let totalEnrolled = studentsRes.count || (studentsRes.students ? studentsRes.students.length : 0);
       let recordedClasses = 0;
 
@@ -113,6 +144,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
           recordedClasses++;
           totalPresent += Number(c.present_count || 0);
           totalAbsent += Number(c.absent_count || 0);
+          totalLate += Number(c.late_count || 0);
+          totalExcused += Number(c.excused_count || 0);
         }
       });
 
@@ -121,13 +154,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         ? Math.round((totalPresent / totalMarked) * 100)
         : null;
 
+      // Sourced active teaching staff count
+      let facultyCount = 0;
+      if (user?.role === 'admin') {
+        try {
+          const usersRes = await api.getUsers();
+          const activeFaculty = (usersRes.users || []).filter(
+            (u: any) => u.is_active && (u.role === 'class_teacher' || u.role === 'subject_teacher' || u.role === 'admin')
+          );
+          facultyCount = activeFaculty.length;
+        } catch {
+          const uniqueTeachers = new Set(classes.map((c: any) => c.class_teacher_name).filter(Boolean));
+          facultyCount = uniqueTeachers.size;
+        }
+      } else {
+        const uniqueTeachers = new Set(classes.map((c: any) => c.class_teacher_name).filter(Boolean));
+        facultyCount = uniqueTeachers.size;
+      }
+
       setStats({
         totalStudents: totalEnrolled,
         classesCount: classes.length > 0 ? classes.length : (dailyClasses.length || 18),
         attendanceRate: rate,
         presentCount: totalPresent,
         absentCount: totalAbsent,
-        submittedClassesCount: recordedClasses
+        lateCount: totalLate,
+        excusedCount: totalExcused,
+        submittedClassesCount: recordedClasses,
+        staffCount: facultyCount
       });
 
       // Fetch audit logs for administrators
@@ -259,9 +313,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
     };
   }, [teacherPrimaryClass, pendingQueue, user]);
 
-  // Filtered attendance matrix for Screen 02
+  // Filtered attendance matrix for Screen 02 with Grade-Band support
   const filteredDailyReport = useMemo(() => {
     return dailyReport.filter((c) => {
+      // Grade Band filter
+      const grade = Number(c.grade || 0);
+      if (gradeBandFilter === 'junior' && (grade < 6 || grade > 9)) return false;
+      if (gradeBandFilter === 'ol' && (grade < 10 || grade > 11)) return false;
+      if (gradeBandFilter === 'al' && (grade < 12 || grade > 13)) return false;
+
       // Status filter
       if (classFilter === 'pending' && c.session_id) return false;
       if (classFilter === 'completed' && !c.session_id) return false;
@@ -275,7 +335,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       }
       return true;
     });
-  }, [dailyReport, classFilter, searchQuery]);
+  }, [dailyReport, classFilter, gradeBandFilter, searchQuery]);
+
+  const handleCopyPhone = (phone: string) => {
+    navigator.clipboard?.writeText(phone);
+    setCopiedPhone(phone);
+    setTimeout(() => setCopiedPhone(null), 2000);
+  };
 
   const cleanName = user?.full_name?.replace(/\s*\([^)]*\)/g, '').trim() || 'Faculty Member';
   const now = new Date();
@@ -298,7 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         <div className="dashboard-banner-content">
           <div className="dashboard-title-row">
             <h2 className="dashboard-title">
-              {greetingTime}, {cleanName}
+              {activeView === 'admin' ? 'School Operations Overview' : `${greetingTime}, ${cleanName}`}
             </h2>
             <span
               className="badge"
@@ -307,7 +373,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 color: 'var(--primary)',
                 fontWeight: 700,
                 fontSize: '0.75rem',
-                border: '1px solid rgba(67, 56, 202, 0.2)'
+                border: '1px solid rgba(2, 101, 54, 0.25)'
               }}
             >
               Academic Year 2026 • Term 1
@@ -323,6 +389,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             >
               <Clock size={12} style={{ marginRight: 4, display: 'inline' }} />
               {todayFormatted} (Asia/Colombo)
+            </span>
+            <span
+              className="badge"
+              style={{
+                background: isOnline ? 'var(--present-bg)' : 'var(--absent-bg)',
+                color: isOnline ? 'var(--present)' : 'var(--absent)',
+                fontSize: '0.72rem',
+                fontWeight: 700
+              }}
+              title={isOnline ? 'Connected to local network & backend' : 'Working in local offline mode'}
+            >
+              {isOnline ? <Wifi size={11} style={{ marginRight: 3, display: 'inline' }} /> : <WifiOff size={11} style={{ marginRight: 3, display: 'inline' }} />}
+              {isOnline ? 'Online' : 'Offline'}
             </span>
           </div>
 
@@ -460,7 +539,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 <div className="stat-val">{stats.totalStudents}</div>
                 <div className="stat-label">Total Enrolled Students</div>
                 <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
-                  <span>Grades 6 to 13 • Active Students</span>
+                  <span>Grades 6 to 13 • Active Census</span>
                 </div>
               </div>
             </div>
@@ -501,7 +580,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
             {/* Card 3: Active School Classes (Required Test Invariant) */}
             <div className="stat-card" style={{ borderLeft: '4px solid var(--accent)' }}>
-              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
                 <School size={24} />
               </div>
               <div className="stat-content">
@@ -513,33 +592,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               </div>
             </div>
 
-            {/* Card 4: Registers Submitted Today */}
+            {/* Card 4: Teaching Staff on Duty */}
             <div className="stat-card" style={{ borderLeft: '4px solid var(--secondary)' }}>
               <div className="stat-icon" style={{ background: 'var(--secondary-light)', color: 'var(--secondary)' }}>
-                <CalendarCheck size={24} />
+                <UserCheck size={24} />
               </div>
               <div className="stat-content">
-                <div className="stat-val">
+                <div className="stat-val">{stats.staffCount > 0 ? stats.staffCount : stats.classesCount}</div>
+                <div className="stat-label">Teaching Staff on Duty</div>
+                <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                  <span>Class & Subject Faculty</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Institutional Roll-Call Summary Bar */}
+          <div className="attendance-summary-bar">
+            <div className="summary-pill-item">
+              <div className="summary-pill-dot" style={{ background: 'var(--present)' }} />
+              <div className="summary-pill-text">
+                <span className="summary-pill-count">{stats.presentCount}</span>
+                <span className="summary-pill-label">Present Pupils</span>
+              </div>
+            </div>
+
+            <div className="summary-pill-item">
+              <div className="summary-pill-dot" style={{ background: 'var(--absent)' }} />
+              <div className="summary-pill-text">
+                <span className="summary-pill-count">{stats.absentCount}</span>
+                <span className="summary-pill-label">Unexcused Absents</span>
+              </div>
+            </div>
+
+            <div className="summary-pill-item">
+              <div className="summary-pill-dot" style={{ background: 'var(--late)' }} />
+              <div className="summary-pill-text">
+                <span className="summary-pill-count">{stats.lateCount}</span>
+                <span className="summary-pill-label">Late Arrivals</span>
+              </div>
+            </div>
+
+            <div className="summary-pill-item">
+              <div className="summary-pill-dot" style={{ background: 'var(--primary)' }} />
+              <div className="summary-pill-text">
+                <span className="summary-pill-count">
                   {stats.submittedClassesCount} / {stats.classesCount}
-                </div>
-                <div className="stat-label">Registers Submitted Today</div>
-                <div
-                  className="stat-trend"
-                  style={{
-                    background: stats.submittedClassesCount === stats.classesCount && stats.classesCount > 0
-                      ? 'var(--present-bg)'
-                      : 'var(--bg-subtle)',
-                    color: stats.submittedClassesCount === stats.classesCount && stats.classesCount > 0
-                      ? 'var(--present)'
-                      : 'var(--text-muted)'
-                  }}
-                >
-                  <span>
-                    {stats.submittedClassesCount === stats.classesCount && stats.classesCount > 0
-                      ? 'All classes completed'
-                      : `${stats.classesCount - stats.submittedClassesCount} classes pending`}
-                  </span>
-                </div>
+                </span>
+                <span className="summary-pill-label">Registers Submitted</span>
               </div>
             </div>
           </div>
@@ -566,6 +666,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 </button>
               </div>
 
+              {/* Grade Band Filter Pills */}
+              <div className="stream-filter-pills" role="tablist" aria-label="Filter classes by grade division">
+                <button
+                  type="button"
+                  className={`stream-pill-btn ${gradeBandFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setGradeBandFilter('all')}
+                >
+                  All Divisions ({dailyReport.length})
+                </button>
+                <button
+                  type="button"
+                  className={`stream-pill-btn ${gradeBandFilter === 'junior' ? 'active' : ''}`}
+                  onClick={() => setGradeBandFilter('junior')}
+                >
+                  Junior (Grades 6–9)
+                </button>
+                <button
+                  type="button"
+                  className={`stream-pill-btn ${gradeBandFilter === 'ol' ? 'active' : ''}`}
+                  onClick={() => setGradeBandFilter('ol')}
+                >
+                  O/L (Grades 10–11)
+                </button>
+                <button
+                  type="button"
+                  className={`stream-pill-btn ${gradeBandFilter === 'al' ? 'active' : ''}`}
+                  onClick={() => setGradeBandFilter('al')}
+                >
+                  A/L Collegiate (Grades 12–13)
+                </button>
+              </div>
+
               {/* Filter & Search Bar */}
               <div className="matrix-filter-bar">
                 <div className="matrix-search-box">
@@ -581,6 +713,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                       type="button"
                       onClick={() => setSearchQuery('')}
                       style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      aria-label="Clear search query"
                     >
                       ×
                     </button>
@@ -618,19 +751,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     <p style={{ fontSize: '0.8rem', marginTop: 4 }}>
                       {classFilter === 'pending'
                         ? 'All classes have submitted their attendance registers for today!'
-                        : 'Adjust search or filter criteria.'}
+                        : 'Adjust division, search, or status filter.'}
                     </p>
                   </div>
                 ) : (
                   <table className="matrix-table">
                     <thead>
                       <tr>
-                        <th>Class & Teacher</th>
-                        <th>Enrolled</th>
-                        <th>Present / Absent</th>
-                        <th style={{ width: 140 }}>Rate & Progress</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: 'right' }}>Action</th>
+                        <th scope="col">Class & Teacher</th>
+                        <th scope="col">Enrolled</th>
+                        <th scope="col">Present / Absent</th>
+                        <th scope="col" style={{ width: 140 }}>Rate & Progress</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" style={{ textAlign: 'right' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -692,7 +825,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                             <td>
                               {isSubmitted ? (
                                 <span className="badge badge-present" style={{ fontSize: '0.72rem' }}>
-                                  <CheckCircle size={11} /> Submitted
+                                  <CheckCircle size={11} /> Completed
                                 </span>
                               ) : hasLocalDraft ? (
                                 <span
@@ -717,6 +850,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                                 onClick={() => onNavigate('attendance')}
                                 className="btn btn-secondary btn-sm"
                                 style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                                aria-label={`${isSubmitted ? 'View' : 'Open'} attendance register for ${c.class_name}`}
                               >
                                 {isSubmitted ? 'View' : 'Open'}
                               </button>
@@ -730,7 +864,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               </div>
             </div>
 
-            {/* Right Column: Priorities, Offline Device Sync & Audit Alerts */}
+            {/* Right Column: Priorities, Quick Actions, Offline Sync & Audit Alerts */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Widget 1: Absentee Follow-Up Alert & Call Registry */}
               <div className="card">
@@ -758,7 +892,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                       </p>
                     </div>
                   ) : (
-                    absentStudents.slice(0, 10).map((st) => (
+                    absentStudents.slice(0, 8).map((st) => (
                       <div key={st.id} className="absentee-card">
                         <div className="absentee-info">
                           <span className="absentee-name">{st.full_name}</span>
@@ -770,18 +904,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                             <span>Guardian: {st.guardian_name || 'Guardian'}</span>
                           </span>
                         </div>
-                        {st.guardian_phone ? (
-                          <a
-                            href={`tel:${st.guardian_phone}`}
-                            className="btn-call"
-                            title={`Call guardian at ${st.guardian_phone}`}
-                          >
-                            <PhoneCall size={12} />
-                            <span>{st.guardian_phone}</span>
-                          </a>
-                        ) : (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>No phone</span>
-                        )}
+
+                        <div className="absentee-actions">
+                          {st.guardian_phone ? (
+                            <>
+                              <a
+                                href={`tel:${st.guardian_phone}`}
+                                className="btn-call"
+                                title={`Call guardian at ${st.guardian_phone}`}
+                              >
+                                <PhoneCall size={12} />
+                                <span>{st.guardian_phone}</span>
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyPhone(st.guardian_phone)}
+                                className="btn-copy-phone"
+                                title={copiedPhone === st.guardian_phone ? 'Phone copied!' : 'Copy telephone number'}
+                                aria-label={`Copy phone number for ${st.guardian_name}`}
+                              >
+                                {copiedPhone === st.guardian_phone ? <Check size={12} style={{ color: 'var(--present)' }} /> : <Copy size={12} />}
+                              </button>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>No phone</span>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
@@ -797,7 +945,86 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 </div>
               </div>
 
-              {/* Widget 2: Honest Device & Offline Sync Status */}
+              {/* Widget 2: Core Administrative Workflows Grid */}
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <Layers size={18} style={{ color: 'var(--primary)' }} />
+                      <span>Administrative Workflows</span>
+                    </div>
+                    <div className="card-subtitle">Fast 1-click access to core operational areas</div>
+                  </div>
+                </div>
+
+                <div className="admin-actions-grid">
+                  <div
+                    className="admin-action-item"
+                    onClick={() => onNavigate('students')}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('students'); }}
+                  >
+                    <div className="admin-action-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <div className="admin-action-title">Student Directory</div>
+                      <div className="admin-action-desc">Profiles, NIC & census</div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="admin-action-item"
+                    onClick={() => onNavigate('attendance')}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('attendance'); }}
+                  >
+                    <div className="admin-action-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
+                      <CalendarCheck size={20} />
+                    </div>
+                    <div>
+                      <div className="admin-action-title">Daily Roll-Call</div>
+                      <div className="admin-action-desc">Class registers & sync</div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="admin-action-item"
+                    onClick={() => onNavigate('marks')}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('marks'); }}
+                  >
+                    <div className="admin-action-icon" style={{ background: 'var(--secondary-light)', color: 'var(--secondary)' }}>
+                      <GraduationCap size={20} />
+                    </div>
+                    <div>
+                      <div className="admin-action-title">Marks & Exams</div>
+                      <div className="admin-action-desc">Grading & report cards</div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="admin-action-item"
+                    onClick={() => onNavigate('attendance-reports')}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('attendance-reports'); }}
+                  >
+                    <div className="admin-action-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
+                      <FileSpreadsheet size={20} />
+                    </div>
+                    <div>
+                      <div className="admin-action-title">Monthly Registry</div>
+                      <div className="admin-action-desc">Matrices & export</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Widget 3: Honest Device & Offline Sync Status */}
               <div className="sync-monitor-card">
                 <div className="sync-monitor-header">
                   <div>
@@ -806,7 +1033,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                       <span>Device Sync & Storage Health</span>
                     </div>
                     <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      IndexedDB v2 local mutations & cache engine
+                      IndexedDB v2 local storage & transaction cache
                     </div>
                   </div>
 
@@ -823,7 +1050,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                       </>
                     ) : (
                       <>
-                        <CheckCircle size={12} /> All Synced
+                        <CheckCircle size={12} /> Storage Operational
                       </>
                     )}
                   </span>
@@ -846,7 +1073,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Browser Storage: <strong>Active & Isolated</strong>
+                    Browser Engine: <strong>IndexedDB v2 Partitioned</strong>
                   </span>
                   <button
                     onClick={() => onNavigate('attendance')}
@@ -858,7 +1085,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 </div>
               </div>
 
-              {/* Widget 3: Recent Tamper-Evident Audit Feed */}
+              {/* Widget 4: Recent Tamper-Evident Audit Feed */}
               {user?.role === 'admin' && recentLogs.length > 0 && (
                 <div className="card">
                   <div className="card-header">
@@ -880,36 +1107,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     <table className="data-table" style={{ fontSize: '0.8rem' }}>
                       <thead>
                         <tr>
-                          <th>Time</th>
-                          <th>User</th>
-                          <th>Action</th>
-                          <th>Details</th>
+                          <th scope="col">Time</th>
+                          <th scope="col">User</th>
+                          <th scope="col">Action</th>
+                          <th scope="col">Details</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {recentLogs.map((log) => (
-                          <tr key={log.id}>
-                            <td style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                              {log.timestamp ? log.timestamp.split('T')[1]?.slice(0, 5) || log.timestamp : '—'}
-                            </td>
-                            <td><strong>{log.username}</strong></td>
-                            <td>
-                              <span
-                                className="badge"
-                                style={{
-                                  background: 'var(--bg-subtle)',
-                                  border: '1px solid var(--border-color)',
-                                  fontSize: '0.7rem'
-                                }}
+                        {recentLogs.map((log) => {
+                          const actionBadgeClass = log.action?.includes('LOGIN')
+                            ? 'badge-audit-login'
+                            : log.action?.includes('ATTENDANCE')
+                            ? 'badge-audit-attendance'
+                            : log.action?.includes('EXAM') || log.action?.includes('MARKS')
+                            ? 'badge-audit-exam'
+                            : 'badge-audit-user';
+
+                          const timeStr = log.timestamp ? log.timestamp.split('T')[1]?.slice(0, 5) || log.timestamp : '—';
+                          const detailsStr = typeof log.details === 'string' ? log.details : JSON.stringify(log.details);
+
+                          return (
+                            <tr key={log.id}>
+                              <td style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                {timeStr}
+                              </td>
+                              <td><strong>{log.username}</strong></td>
+                              <td>
+                                <span
+                                  className={`badge ${actionBadgeClass}`}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    border: '1px solid transparent'
+                                  }}
+                                >
+                                  {log.action}
+                                </span>
+                              </td>
+                              <td
+                                style={{ color: 'var(--text-muted)', fontSize: '0.75rem', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                title={detailsStr}
                               >
-                                {log.action}
-                              </span>
-                            </td>
-                            <td style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                              {typeof log.details === 'string' ? log.details.slice(0, 40) : JSON.stringify(log.details).slice(0, 40)}
-                            </td>
-                          </tr>
-                        ))}
+                                {detailsStr}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -936,6 +1178,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 style={{ width: 'auto', padding: '0.35rem 0.85rem', fontSize: '0.85rem' }}
                 value={teacherPrimaryClass?.classId || ''}
                 onChange={(e) => setTeacherSelectedClassId(Number(e.target.value))}
+                aria-label="Select class to view dashboard"
               >
                 {teacherAvailableClasses.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -1069,7 +1312,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
             {/* Card 3: Active School Classes (Required Test Invariant) */}
             <div className="stat-card" style={{ borderLeft: '4px solid var(--accent)' }}>
-              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+              <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
                 <School size={24} />
               </div>
               <div className="stat-content">
