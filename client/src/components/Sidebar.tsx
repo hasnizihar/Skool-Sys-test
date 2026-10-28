@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
               title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              {isCollapsed ? <ChevronRight size={16} strokeWidth={2.2} /> : <ChevronLeft size={16} strokeWidth={2.2} />}
             </button>
           )}
 
