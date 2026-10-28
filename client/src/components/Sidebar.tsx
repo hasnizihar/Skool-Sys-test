@@ -8,8 +8,6 @@ import {
   ShieldCheck,
   History,
   LogOut,
-  Moon,
-  Sun,
   School,
   X,
   Sparkles,
@@ -25,8 +23,8 @@ interface SidebarProps {
   onLogout: () => void;
   isOpen: boolean;
   onClose: () => void;
-  theme: 'light' | 'dark';
-  toggleTheme: () => void;
+  theme?: 'light' | 'dark';
+  toggleTheme?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -38,8 +36,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   isOpen,
   onClose,
-  theme,
-  toggleTheme,
   isCollapsed = false,
   onToggleCollapse
 }) => {
@@ -259,27 +255,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="sidebar-actions-row">
             <button
               type="button"
-              onClick={toggleTheme}
-              className="btn btn-secondary btn-sm sidebar-theme-toggle"
-              title={`Toggle Theme. Current is ${theme}`}
-              aria-label={`Toggle Theme. Current is ${theme}`}
-              data-tooltip={`Theme: ${theme === 'dark' ? 'Light Mode' : 'Dark Mode'}`}
-            >
-              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-              <span className="sidebar-theme-text">
-                {theme === 'dark' ? 'Light' : 'Dark'}
-              </span>
-            </button>
-
-            <button
-              type="button"
               onClick={onLogout}
-              className="btn btn-secondary btn-sm btn-icon sidebar-logout-btn"
+              className="btn btn-secondary btn-sm sidebar-logout-btn"
               title="Sign Out"
               aria-label="Sign Out"
               data-tooltip="Sign Out"
             >
               <LogOut size={16} />
+              <span className="sidebar-logout-text">Sign Out</span>
             </button>
           </div>
         </div>

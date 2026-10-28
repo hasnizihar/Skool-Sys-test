@@ -290,28 +290,19 @@
 
 .sidebar-actions-row {
   display: flex;
-  gap: 0.45rem;
+  width: 100%;
   margin-top: 0.25rem;
 }
 
-.sidebar-theme-toggle {
-  flex: 1;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
 .sidebar-logout-btn {
-  width: 34px;
-  height: 34px;
-  min-height: 34px;
+  width: 100%;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: var(--absent);
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
@@ -321,6 +312,10 @@
   background-color: var(--status-absent-bg, #fef2f2);
   border-color: var(--status-absent-border, #fecaca);
   color: var(--absent);
+}
+
+.sidebar-logout-text {
+  display: inline;
 }
 
 /* ==========================================================================
@@ -335,7 +330,7 @@
 .sidebar--collapsed .nav-section-title,
 .sidebar--collapsed .nav-item-label,
 .sidebar--collapsed .user-details,
-.sidebar--collapsed .sidebar-theme-text {
+.sidebar--collapsed .sidebar-logout-text {
   display: none !important;
 }
 
@@ -384,17 +379,8 @@
 }
 
 .sidebar--collapsed .sidebar-actions-row {
-  flex-direction: column;
   width: 100%;
   align-items: center;
-  gap: 0.4rem;
-}
-
-.sidebar--collapsed .sidebar-theme-toggle {
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
   justify-content: center;
 }
 
@@ -402,6 +388,8 @@
   width: 36px;
   height: 36px;
   min-height: 36px;
+  padding: 0;
+  justify-content: center;
 }
 
 .sidebar--collapsed .user-snippet {
@@ -512,8 +500,8 @@
   .sidebar--collapsed .nav-section-title,
   .sidebar--collapsed .nav-item-label,
   .sidebar--collapsed .user-details,
-  .sidebar--collapsed .sidebar-theme-text {
-    display: block !important;
+  .sidebar--collapsed .sidebar-logout-text {
+    display: inline !important;
   }
 
   .sidebar--collapsed .sidebar-header {
@@ -534,12 +522,8 @@
     flex-direction: row;
   }
 
-  .sidebar-actions-row .sidebar-theme-toggle {
-    min-height: 42px;
-  }
-
   .sidebar-actions-row .sidebar-logout-btn {
-    min-height: 42px;
-    width: 42px;
+    min-height: 44px;
+    width: 100%;
   }
 }
