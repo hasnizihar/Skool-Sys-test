@@ -240,7 +240,7 @@ async function capture() {
         localStorage.setItem('skoolsys_user', JSON.stringify(user));
       }, adminUser);
 
-      await page.goto(`${url}/#dashboard`, { waitUntil: 'networkidle' });
+      await page.goto(`${url}/#dashboard`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('.stat-card', { timeout: 10000 });
       await page.waitForTimeout(600);
 
@@ -261,6 +261,22 @@ async function capture() {
       fs.copyFileSync(filePath4, outPath4);
       console.log('✓ Captured: admin_dashboard_attendance.png (Matrix & Summary close-up)');
 
+      // ------------------------------------------------------------------------
+      // Capture 5: Student Records Filter Card Close-up
+      // ------------------------------------------------------------------------
+      const studentNav = page.locator('.nav-item').filter({ hasText: 'Student Records' });
+      if ((await studentNav.count()) > 0) {
+        await studentNav.click();
+        await page.waitForSelector('.students-filter-card', { timeout: 10000 });
+        await page.waitForTimeout(600);
+        const filterCard = page.locator('.students-filter-card').first();
+        const filePath5 = path.join(docsDir, 'students_filter_card.png');
+        const outPath5 = path.join(outDir, 'students_filter_card.png');
+        await filterCard.screenshot({ path: filePath5 });
+        fs.copyFileSync(filePath5, outPath5);
+        console.log('✓ Captured: students_filter_card.png (Filter toolbar close-up)');
+      }
+
       await context.close();
     }
 
@@ -280,7 +296,7 @@ async function capture() {
         localStorage.setItem('skoolsys_user', JSON.stringify(user));
       }, adminUser);
 
-      await page.goto(`${url}/#dashboard`, { waitUntil: 'networkidle' });
+      await page.goto(`${url}/#dashboard`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('.stat-card', { timeout: 10000 });
       await page.waitForTimeout(600);
 
@@ -310,7 +326,7 @@ async function capture() {
         localStorage.setItem('skoolsys_user', JSON.stringify(user));
       }, adminUser);
 
-      await page.goto(`${url}/#dashboard`, { waitUntil: 'networkidle' });
+      await page.goto(`${url}/#dashboard`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('.stat-card', { timeout: 10000 });
       await page.waitForTimeout(600);
 
