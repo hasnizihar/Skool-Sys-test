@@ -42,19 +42,6 @@
   letter-spacing: -0.02em;
 }
 
-.students-count-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: 700;
-  padding: 0.2rem 0.65rem;
-  border-radius: var(--radius-full, 9999px);
-}
-
 .students-subtitle {
   color: var(--text-muted);
   font-size: var(--text-sm, 0.875rem);

@@ -259,10 +259,6 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
         <div className="students-header-titles">
           <div className="students-title-row">
             <h2 className="students-title">Student Information Records</h2>
-            <span className="students-count-badge">
-              <Users size={13} />
-              <span>{students.length} Records</span>
-            </span>
           </div>
           <p className="students-subtitle">
             Permanent admission registry, class enrollment rosters, and verified guardian contact records.
