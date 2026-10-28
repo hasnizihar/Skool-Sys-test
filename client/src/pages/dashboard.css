@@ -261,6 +261,19 @@
   100% { background-position: -200% 0; }
 }
 
+/* Screen Reader Only Utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --------------------------------------------------------------------------
    Institutional Roll-Call Summary Bar (Integrated Clean Ribbon)
    -------------------------------------------------------------------------- */
@@ -350,11 +363,11 @@
 }
 
 /* --------------------------------------------------------------------------
-   Two-Column Bento Grid Layout (65% / 35%)
+   Two-Column Bento Grid Layout (Balanced 50% / 50%)
    -------------------------------------------------------------------------- */
 .dashboard-grid-dual {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.2fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
   align-items: start;
 }

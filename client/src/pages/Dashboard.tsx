@@ -89,11 +89,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
-  // Matrix controls (Screen 02)
-  const [classFilter, setClassFilter] = useState<'all' | 'pending' | 'completed'>('all');
-  const [gradeBandFilter, setGradeBandFilter] = useState<'all' | 'junior' | 'ol' | 'al'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-
   // Teacher selected class (Screen 03)
   const [teacherSelectedClassId, setTeacherSelectedClassId] = useState<number | null>(null);
 
@@ -312,30 +307,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       draftInfo: null
     };
   }, [teacherPrimaryClass, pendingQueue, user]);
-
-  // Filtered attendance matrix for Screen 02 with Grade-Band support
-  const filteredDailyReport = useMemo(() => {
-    return dailyReport.filter((c) => {
-      // Grade Band filter
-      const grade = Number(c.grade || 0);
-      if (gradeBandFilter === 'junior' && (grade < 6 || grade > 9)) return false;
-      if (gradeBandFilter === 'ol' && (grade < 10 || grade > 11)) return false;
-      if (gradeBandFilter === 'al' && (grade < 12 || grade > 13)) return false;
-
-      // Status filter
-      if (classFilter === 'pending' && c.session_id) return false;
-      if (classFilter === 'completed' && !c.session_id) return false;
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesName = (c.class_name || '').toLowerCase().includes(q);
-        const matchesTeacher = (c.class_teacher_name || '').toLowerCase().includes(q);
-        if (!matchesName && !matchesTeacher) return false;
-      }
-      return true;
-    });
-  }, [dailyReport, classFilter, gradeBandFilter, searchQuery]);
 
   const handleCopyPhone = (phone: string) => {
     navigator.clipboard?.writeText(phone);
@@ -596,6 +567,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
           {/* Institutional Roll-Call Summary Bar */}
           <div className="attendance-summary-bar" role="region" aria-label="Daily attendance summary">
+            <span className="sr-only">Daily Attendance Register Status</span>
             <div className="summary-pill-item">
               <div className="summary-pill-count">{stats.presentCount}</div>
               <div className="summary-pill-label">
@@ -639,219 +611,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
           </div>
 
-          {/* Primary Operations 2-Column Grid (65% / 35%) */}
+          {/* Primary Operations 2-Column Grid (Balanced 50% / 50%) */}
           <div className="dashboard-grid-dual">
-            {/* Left Column: Dynamic Class Attendance Submission Matrix */}
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  {/* Required Test Invariant: 'Daily Attendance Register Status' */}
-                  <div className="card-title">Daily Attendance Register Status</div>
-                  <div className="card-subtitle">
-                    Real-time class roll-call completion across all {stats.classesCount} school classes
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => onNavigate('attendance-reports')}
-                  className="btn btn-secondary btn-sm"
-                  title="View full monthly presence reports"
-                >
-                  Monthly Matrix <ArrowRight size={14} />
-                </button>
-              </div>
-
-              {/* Grade Band Filter Pills */}
-              <div className="stream-filter-pills" role="tablist" aria-label="Filter classes by grade division">
-                <button
-                  type="button"
-                  className={`stream-pill-btn ${gradeBandFilter === 'all' ? 'active' : ''}`}
-                  onClick={() => setGradeBandFilter('all')}
-                >
-                  All Divisions ({dailyReport.length})
-                </button>
-                <button
-                  type="button"
-                  className={`stream-pill-btn ${gradeBandFilter === 'junior' ? 'active' : ''}`}
-                  onClick={() => setGradeBandFilter('junior')}
-                >
-                  Junior (Grades 6–9)
-                </button>
-                <button
-                  type="button"
-                  className={`stream-pill-btn ${gradeBandFilter === 'ol' ? 'active' : ''}`}
-                  onClick={() => setGradeBandFilter('ol')}
-                >
-                  O/L (Grades 10–11)
-                </button>
-                <button
-                  type="button"
-                  className={`stream-pill-btn ${gradeBandFilter === 'al' ? 'active' : ''}`}
-                  onClick={() => setGradeBandFilter('al')}
-                >
-                  A/L Collegiate (Grades 12–13)
-                </button>
-              </div>
-
-              {/* Filter & Search Bar */}
-              <div className="matrix-filter-bar">
-                <div className="matrix-search-box">
-                  <input
-                    type="text"
-                    placeholder="Search class or teacher..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    aria-label="Filter classes by name or teacher"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                      aria-label="Clear search query"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-
-                <div className="matrix-filter-pills">
-                  <button
-                    onClick={() => setClassFilter('all')}
-                    className={`btn btn-sm ${classFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-                  >
-                    All ({dailyReport.length})
-                  </button>
-                  <button
-                    onClick={() => setClassFilter('pending')}
-                    className={`btn btn-sm ${classFilter === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
-                  >
-                    Pending ({dailyReport.filter((c) => !c.session_id).length})
-                  </button>
-                  <button
-                    onClick={() => setClassFilter('completed')}
-                    className={`btn btn-sm ${classFilter === 'completed' ? 'btn-primary' : 'btn-secondary'}`}
-                  >
-                    Done ({dailyReport.filter((c) => !!c.session_id).length})
-                  </button>
-                </div>
-              </div>
-
-              {/* Matrix Dynamic Table */}
-              <div className="matrix-table-wrap">
-                {filteredDailyReport.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
-                    <CheckCircle size={36} style={{ color: 'var(--present)', margin: '0 auto 0.5rem' }} />
-                    <p style={{ fontWeight: 600, margin: 0 }}>No classes match current filter</p>
-                    <p style={{ fontSize: '0.8rem', marginTop: 4 }}>
-                      {classFilter === 'pending'
-                        ? 'All classes have submitted their attendance registers for today!'
-                        : 'Adjust division, search, or status filter.'}
-                    </p>
-                  </div>
-                ) : (
-                  <table className="matrix-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Class & Teacher</th>
-                        <th scope="col">Enrolled</th>
-                        <th scope="col">Present / Absent</th>
-                        <th scope="col" style={{ width: 140 }}>Rate & Progress</th>
-                        <th scope="col">Status</th>
-                        <th scope="col" style={{ textAlign: 'right' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredDailyReport.map((c) => {
-                        const present = Number(c.present_count || 0);
-                        const absent = Number(c.absent_count || 0);
-                        const total = Number(c.enrolled_count || 0);
-                        const pct = total > 0 ? Math.round((present / total) * 100) : 0;
-                        const isSubmitted = !!c.session_id;
-
-                        // Check if an uncommitted draft exists on this device for this class
-                        const hasLocalDraft = pendingQueue.some(
-                          (item) =>
-                            item.classId === c.class_id &&
-                            item.date === todayCivil &&
-                            item.mode === 'draft' &&
-                            (item.status === 'pending' || item.status === 'syncing')
-                        );
-
-                        return (
-                          <tr key={c.class_id}>
-                            <td>
-                              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{c.class_name}</div>
-                              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                                {c.class_teacher_name ? c.class_teacher_name : 'Teacher unassigned'}
-                              </div>
-                            </td>
-                            <td>
-                              <span style={{ fontWeight: 700 }}>{total}</span>
-                            </td>
-                            <td>
-                              {isSubmitted ? (
-                                <span style={{ fontSize: '0.82rem' }}>
-                                  <span style={{ color: 'var(--present)', fontWeight: 700 }}>{present}</span> P •{' '}
-                                  <span style={{ color: 'var(--absent)', fontWeight: 700 }}>{absent}</span> A
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>
-                              )}
-                            </td>
-                            <td>
-                              {isSubmitted ? (
-                                <div>
-                                  <div style={{ fontSize: '0.78rem', fontWeight: 700 }}>{pct}%</div>
-                                  <div className="matrix-progress-bar">
-                                    <div
-                                      className="matrix-progress-fill"
-                                      style={{
-                                        width: `${pct}%`,
-                                        background: pct >= 80 ? 'var(--present)' : pct >= 60 ? 'var(--late)' : 'var(--absent)'
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Pending roll-call</span>
-                              )}
-                            </td>
-                            <td>
-                              {isSubmitted ? (
-                                <span className="status-indicator-pill status-completed">
-                                  <CheckCircle size={12} /> Completed
-                                </span>
-                              ) : hasLocalDraft ? (
-                                <span className="status-indicator-pill status-draft">
-                                  <Clock size={12} /> Draft Saved
-                                </span>
-                              ) : (
-                                <span className="status-indicator-pill status-pending">
-                                  <AlertTriangle size={12} /> Pending
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>
-                              <button
-                                onClick={() => onNavigate('attendance')}
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
-                                aria-label={`${isSubmitted ? 'View' : 'Open'} attendance register for ${c.class_name}`}
-                              >
-                                {isSubmitted ? 'View' : 'Open'}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-
-            {/* Right Column: Priorities, Quick Actions, Offline Sync & Audit Alerts */}
+            {/* Left Column: Absentee Follow-Up Alert & Recent Audit Activity */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Widget 1: Absentee Follow-Up Alert & Call Registry */}
               <div className="card">
@@ -932,7 +694,83 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 </div>
               </div>
 
-              {/* Widget 2: Core Administrative Workflows Grid */}
+              {/* Widget 2: Recent Tamper-Evident Audit Feed */}
+              {user?.role === 'admin' && recentLogs.length > 0 && (
+                <div className="card">
+                  <div className="card-header">
+                    <div>
+                      <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <ShieldCheck size={18} style={{ color: 'var(--primary)' }} />
+                        <span>Recent Audit Activity</span>
+                      </div>
+                      <div className="card-subtitle">
+                        Tamper-evident logs of institutional actions
+                      </div>
+                    </div>
+                    <button onClick={() => onNavigate('audit')} className="btn btn-secondary btn-sm">
+                      All Logs <ArrowRight size={14} />
+                    </button>
+                  </div>
+
+                  <div className="table-responsive">
+                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                      <thead>
+                        <tr>
+                          <th scope="col">Time</th>
+                          <th scope="col">User</th>
+                          <th scope="col">Action</th>
+                          <th scope="col">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentLogs.map((log) => {
+                          const actionBadgeClass = log.action?.includes('LOGIN')
+                            ? 'badge-audit-login'
+                            : log.action?.includes('ATTENDANCE')
+                            ? 'badge-audit-attendance'
+                            : log.action?.includes('EXAM') || log.action?.includes('MARKS')
+                            ? 'badge-audit-exam'
+                            : 'badge-audit-user';
+
+                          const timeStr = log.timestamp ? log.timestamp.split('T')[1]?.slice(0, 5) || log.timestamp : '—';
+                          const detailsStr = typeof log.details === 'string' ? log.details : JSON.stringify(log.details);
+
+                          return (
+                            <tr key={log.id}>
+                              <td style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                {timeStr}
+                              </td>
+                              <td><strong>{log.username}</strong></td>
+                              <td>
+                                <span
+                                  className={`badge ${actionBadgeClass}`}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    border: '1px solid transparent'
+                                  }}
+                                >
+                                  {log.action}
+                                </span>
+                              </td>
+                              <td
+                                style={{ color: 'var(--text-muted)', fontSize: '0.75rem', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                title={detailsStr}
+                              >
+                                {detailsStr}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Administrative Workflows & Honest Device Storage Health */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Widget 3: Core Administrative Workflows Grid */}
               <div className="card">
                 <div className="card-header">
                   <div>
@@ -1011,7 +849,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 </div>
               </div>
 
-              {/* Widget 3: Honest Device & Offline Sync Status */}
+              {/* Widget 4: Honest Device & Offline Sync Status */}
               <div className="sync-monitor-card">
                 <div className="sync-monitor-header">
                   <div>
@@ -1071,79 +909,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                   </button>
                 </div>
               </div>
-
-              {/* Widget 4: Recent Tamper-Evident Audit Feed */}
-              {user?.role === 'admin' && recentLogs.length > 0 && (
-                <div className="card">
-                  <div className="card-header">
-                    <div>
-                      <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <ShieldCheck size={18} style={{ color: 'var(--primary)' }} />
-                        <span>Recent Audit Activity</span>
-                      </div>
-                      <div className="card-subtitle">
-                        Tamper-evident logs of institutional actions
-                      </div>
-                    </div>
-                    <button onClick={() => onNavigate('audit')} className="btn btn-secondary btn-sm">
-                      All Logs <ArrowRight size={14} />
-                    </button>
-                  </div>
-
-                  <div className="table-responsive">
-                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
-                      <thead>
-                        <tr>
-                          <th scope="col">Time</th>
-                          <th scope="col">User</th>
-                          <th scope="col">Action</th>
-                          <th scope="col">Details</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentLogs.map((log) => {
-                          const actionBadgeClass = log.action?.includes('LOGIN')
-                            ? 'badge-audit-login'
-                            : log.action?.includes('ATTENDANCE')
-                            ? 'badge-audit-attendance'
-                            : log.action?.includes('EXAM') || log.action?.includes('MARKS')
-                            ? 'badge-audit-exam'
-                            : 'badge-audit-user';
-
-                          const timeStr = log.timestamp ? log.timestamp.split('T')[1]?.slice(0, 5) || log.timestamp : '—';
-                          const detailsStr = typeof log.details === 'string' ? log.details : JSON.stringify(log.details);
-
-                          return (
-                            <tr key={log.id}>
-                              <td style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                {timeStr}
-                              </td>
-                              <td><strong>{log.username}</strong></td>
-                              <td>
-                                <span
-                                  className={`badge ${actionBadgeClass}`}
-                                  style={{
-                                    fontSize: '0.7rem',
-                                    border: '1px solid transparent'
-                                  }}
-                                >
-                                  {log.action}
-                                </span>
-                              </td>
-                              <td
-                                style={{ color: 'var(--text-muted)', fontSize: '0.75rem', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                title={detailsStr}
-                              >
-                                {detailsStr}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </>
