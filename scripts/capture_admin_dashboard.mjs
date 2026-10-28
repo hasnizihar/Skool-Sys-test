@@ -306,6 +306,21 @@ async function capture() {
         console.log('✓ Captured: attendance_controls_closeup.png');
       }
 
+      // ------------------------------------------------------------------------
+      // Capture 7: Attendance Reports & Registry Close-up
+      // ------------------------------------------------------------------------
+      const reportsNav = page.locator('.nav-item').filter({ hasText: 'Attendance Reports' });
+      if ((await reportsNav.count()) > 0) {
+        await reportsNav.click();
+        await page.waitForSelector('.attendance-reports-page', { timeout: 10000 });
+        await page.waitForTimeout(600);
+        const filePath7 = path.join(docsDir, 'attendance_reports_closeup.png');
+        const outPath7 = path.join(outDir, 'attendance_reports_closeup.png');
+        await page.screenshot({ path: filePath7 });
+        fs.copyFileSync(filePath7, outPath7);
+        console.log('✓ Captured: attendance_reports_closeup.png');
+      }
+
       await context.close();
     }
 

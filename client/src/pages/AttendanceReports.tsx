@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
-  FileSpreadsheet,
   Calendar,
   Phone,
   CheckCircle,
   AlertCircle,
   Clock,
   Printer,
+  ChevronLeft,
   ChevronRight,
   UserCheck
 } from 'lucide-react';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
+import './attendanceReports.css';
 
 export const AttendanceReports: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
@@ -82,6 +83,18 @@ export const AttendanceReports: React.FC = () => {
     }
   };
 
+  const shiftDate = (days: number) => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + days));
+    setSelectedDate(dt.toISOString().slice(0, 10));
+  };
+
+  const jumpToToday = () => {
+    setSelectedDate(getColomboCivilDate());
+  };
+
+  const isToday = selectedDate === getColomboCivilDate();
+
   // Calculate daily totals
   let totalEnrolled = 0;
   let totalPresent = 0;
@@ -107,114 +120,253 @@ export const AttendanceReports: React.FC = () => {
       : null;
 
   return (
-    <div>
+    <div className="attendance-reports-page">
       {/* Top Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.5rem',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}
-      >
-        <div>
-          <h2>Attendance Reports & Registry</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+      <div className="reports-header">
+        <div className="reports-header-titles">
+          <h2 className="reports-title">Attendance Reports & Registry</h2>
+          <p className="reports-subtitle">
             Daily breakdown, absent student follow-up directory, and monthly attendance matrix.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
+        <div className="reports-actions">
+          <div className="reports-view-toggle">
+            <button
+              type="button"
+              onClick={() => setActiveTab('daily')}
+              className={`reports-tab-btn ${activeTab === 'daily' ? 'active' : ''}`}
+            >
+              Daily Summary
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('monthly')}
+              className={`reports-tab-btn ${activeTab === 'monthly' ? 'active' : ''}`}
+            >
+              Monthly Register
+            </button>
+          </div>
+
           <button
-            onClick={() => setActiveTab('daily')}
-            className={`btn btn-sm ${activeTab === 'daily' ? 'btn-primary' : 'btn-secondary'}`}
+            type="button"
+            onClick={() => window.print()}
+            className="btn btn-secondary btn-sm btn-no-print"
+            title="Print report"
           >
-            Daily Summary
+            <Printer size={15} />
+            <span>Print Report</span>
           </button>
-          <button
-            onClick={() => setActiveTab('monthly')}
-            className={`btn btn-sm ${activeTab === 'monthly' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            Monthly Register
-          </button>
-          <button onClick={() => window.print()} className="btn btn-secondary btn-sm btn-no-print">
-            <Printer size={15} /> Print
-          </button>
+        </div>
+      </div>
+
+      {/* View Switcher & Toolbar Card */}
+      <div className="reports-toolbar-card">
+        <div className="reports-toolbar-row">
+          {activeTab === 'daily' ? (
+            <>
+              <div className="reports-control-group">
+                <label className="reports-control-label">Report Date</label>
+                <div className="reports-date-picker-wrap">
+                  <div className="reports-date-input-wrap">
+                    <Calendar size={15} className="reports-date-icon" />
+                    <input
+                      type="date"
+                      className="form-input reports-date-input"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="reports-date-stepper">
+                    <button
+                      type="button"
+                      className="reports-step-btn"
+                      onClick={() => shiftDate(-1)}
+                      title="Previous Day"
+                      aria-label="Previous Day"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`reports-today-btn ${isToday ? 'active' : ''}`}
+                      onClick={jumpToToday}
+                      title="Jump to Current Date"
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      className="reports-step-btn"
+                      onClick={() => shiftDate(1)}
+                      title="Next Day"
+                      aria-label="Next Day"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="reports-status-summary">
+                <span className={`reports-status-pill ${recordedSessions > 0 ? 'reports-status-pill--active' : 'reports-status-pill--empty'}`}>
+                  <span className="reports-status-dot" />
+                  <span>
+                    {recordedSessions > 0
+                      ? `${recordedSessions} of ${dailyData?.classes?.length || 18} Classes Submitted`
+                      : 'No Registers Submitted for this Date'}
+                  </span>
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="reports-monthly-controls">
+              <div className="reports-control-group" style={{ flex: '1 1 240px' }}>
+                <label className="reports-control-label">Select Class</label>
+                <select
+                  className="form-select reports-select"
+                  value={monthlyClassId || ''}
+                  onChange={(e) => setMonthlyClassId(Number(e.target.value))}
+                >
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="reports-control-group" style={{ flex: '0 0 140px' }}>
+                <label className="reports-control-label">Month</label>
+                <select
+                  className="form-select reports-select"
+                  value={monthlyMonth}
+                  onChange={(e) => setMonthlyMonth(Number(e.target.value))}
+                >
+                  <option value={1}>January</option>
+                  <option value={2}>February</option>
+                  <option value={3}>March</option>
+                  <option value={4}>April</option>
+                  <option value={5}>May</option>
+                  <option value={6}>June</option>
+                  <option value={7}>July</option>
+                  <option value={8}>August</option>
+                  <option value={9}>September</option>
+                  <option value={10}>October</option>
+                  <option value={11}>November</option>
+                  <option value={12}>December</option>
+                </select>
+              </div>
+
+              <div className="reports-control-group" style={{ flex: '0 0 120px' }}>
+                <label className="reports-control-label">Year</label>
+                <select
+                  className="form-select reports-select"
+                  value={monthlyYear}
+                  onChange={(e) => setMonthlyYear(Number(e.target.value))}
+                >
+                  <option value={2026}>2026</option>
+                  <option value={2025}>2025</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {activeTab === 'daily' && (
         <>
-          {/* Daily Controls & Date Selector */}
-          <div className="card" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Calendar size={18} style={{ color: 'var(--primary)' }} />
-                <label className="form-label" style={{ marginBottom: 0 }}>
-                  Select Report Date:
-                </label>
-              </div>
-              <input
-                type="date"
-                className="form-input"
-                style={{ width: '180px' }}
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Daily Summary Stats */}
-          <div className="stats-grid">
+          {/* Daily Summary Stats Grid */}
+          <div className="dashboard-stats-grid">
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
-                <CheckCircle size={24} />
-              </div>
-              <div>
-                <div className="stat-val" style={{ fontSize: schoolPercentage !== null ? undefined : '1.35rem' }}>
-                  {schoolPercentage !== null ? `${schoolPercentage}%` : 'Not Recorded'}
+              <div className="stat-header-row">
+                <span className="stat-label">Overall Attendance</span>
+                <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)', borderColor: 'var(--present-border)' }}>
+                  <CheckCircle size={18} />
                 </div>
-                <div className="stat-label">Overall Attendance</div>
+              </div>
+              <div className="stat-content">
+                <div className="stat-val">
+                  {schoolPercentage !== null ? `${schoolPercentage}%` : '—'}
+                </div>
+                <div className="stat-meta">
+                  <span
+                    className="stat-meta-dot"
+                    style={{ background: schoolPercentage !== null ? 'var(--present)' : 'var(--text-muted)' }}
+                  />
+                  <span>
+                    {schoolPercentage !== null
+                      ? `${totalPresent + totalLate} / ${totalEnrolled} Pupils present`
+                      : 'No attendance recorded'}
+                  </span>
+                </div>
               </div>
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
-                <UserCheck size={24} />
+              <div className="stat-header-row">
+                <span className="stat-label">Students Present</span>
+                <div className="stat-icon" style={{ background: 'rgba(99, 102, 241, 0.12)', color: '#4f46e5', borderColor: 'rgba(99, 102, 241, 0.25)' }}>
+                  <UserCheck size={18} />
+                </div>
               </div>
-              <div>
+              <div className="stat-content">
                 <div className="stat-val">{totalPresent}</div>
-                <div className="stat-label">Students Present</div>
+                <div className="stat-meta">
+                  <span className="stat-meta-dot" style={{ background: '#4f46e5' }} />
+                  <span>Confirmed in classrooms</span>
+                </div>
               </div>
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
-                <AlertCircle size={24} />
+              <div className="stat-header-row">
+                <span className="stat-label">Students Absent</span>
+                <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)', borderColor: 'var(--absent-border)' }}>
+                  <AlertCircle size={18} />
+                </div>
               </div>
-              <div>
+              <div className="stat-content">
                 <div className="stat-val">{totalAbsent}</div>
-                <div className="stat-label">Students Absent</div>
+                <div className="stat-meta">
+                  <span
+                    className="stat-meta-dot"
+                    style={{ background: totalAbsent > 0 ? 'var(--absent)' : 'var(--text-muted)' }}
+                  />
+                  <span>
+                    {totalAbsent > 0 ? 'Listed in action directory' : 'Zero reported absences'}
+                  </span>
+                </div>
               </div>
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: '#fef3c7', color: '#b45309' }}>
-                <Clock size={24} />
+              <div className="stat-header-row">
+                <span className="stat-label">Students Late</span>
+                <div className="stat-icon" style={{ background: 'var(--late-bg)', color: 'var(--late)', borderColor: 'var(--late-border)' }}>
+                  <Clock size={18} />
+                </div>
               </div>
-              <div>
+              <div className="stat-content">
                 <div className="stat-val">{totalLate}</div>
-                <div className="stat-label">Students Late</div>
+                <div className="stat-meta">
+                  <span
+                    className="stat-meta-dot"
+                    style={{ background: totalLate > 0 ? 'var(--late)' : 'var(--text-muted)' }}
+                  />
+                  <span>
+                    {totalLate > 0 ? 'Admitted with late record' : 'Zero recorded late arrivals'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Class Breakdown Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: '1.75rem' }}>
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-              <h3 style={{ fontSize: '1.1rem' }}>Class-wise Attendance Breakdown</h3>
+          <div className="reports-table-card card" style={{ padding: 0 }}>
+            <div className="reports-card-header">
+              <div>
+                <h3 className="reports-card-title">Class-wise Attendance Breakdown</h3>
+                <p className="reports-card-subtext">Roll-call submission status and attendance percentage across classes</p>
+              </div>
             </div>
 
             <div className="table-responsive">
@@ -244,14 +396,16 @@ export const AttendanceReports: React.FC = () => {
                       <tr key={c.class_id}>
                         <td><strong>{c.class_name}</strong></td>
                         <td style={{ color: 'var(--text-muted)' }}>
-                          {c.class_teacher_name || 'Unassigned'}
+                          {c.class_teacher_name ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim() : 'Unassigned'}
                         </td>
                         <td>
-                          {isSubmitted ? (
-                            <span className="badge badge-present">Submitted</span>
-                          ) : (
-                            <span className="badge badge-late">Pending</span>
-                          )}
+                          <span
+                            className={`badge ${isSubmitted ? 'badge-present' : 'badge-late'}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: isSubmitted ? 'var(--present)' : 'var(--late)' }} />
+                            <span>{isSubmitted ? 'Submitted' : 'Pending'}</span>
+                          </span>
                         </td>
                         <td>{enrolled}</td>
                         <td style={{ color: 'var(--present)', fontWeight: 600 }}>{present}</td>
@@ -288,24 +442,20 @@ export const AttendanceReports: React.FC = () => {
           </div>
 
           {/* Absent Students Contact Directory */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div
-              style={{
-                padding: '1.25rem 1.5rem',
-                borderBottom: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}
-            >
+          <div className="reports-table-card card" style={{ padding: 0 }}>
+            <div className="reports-card-header">
               <div>
-                <h3 style={{ fontSize: '1.1rem' }}>Absent Students Action Directory</h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                <h3 className="reports-card-title">Absent Students Action Directory</h3>
+                <p className="reports-card-subtext">
                   Guardian telephone numbers for immediate school administrative verification
                 </p>
               </div>
-              <span className="badge badge-absent">
-                {dailyData?.absentStudents?.length || 0} Absentees
+              <span
+                className="badge badge-absent"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--absent)' }} />
+                <span>{dailyData?.absentStudents?.length || 0} Absentees</span>
               </span>
             </div>
 
@@ -324,7 +474,7 @@ export const AttendanceReports: React.FC = () => {
                 <tbody>
                   {dailyData?.absentStudents?.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                         No absent students recorded for this date.
                       </td>
                     </tr>
@@ -339,9 +489,10 @@ export const AttendanceReports: React.FC = () => {
                           <a
                             href={`tel:${st.guardian_phone}`}
                             className="btn btn-secondary btn-sm"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--primary)' }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--primary)' }}
                           >
-                            <Phone size={12} /> {st.guardian_phone}
+                            <Phone size={13} />
+                            <span>{st.guardian_phone}</span>
                           </a>
                         </td>
                         <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -358,142 +509,89 @@ export const AttendanceReports: React.FC = () => {
       )}
 
       {activeTab === 'monthly' && (
-        <>
-          {/* Monthly Controls */}
-          <div className="card" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ width: '220px' }}>
-                <label className="form-label">Select Class</label>
-                <select
-                  className="form-select"
-                  value={monthlyClassId || ''}
-                  onChange={(e) => setMonthlyClassId(Number(e.target.value))}
-                >
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ width: '130px' }}>
-                <label className="form-label">Month</label>
-                <select
-                  className="form-select"
-                  value={monthlyMonth}
-                  onChange={(e) => setMonthlyMonth(Number(e.target.value))}
-                >
-                  <option value={1}>January</option>
-                  <option value={2}>February</option>
-                  <option value={3}>March</option>
-                  <option value={4}>April</option>
-                  <option value={5}>May</option>
-                  <option value={6}>June</option>
-                  <option value={7}>July</option>
-                  <option value={8}>August</option>
-                  <option value={9}>September</option>
-                  <option value={10}>October</option>
-                  <option value={11}>November</option>
-                  <option value={12}>December</option>
-                </select>
-              </div>
-
-              <div style={{ width: '110px' }}>
-                <label className="form-label">Year</label>
-                <select
-                  className="form-select"
-                  value={monthlyYear}
-                  onChange={(e) => setMonthlyYear(Number(e.target.value))}
-                >
-                  <option value={2026}>2026</option>
-                  <option value={2025}>2025</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly Register Grid */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-              <h3 style={{ fontSize: '1.1rem' }}>
+        <div className="reports-table-card card" style={{ padding: 0 }}>
+          <div className="reports-card-header">
+            <div>
+              <h3 className="reports-card-title">
                 Monthly Attendance Register — {classes.find((c) => c.id === monthlyClassId)?.name}
               </h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              <p className="reports-card-subtext">
                 Legend: <strong>P</strong> (Present) • <strong>A</strong> (Absent) • <strong>L</strong> (Late) • <strong>E</strong> (Excused)
               </p>
             </div>
-
-            <div className="table-responsive">
-              <table className="data-table" style={{ fontSize: '0.8rem' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 50 }}>Roll</th>
-                    <th>Student Name</th>
-                    {monthlyData?.sessions?.map((sess: any) => (
-                      <th key={sess.id} style={{ textAlign: 'center', padding: '0.5rem 0.35rem', minWidth: 38 }}>
-                        {sess.date.slice(8)}
-                      </th>
-                    ))}
-                    <th style={{ textAlign: 'center' }}>% Present</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyData?.students?.map((st: any) => {
-                    const studentRecords = monthlyData.attendanceGrid[st.id] || {};
-                    let presentCount = 0;
-                    const sessionCount = monthlyData.sessions?.length || 0;
-
-                    return (
-                      <tr key={st.id}>
-                        <td><strong>#{st.roll_number || '-'}</strong></td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{st.full_name}</div>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{st.admission_no}</div>
-                        </td>
-                        {monthlyData.sessions?.map((sess: any) => {
-                          const status = studentRecords[sess.date];
-                          let letter = '-';
-                          let badgeClass = '';
-
-                          if (status === 'present') {
-                            letter = 'P';
-                            badgeClass = 'badge-present';
-                            presentCount++;
-                          } else if (status === 'absent') {
-                            letter = 'A';
-                            badgeClass = 'badge-absent';
-                          } else if (status === 'late') {
-                            letter = 'L';
-                            badgeClass = 'badge-late';
-                            presentCount++;
-                          } else if (status === 'excused') {
-                            letter = 'E';
-                            badgeClass = 'badge-excused';
-                          }
-
-                          return (
-                            <td key={sess.id} style={{ textAlign: 'center', padding: '0.4rem 0.2rem' }}>
-                              <span
-                                className={`badge ${badgeClass}`}
-                                style={{ minWidth: 26, justifyContent: 'center', padding: '0.15rem 0.35rem' }}
-                              >
-                                {letter}
-                              </span>
-                            </td>
-                          );
-                        })}
-                        <td style={{ textAlign: 'center', fontWeight: 700 }}>
-                          {sessionCount > 0
-                            ? `${Math.round((presentCount / sessionCount) * 100)}%`
-                            : '100%'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           </div>
-        </>
+
+          <div className="table-responsive">
+            <table className="data-table" style={{ fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 50 }}>Roll</th>
+                  <th>Student Name</th>
+                  {monthlyData?.sessions?.map((sess: any) => (
+                    <th key={sess.id} style={{ textAlign: 'center', padding: '0.5rem 0.35rem', minWidth: 38 }}>
+                      {sess.date.slice(8)}
+                    </th>
+                  ))}
+                  <th style={{ textAlign: 'center' }}>% Present</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyData?.students?.map((st: any) => {
+                  const studentRecords = monthlyData.attendanceGrid[st.id] || {};
+                  let presentCount = 0;
+                  const sessionCount = monthlyData.sessions?.length || 0;
+
+                  return (
+                    <tr key={st.id}>
+                      <td><strong>#{st.roll_number || '-'}</strong></td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{st.full_name}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{st.admission_no}</div>
+                      </td>
+                      {monthlyData.sessions?.map((sess: any) => {
+                        const status = studentRecords[sess.date];
+                        let letter = '-';
+                        let badgeClass = '';
+
+                        if (status === 'present') {
+                          letter = 'P';
+                          badgeClass = 'badge-present';
+                          presentCount++;
+                        } else if (status === 'absent') {
+                          letter = 'A';
+                          badgeClass = 'badge-absent';
+                        } else if (status === 'late') {
+                          letter = 'L';
+                          badgeClass = 'badge-late';
+                          presentCount++;
+                        } else if (status === 'excused') {
+                          letter = 'E';
+                          badgeClass = 'badge-excused';
+                        }
+
+                        return (
+                          <td key={sess.id} style={{ textAlign: 'center', padding: '0.4rem 0.2rem' }}>
+                            <span
+                              className={`badge ${badgeClass}`}
+                              style={{ minWidth: 26, justifyContent: 'center', padding: '0.15rem 0.35rem' }}
+                            >
+                              {letter}
+                            </span>
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                        {sessionCount > 0
+                          ? `${Math.round((presentCount / sessionCount) * 100)}%`
+                          : '100%'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );
