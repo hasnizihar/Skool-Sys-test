@@ -8,7 +8,6 @@ import {
   ShieldCheck,
   History,
   LogOut,
-  School,
   X,
   Sparkles,
   ChevronLeft,
@@ -80,13 +79,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div className="sidebar-header">
           <div className="brand-wrapper" title="Kattankudy Central College">
-            <div className="brand-badge">
-              <School size={22} />
+            <div className="brand-logo-container">
+              <img
+                src="/kcc-logo.png"
+                alt="Kattankudy Central College Emblem"
+                className="brand-logo-img"
+              />
             </div>
             <div className="brand-info">
               <h2>Kattankudy Central College</h2>
               <p>National School — Kattankudy</p>
-              <span className="brand-tamil-title">காத்தான்குடி மத்திய கல்லூரி</span>
             </div>
           </div>
 

@@ -32,23 +32,27 @@
 .brand-wrapper {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
   min-width: 0;
 }
 
-.brand-badge {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-sm, 8px);
-  background: linear-gradient(135deg, var(--primary) 0%, #047857 100%);
+.brand-badge,
+.brand-logo-container {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-weight: 800;
-  font-size: 1.15rem;
-  box-shadow: var(--shadow-sm);
   flex-shrink: 0;
+}
+
+.brand-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  display: block;
 }
 
 .brand-info {
@@ -68,22 +72,10 @@
 }
 
 .brand-info p {
-  font-size: 0.6875rem;
+  font-size: 0.725rem;
   color: var(--text-muted);
   font-weight: 500;
   margin: 2px 0 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.brand-tamil-title {
-  font-size: 0.6875rem;
-  color: var(--primary);
-  font-weight: 600;
-  display: block;
-  font-family: var(--font-tamil, inherit);
-  margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -343,6 +335,19 @@
 
 .sidebar--collapsed .brand-wrapper {
   justify-content: center;
+  width: 100%;
+}
+
+.sidebar--collapsed .brand-logo-container {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+}
+
+.sidebar--collapsed .brand-logo-img {
+  width: 38px;
+  height: 38px;
 }
 
 .sidebar--collapsed .sidebar-collapse-toggle {
