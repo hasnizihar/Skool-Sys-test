@@ -9,11 +9,9 @@ import {
   RefreshCw,
   Clock,
   AlertTriangle,
-  CheckCircle2,
-  ChevronRight
+  CheckCircle2
 } from 'lucide-react';
 import { api } from '../api/client';
-import { SCHOOL_PROFILE } from '../config/schoolConfig';
 import { getUnsyncedWorkSummary, UnsyncedWorkSummary } from '../api/offlineQueue';
 import './navbar.css';
 
@@ -30,7 +28,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebar,
   title,
-  currentTab = 'dashboard',
+  currentTab: _currentTab = 'dashboard',
   onNavigate,
   user,
   theme,
@@ -153,30 +151,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isSyncing = (syncSummary?.syncing || 0) > 0;
   const pendingCount = (syncSummary?.pending || 0);
 
-  const getBreadcrumbs = (): [string, string] | null => {
-    switch (currentTab) {
-      case 'students':
-        return ['Students', 'Directory & Records'];
-      case 'attendance':
-        return ['Academics', 'Daily Class Register'];
-      case 'attendance-reports':
-        return ['Academics', 'Attendance Reports & Registry'];
-      case 'marks':
-        return ['Academics', 'Examination & Marks'];
-      case 'admin':
-        return ['Administration', 'School Security & Settings'];
-      case 'audit':
-        return ['Administration', 'System Audit Trail'];
-      case 'design-system':
-        return ['System', 'UI Primitives Preview'];
-      case 'dashboard':
-      default:
-        return null;
-    }
-  };
-
-  const crumbs = getBreadcrumbs();
-
   return (
     <header className="top-navbar" role="banner">
       <div className="navbar-left">
@@ -191,24 +165,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         <div className="navbar-heading-group">
-          {/* Subtle Top Breadcrumb Trail (omitted on Dashboard for clean minimalist header) */}
-          {crumbs && (
-            <nav aria-label="Breadcrumbs" className="navbar-crumb-trail navbar-brand-crumb">
-              <span
-                className="navbar-crumb-item navbar-crumb-parent"
-                onClick={() => onNavigate?.('dashboard')}
-                style={{ cursor: onNavigate ? 'pointer' : 'default' }}
-                title={SCHOOL_PROFILE.name}
-              >
-                KCC
-              </span>
-              <ChevronRight size={11} className="navbar-crumb-divider navbar-crumb-sep" aria-hidden="true" />
-              <span className="navbar-crumb-item">{crumbs[0]}</span>
-              <ChevronRight size={11} className="navbar-crumb-divider" aria-hidden="true" />
-              <span className="navbar-crumb-current" aria-current="page">{crumbs[1]}</span>
-            </nav>
-          )}
-
           {/* Primary View Title & Academic Context */}
           <div className="navbar-title-row">
             <h1 className="navbar-page-title navbar-title">{title}</h1>

@@ -37,46 +37,11 @@
   }
 }
 
-/* Two-tier Heading & Breadcrumbs Group */
+/* Heading Group */
 .navbar-heading-group {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.navbar-crumb-trail {
-  display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.71875rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1;
-}
-
-.navbar-crumb-item {
-  color: var(--text-muted);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-.navbar-crumb-parent:hover {
-  color: var(--primary);
-  text-decoration: underline;
-}
-
-.navbar-crumb-current {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.navbar-crumb-divider {
-  opacity: 0.45;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .navbar-title-row {
@@ -260,10 +225,6 @@
   .top-navbar {
     padding: 0 1rem;
     height: 56px;
-  }
-
-  .navbar-crumb-trail {
-    display: none;
   }
 
   .navbar-page-title {
