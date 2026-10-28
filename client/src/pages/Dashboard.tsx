@@ -521,13 +521,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Total Enrolled Students</span>
-                <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-                  <Users size={20} />
+                <div className="stat-icon">
+                  <Users size={16} />
                 </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.totalStudents}</div>
-                <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                <div className="stat-meta">
                   <span>Grades 6 to 13 • Active Census</span>
                 </div>
               </div>
@@ -537,34 +537,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Today's Attendance Rate</span>
-                <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-                  <TrendingUp size={20} />
+                <div className="stat-icon">
+                  <TrendingUp size={16} />
                 </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val" style={{ fontSize: stats.attendanceRate !== null ? undefined : '1.35rem' }}>
                   {stats.attendanceRate !== null ? `${stats.attendanceRate}%` : 'Not Recorded'}
                 </div>
-                <div
-                  className="stat-trend"
-                  style={{
-                    background: stats.attendanceRate === null
-                      ? 'var(--bg-subtle)'
-                      : stats.attendanceRate >= 80
-                      ? 'var(--present-bg)'
-                      : 'var(--late-bg)',
-                    color: stats.attendanceRate === null
-                      ? 'var(--text-muted)'
-                      : stats.attendanceRate >= 80
-                      ? 'var(--present)'
-                      : 'var(--late)'
-                  }}
-                >
-                  <span>
-                    {stats.attendanceRate !== null
-                      ? `${stats.presentCount} present • ${stats.absentCount} absent`
-                      : 'No registers submitted yet today'}
-                  </span>
+                <div className="stat-meta">
+                  {stats.attendanceRate !== null ? (
+                    <>
+                      <span
+                        className="stat-meta-dot"
+                        style={{ background: stats.attendanceRate >= 80 ? 'var(--present)' : 'var(--late)' }}
+                      />
+                      <span>{stats.presentCount} present • {stats.absentCount} absent</span>
+                    </>
+                  ) : (
+                    <span>No registers submitted yet today</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -573,13 +565,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Active School Classes</span>
-                <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
-                  <School size={20} />
+                <div className="stat-icon">
+                  <School size={16} />
                 </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.classesCount}</div>
-                <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                <div className="stat-meta">
                   <span>A & B Streams • Grades 6–13</span>
                 </div>
               </div>
@@ -589,13 +581,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Teaching Staff on Duty</span>
-                <div className="stat-icon" style={{ background: 'var(--secondary-light)', color: 'var(--secondary)' }}>
-                  <UserCheck size={20} />
+                <div className="stat-icon">
+                  <UserCheck size={16} />
                 </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.staffCount > 0 ? stats.staffCount : stats.classesCount}</div>
-                <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                <div className="stat-meta">
                   <span>Class & Subject Faculty</span>
                 </div>
               </div>
@@ -1270,15 +1262,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Total Enrolled Students</span>
-                <div className="stat-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-                  <Users size={20} />
+                <div className="stat-icon">
+                  <Users size={16} />
                 </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">
                   {teacherPrimaryClass?.daily?.enrolled_count || stats.totalStudents}
                 </div>
-                <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                <div className="stat-meta">
                   <span>{teacherPrimaryClass?.className || 'Grade 8-A'} Roster</span>
                 </div>
               </div>
@@ -1288,8 +1280,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Today's Attendance Rate</span>
-                <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-                  <TrendingUp size={20} />
+                <div className="stat-icon">
+                  <TrendingUp size={16} />
                 </div>
               </div>
               <div className="stat-content">
@@ -1298,12 +1290,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     ? `${Math.round((Number(teacherPrimaryClass.daily.present_count) / Math.max(Number(teacherPrimaryClass.daily.enrolled_count), 1)) * 100)}%`
                     : 'Pending'}
                 </div>
-                <div className="stat-trend" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-                  <span>
-                    {teacherPrimaryClass?.daily?.present_count !== undefined && teacherPrimaryClass.daily.session_id
-                      ? `${teacherPrimaryClass.daily.present_count} Present • ${teacherPrimaryClass.daily.absent_count} Absent`
-                      : 'Roll-call pending'}
-                  </span>
+                <div className="stat-meta">
+                  {teacherPrimaryClass?.daily?.present_count !== undefined && teacherPrimaryClass.daily.session_id ? (
+                    <>
+                      <span className="stat-meta-dot" style={{ background: 'var(--present)' }} />
+                      <span>{teacherPrimaryClass.daily.present_count} Present • {teacherPrimaryClass.daily.absent_count} Absent</span>
+                    </>
+                  ) : (
+                    <span>Roll-call pending</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1312,13 +1307,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Active School Classes</span>
-                <div className="stat-icon" style={{ background: 'var(--accent-light)', color: 'var(--on-accent)' }}>
-                  <School size={20} />
+                <div className="stat-icon">
+                  <School size={16} />
                 </div>
               </div>
               <div className="stat-content">
                 <div className="stat-val">{stats.classesCount}</div>
-                <div className="stat-trend" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                <div className="stat-meta">
                   <span>Kattankudy Central College</span>
                 </div>
               </div>
@@ -1328,8 +1323,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             <div className="stat-card">
               <div className="stat-header-row">
                 <span className="stat-label">Absentees in My Class</span>
-                <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
-                  <PhoneCall size={20} />
+                <div className="stat-icon">
+                  <PhoneCall size={16} />
                 </div>
               </div>
               <div className="stat-content">
@@ -1338,7 +1333,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                     ? teacherPrimaryClass.daily.absent_count
                     : '0'}
                 </div>
-                <div className="stat-trend" style={{ background: 'var(--absent-bg)', color: 'var(--absent)' }}>
+                <div className="stat-meta">
+                  <span className="stat-meta-dot" style={{ background: 'var(--absent)' }} />
                   <span>Guardian follow-up ready</span>
                 </div>
               </div>
