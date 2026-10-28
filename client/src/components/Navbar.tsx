@@ -157,11 +157,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           type="button"
           onClick={onToggleSidebar}
-          className="btn btn-secondary btn-icon mobile-menu-toggle"
+          className="mobile-menu-toggle"
           aria-label="Toggle navigation menu"
           title="Toggle navigation menu"
         >
-          <Menu size={20} />
+          <Menu size={18} />
         </button>
 
         <div className="navbar-heading-group">
@@ -177,7 +177,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       <div className="navbar-right">
         {/* Real Local Date Pill */}
-        <div className="navbar-date-badge badge" title="Current session date">
+        <div className="navbar-date-badge" title="Current session date">
           <Calendar size={13} style={{ color: 'var(--primary)' }} />
           <span>{currentDateStr || 'Today'}</span>
         </div>
@@ -239,7 +239,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Administrator Role Pill */}
         {user?.role === 'admin' && (
           <div
-            className="navbar-admin-pill badge"
+            className="navbar-admin-pill"
             title="Logged in with Administrator privileges"
           >
             <ShieldCheck size={13} />
@@ -252,14 +252,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={toggleTheme}
-            className="btn btn-secondary btn-icon navbar-theme-toggle"
+            className="navbar-theme-toggle"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           >
             {theme === 'dark' ? (
-              <Sun size={17} style={{ color: '#f59e0b' }} />
+              <Sun size={15} style={{ color: '#f59e0b' }} />
             ) : (
-              <Moon size={17} style={{ color: 'var(--primary)' }} />
+              <Moon size={15} style={{ color: 'var(--primary)' }} />
             )}
           </button>
         )}
