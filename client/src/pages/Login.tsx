@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  School,
   LogIn,
   Lock,
   User,
@@ -15,7 +14,9 @@ import {
   ClipboardCheck,
   KeyRound,
   Award,
-  Info
+  Info,
+  CalendarCheck2,
+  FileCheck2
 } from 'lucide-react';
 import { api, setAuthSession } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
@@ -169,221 +170,284 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
   return (
     <div className="login-viewport">
-      <div className="login-card-container card">
-        {/* Brand & School Header */}
-        <header className="login-brand-header">
-          <div className="login-brand-emblem" aria-hidden="true">
-            <School size={30} />
-          </div>
-          <h1 className="login-school-title">
-            {SCHOOL_PROFILE.name}
-          </h1>
-          <div className="login-tamil-title">
-            {SCHOOL_PROFILE.nameTamil}
-          </div>
-          <p className="login-census-subtitle">
-            {SCHOOL_PROFILE.secondaryTitle} • Census No. {SCHOOL_PROFILE.censusNo}
-          </p>
-          <div className="login-system-pill">
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--primary)' }} />
-            <span>{SCHOOL_PROFILE.systemTitle}</span>
-          </div>
-        </header>
-
-        {/* Error Feedback */}
-        {error && (
-          <div className="login-alert-banner login-alert--error" role="alert">
-            <AlertCircle size={18} aria-hidden="true" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Credential Fill Confirmation */}
-        {filledFeedback && (
-          <div className="login-alert-banner login-alert--success" role="status">
-            <CheckCircle2 size={18} aria-hidden="true" />
-            <span>{filledFeedback}</span>
-          </div>
-        )}
-
-        {/* Form Container with Milestone 1 UI Primitives */}
-        <form onSubmit={handleSubmit} className="login-form">
-          <Input
-            label="Username or Academic ID"
-            name="username"
-            type="text"
-            placeholder="e.g. admin or teacher_nimali"
-            required
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            leftIcon={<User size={18} />}
-          />
-
-          <Input
-            label="Password"
-            name="password"
-            type="password"
-            placeholder="••••••••"
-            required
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            leftIcon={<Lock size={18} />}
-            showPasswordToggle
-          />
-
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            fullWidth
-            isLoading={loading}
-            className="login-submit-btn"
-            leftIcon={<LogIn size={18} />}
-          >
-            Sign In
-          </Button>
-        </form>
-
-        {/* Development & Testing Credentials Panel */}
-        {isDemoEnabled && (
-          <section className="demo-accounts-panel" aria-label="Development Demo Accounts">
-            <div className="demo-panel-header">
-              <div className="demo-panel-title">
-                <KeyRound size={16} style={{ color: 'var(--primary)' }} />
-                <span>Testing & Demo Accounts</span>
-              </div>
-              <span
-                className="badge"
-                style={{
-                  background: 'var(--primary-light)',
-                  color: 'var(--primary)',
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
+      <div className="login-shell">
+        {/* Left Hero Brand Panel (Desktop) */}
+        <aside className="login-hero-panel" aria-label="Institutional Identity & Governance">
+          <div className="login-hero-brand">
+            <div className="login-hero-crest-frame">
+              <img
+                src="/kcc-logo.png"
+                alt="Kattankudy Central College Official Crest"
+                className="login-hero-crest-img"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
                 }}
-              >
-                <Sparkles size={11} />
-                Dev Mode
-              </span>
+              />
+            </div>
+            <h2 className="login-hero-school-name">{SCHOOL_PROFILE.name}</h2>
+            <div className="login-hero-school-tamil">{SCHOOL_PROFILE.nameTamil}</div>
+            <div className="login-hero-census-pill">
+              <span>{SCHOOL_PROFILE.type}</span>
+              <span className="pill-dot">•</span>
+              <span>Census No. {SCHOOL_PROFILE.censusNo}</span>
+            </div>
+          </div>
+
+          <div className="login-hero-highlights">
+            <div className="hero-feature-item">
+              <div className="hero-feature-icon">
+                <Shield size={18} />
+              </div>
+              <div className="hero-feature-text">
+                <div className="hero-feature-title">Separation of Duties & Governance</div>
+                <div className="hero-feature-desc">Principal executive oversight, Section Head moderation, and independent review.</div>
+              </div>
             </div>
 
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-              Click <strong>Fill</strong> to populate form fields, or <strong>Sign In ➔</strong> for instant 1-click authentication:
+            <div className="hero-feature-item">
+              <div className="hero-feature-icon">
+                <CalendarCheck2 size={18} />
+              </div>
+              <div className="hero-feature-text">
+                <div className="hero-feature-title">Daily Attendance & Roll-Call</div>
+                <div className="hero-feature-desc">Touch-friendly roll-call, absentee tracking directory, and offline sync.</div>
+              </div>
+            </div>
+
+            <div className="hero-feature-item">
+              <div className="hero-feature-icon">
+                <FileCheck2 size={18} />
+              </div>
+              <div className="hero-feature-text">
+                <div className="hero-feature-title">Marks Management & Official Reports</div>
+                <div className="hero-feature-desc">Dynamic scoring thresholds, sealed publications, and official report cards.</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="login-hero-footer">
+            <div className="login-hero-academic-pill">
+              <span className="live-status-dot" />
+              <span>Academic Year 2026 • Assessment Period</span>
+            </div>
+            <div className="login-hero-zone-text">
+              {SCHOOL_PROFILE.zone} Educational Zone • Eastern Province, Sri Lanka
+            </div>
+          </div>
+        </aside>
+
+        {/* Right Authentication Card */}
+        <main className="login-card-container card">
+          {/* Brand & Portal Header */}
+          <header className="login-brand-header">
+            {/* Desktop Institution Context Pill */}
+            <div className="login-desktop-inst-pill">
+              <span className="inst-name-en">{SCHOOL_PROFILE.name}</span>
+              <span className="inst-dot">•</span>
+              <span className="inst-name-ta">{SCHOOL_PROFILE.nameTamil}</span>
+              <span className="inst-dot">•</span>
+              <span className="inst-census">Census No. {SCHOOL_PROFILE.censusNo}</span>
+            </div>
+
+            {/* Mobile Crest & Header */}
+            <div className="login-mobile-crest">
+              <img
+                src="/kcc-logo.png"
+                alt="Kattankudy Central College Official Crest"
+                className="login-mobile-crest-img"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+
+            <h1 className="login-school-title">
+              <span className="desktop-title">Academic Portal Sign In</span>
+              <span className="mobile-title">{SCHOOL_PROFILE.name}</span>
+            </h1>
+
+            <div className="login-tamil-title mobile-only">
+              {SCHOOL_PROFILE.nameTamil}
+            </div>
+
+            <p className="login-census-subtitle">
+              <span className="desktop-desc">Authoritative operations portal for executive leadership, sectional heads, and faculty.</span>
+              <span className="mobile-desc">{SCHOOL_PROFILE.secondaryTitle} • Census No. {SCHOOL_PROFILE.censusNo}</span>
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {DEMO_ACCOUNTS.map((acc) => {
-                const IconComponent = acc.icon;
-                return (
-                  <div key={acc.username} className="demo-account-card">
-                    <div className="demo-card-top">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: 'var(--radius-sm)',
-                            background: acc.bgColor,
-                            color: acc.color,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                          }}
-                        >
-                          <IconComponent size={16} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                            {acc.roleTitle}
-                          </div>
-                          <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
-                            {acc.name}
-                          </div>
-                        </div>
-                      </div>
-
-                      <span
-                        className="demo-role-badge"
-                        style={{
-                          background: acc.bgColor,
-                          color: acc.color,
-                          border: `1px solid ${acc.borderColor}`
-                        }}
-                      >
-                        {acc.roleTag}
-                      </span>
-                    </div>
-
-                    <div className="demo-creds-box">
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>Username:</span>
-                        <code style={{ fontWeight: 700, color: 'var(--text-main)' }}>{acc.username}</code>
-                      </div>
-                      <span style={{ color: 'var(--border-color)' }}>|</span>
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>Password:</span>
-                        <code style={{ fontWeight: 700, color: 'var(--text-main)' }}>{acc.password}</code>
-                      </div>
-                    </div>
-
-                    <div className="demo-scope-text">
-                      Scope: {acc.scope}
-                    </div>
-
-                    <div className="demo-actions-row">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        fullWidth
-                        onClick={() => handleFillCredentials(acc.username, acc.password, acc.roleTitle)}
-                        leftIcon={<ClipboardCheck size={14} />}
-                      >
-                        Fill Form
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="primary"
-                        size="sm"
-                        fullWidth
-                        onClick={() => handleQuickDemo(acc.username, acc.password)}
-                        rightIcon={<ArrowRight size={14} />}
-                      >
-                        Sign In ➔
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="login-system-pill">
+              <span className="system-pill-dot" />
+              <span>{SCHOOL_PROFILE.systemTitle}</span>
             </div>
-          </section>
-        )}
+          </header>
 
-        {/* Institutional Profile Reference Footer */}
-        <footer className="login-profile-footer">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: 'var(--text-main)', fontWeight: 600 }}>
-            <Info size={13} style={{ color: 'var(--primary)' }} />
-            <span>Institutional Profile Reference</span>
-          </div>
-          <div>
-            <strong>Principal:</strong> {SCHOOL_PROFILE.principalName}
-          </div>
-          <div>
-            <strong>Zone & Division:</strong> {SCHOOL_PROFILE.zone} • {SCHOOL_PROFILE.division}
-          </div>
-          <div>
-            <strong>Classification:</strong> {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo}) • {SCHOOL_PROFILE.studentCategory} (Grades 6–13)
-          </div>
-          <div style={{ marginTop: '0.35rem', color: 'var(--accent)', fontWeight: 600 }}>
-            {SCHOOL_PROFILE.demoResultNotice}
-          </div>
-        </footer>
+          {/* Error Feedback */}
+          {error && (
+            <div className="login-alert-banner login-alert--error" role="alert">
+              <AlertCircle size={18} aria-hidden="true" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Credential Fill Confirmation */}
+          {filledFeedback && (
+            <div className="login-alert-banner login-alert--success" role="status">
+              <CheckCircle2 size={18} aria-hidden="true" />
+              <span>{filledFeedback}</span>
+            </div>
+          )}
+
+          {/* Form Container */}
+          <form onSubmit={handleSubmit} className="login-form">
+            <Input
+              label="Username or Academic ID"
+              name="username"
+              type="text"
+              placeholder="e.g. admin or teacher_nimali"
+              required
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              leftIcon={<User size={18} />}
+            />
+
+            <Input
+              label="Password"
+              name="password"
+              type="password"
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              leftIcon={<Lock size={18} />}
+              showPasswordToggle
+            />
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              fullWidth
+              isLoading={loading}
+              className="login-submit-btn"
+              leftIcon={<LogIn size={18} />}
+            >
+              Sign In to Portal
+            </Button>
+          </form>
+
+          {/* Development & Testing Credentials Panel */}
+          {isDemoEnabled && (
+            <section className="demo-accounts-panel" aria-label="Development Demo Accounts">
+              <div className="demo-panel-header">
+                <div className="demo-panel-title">
+                  <KeyRound size={16} />
+                  <span>Testing & Demo Accounts</span>
+                </div>
+                <span className="badge badge-dev-pill">
+                  <Sparkles size={11} />
+                  Dev Mode
+                </span>
+              </div>
+
+              <p className="demo-panel-description">
+                Click <strong>Fill</strong> to populate form fields, or <strong>Sign In ➔</strong> for instant 1-click authentication:
+              </p>
+
+              <div className="demo-accounts-grid">
+                {DEMO_ACCOUNTS.map((acc, index) => {
+                  const IconComponent = acc.icon;
+                  const isLastOdd = index === DEMO_ACCOUNTS.length - 1 && DEMO_ACCOUNTS.length % 2 !== 0;
+                  return (
+                    <div
+                      key={acc.username}
+                      className={`demo-account-card ${isLastOdd ? 'demo-card-full-span' : ''}`}
+                    >
+                      <div className="demo-card-main-content">
+                        <div className="demo-card-header">
+                          <div className="demo-card-identity">
+                            <div
+                              className="demo-card-icon"
+                              style={{ background: acc.bgColor, color: acc.color }}
+                            >
+                              <IconComponent size={14} />
+                            </div>
+                            <div className="demo-card-text-col">
+                              <div className="demo-card-role-title" title={acc.roleTitle}>
+                                {acc.roleTitle}
+                              </div>
+                              <div className="demo-card-creds">
+                                <code>{acc.username}</code> <span className="creds-sep">/</span> <code>{acc.password}</code>
+                              </div>
+                            </div>
+                          </div>
+
+                          <span
+                            className="demo-role-badge"
+                            style={{
+                              background: acc.bgColor,
+                              color: acc.color,
+                              borderColor: acc.borderColor
+                            }}
+                          >
+                            {acc.roleTag}
+                          </span>
+                        </div>
+
+                        <div className="demo-scope-text" title={acc.scope}>
+                          Scope: {acc.scope}
+                        </div>
+                      </div>
+
+                      <div className="demo-actions-row">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          fullWidth
+                          onClick={() => handleFillCredentials(acc.username, acc.password, acc.roleTitle)}
+                          leftIcon={<ClipboardCheck size={13} />}
+                        >
+                          Fill Form
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          fullWidth
+                          onClick={() => handleQuickDemo(acc.username, acc.password)}
+                          rightIcon={<ArrowRight size={13} />}
+                        >
+                          Sign In ➔
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Institutional Profile Reference Footer */}
+          <footer className="login-profile-footer">
+            <div className="login-profile-footer-header">
+              <Info size={13} />
+              <span>Institutional Profile Reference</span>
+            </div>
+            <div className="login-profile-meta-grid">
+              <div><strong>Principal:</strong> {SCHOOL_PROFILE.principalName}</div>
+              <div><strong>Zone & Division:</strong> {SCHOOL_PROFILE.zone} • {SCHOOL_PROFILE.division}</div>
+              <div className="full-col">
+                <strong>Classification:</strong> {SCHOOL_PROFILE.type} (Census {SCHOOL_PROFILE.censusNo}) • {SCHOOL_PROFILE.studentCategory} (Grades 6–13)
+              </div>
+            </div>
+            <div className="login-demo-notice">
+              {SCHOOL_PROFILE.demoResultNotice}
+            </div>
+          </footer>
+        </main>
       </div>
     </div>
   );
