@@ -1,27 +1,28 @@
 /* ==========================================================================
-   SkoolSys Design System — Master Vanilla CSS
-   Adhering to ui-ux-pro-max: LMS / Academic Operations Dashboard
-   Dense / Dashboard Scale (Density 8/10), Touch Targets >=44px, WCAG AA Contrast
+   SkoolSys Design System — Master Vanilla CSS v2.0
+   Institutional Palette: Kattankudy Central College (Green #026536 & Gold #F1EF22)
+   WCAG 2.2 AA Contrast (>= 4.5:1 text, >= 3:1 controls), Touch Targets >=44px/48px
    ========================================================================== */
 
 :root {
-  /* Brand & Academic Palette (Deep Royal Indigo & Academic Teal) */
-  --primary: #4338ca;
-  --primary-hover: #3730a3;
-  --primary-light: #eef2ff;
-  --primary-glow: rgba(67, 56, 202, 0.22);
+  /* Brand & Institutional Palette (Green & Gold) */
+  --primary: #026536;
+  --primary-hover: #014d29;
+  --primary-light: #e8f5ee;
+  --primary-glow: rgba(2, 101, 54, 0.22);
   --on-primary: #ffffff;
 
-  --secondary: #0d9488;
-  --secondary-hover: #0f766e;
+  --secondary: #0f766e;
+  --secondary-hover: #115e59;
   --secondary-light: #f0fdfa;
   --on-secondary: #ffffff;
 
-  /* Accent & Distinction (Amber Gold) */
-  --accent: #d97706;
-  --accent-hover: #b45309;
-  --accent-light: #fffbeb;
-  --on-accent: #ffffff;
+  /* Accent & Distinction (School Gold / Amber) */
+  --accent: #d4c500;
+  --accent-gold: #f1ef22;
+  --accent-hover: #b8ab00;
+  --accent-light: #fffde6;
+  --on-accent: #172b22;
 
   /* Attendance & Status Semantics (High contrast >= 4.5:1) */
   --present: #059669;
@@ -44,35 +45,73 @@
   --excused-bg: #eff6ff;
   --excused-border: #bfdbfe;
 
+  /* Semantic Aliases */
+  --status-present: var(--present);
+  --status-present-hover: var(--present-hover);
+  --status-present-bg: var(--present-bg);
+  --status-present-border: var(--present-border);
+
+  --status-absent: var(--absent);
+  --status-absent-hover: var(--absent-hover);
+  --status-absent-bg: var(--absent-bg);
+  --status-absent-border: var(--absent-border);
+
+  --status-late: var(--late);
+  --status-late-hover: var(--late-hover);
+  --status-late-bg: var(--late-bg);
+  --status-late-border: var(--late-border);
+
+  --status-excused: var(--excused);
+  --status-excused-hover: var(--excused-hover);
+  --status-excused-bg: var(--excused-bg);
+  --status-excused-border: var(--excused-border);
+
+  /* Academic Grade Chip Tokens */
+  --grade-a: #059669;
+  --grade-a-bg: #ecfdf5;
+  --grade-b: #0284c7;
+  --grade-b-bg: #f0f9ff;
+  --grade-c: #2563eb;
+  --grade-c-bg: #eff6ff;
+  --grade-s: #d97706;
+  --grade-s-bg: #fffbeb;
+  --grade-f: #dc2626;
+  --grade-f-bg: #fef2f2;
+
   /* Backgrounds & Surfaces (Light Mode) */
-  --bg-app: #f8fafc;
+  --bg-app: #f8faf9;
   --bg-surface: #ffffff;
   --bg-surface-elevated: #ffffff;
-  --bg-subtle: #f1f5f9;
-  --border-color: #e2e8f0;
-  --border-focus: #4338ca;
+  --bg-subtle: #edf3f0;
+  --border-color: #d8e4dc;
+  --border-focus: #026536;
 
   /* Typography */
-  --text-main: #0f172a;
-  --text-muted: #64748b;
+  --text-main: #172b22;
+  --text-muted: #526e60;
   --text-inverse: #ffffff;
 
   /* Spacing Scale (Density 8/10 — Dashboard Scale) */
+  --space-2xs: 2px;
   --space-xs: 4px;
   --space-sm: 8px;
-  --space-md: 14px;
-  --space-lg: 20px;
-  --space-xl: 28px;
-  --space-2xl: 40px;
-  --space-3xl: 60px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
 
-  /* Shadows (Elevated and Soft) */
-  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
-  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
-  --shadow-glow: 0 0 20px rgba(67, 56, 202, 0.25);
+  /* Touch Target Standards */
+  --touch-target-min: 44px;
+  --touch-target-attendance: 48px;
+
+  /* Shadows (Elevated and Soft Institutional) */
+  --shadow-xs: 0 1px 2px 0 rgba(23, 43, 34, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(23, 43, 34, 0.08), 0 1px 2px -1px rgba(23, 43, 34, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(23, 43, 34, 0.08), 0 2px 4px -2px rgba(23, 43, 34, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(23, 43, 34, 0.08), 0 4px 6px -4px rgba(23, 43, 34, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(23, 43, 34, 0.10), 0 8px 10px -6px rgba(23, 43, 34, 0.04);
+  --shadow-glow: 0 0 20px rgba(2, 101, 54, 0.25);
 
   /* Radius */
   --radius-xs: 4px;
@@ -95,29 +134,30 @@
 
 /* Dark Theme Overrides */
 [data-theme='dark'] {
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --primary-light: rgba(99, 102, 241, 0.18);
-  --primary-glow: rgba(99, 102, 241, 0.35);
+  --primary: #10b981;
+  --primary-hover: #059669;
+  --primary-light: rgba(16, 185, 129, 0.18);
+  --primary-glow: rgba(16, 185, 129, 0.35);
 
   --secondary: #14b8a6;
   --secondary-hover: #2dd4bf;
   --secondary-light: rgba(20, 184, 166, 0.18);
 
-  --accent: #f59e0b;
+  --accent: #facc15;
+  --accent-gold: #fde047;
   --accent-hover: #fbbf24;
-  --accent-light: rgba(245, 158, 11, 0.18);
+  --accent-light: rgba(250, 204, 21, 0.18);
 
-  --bg-app: #0b0f19;
-  --bg-surface: #111827;
-  --bg-surface-elevated: #1e293b;
-  --bg-subtle: #172033;
-  --border-color: #1f293d;
-  --border-focus: #818cf8;
+  --bg-app: #0b130e;
+  --bg-surface: #121e17;
+  --bg-surface-elevated: #18281f;
+  --bg-subtle: #1c2e24;
+  --border-color: #22382c;
+  --border-focus: #34d399;
 
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-inverse: #0b0f19;
+  --text-main: #f0fdf4;
+  --text-muted: #8fa89b;
+  --text-inverse: #0b130e;
 
   --present: #10b981;
   --present-hover: #34d399;

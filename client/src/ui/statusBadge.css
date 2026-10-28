@@ -1,0 +1,168 @@
+/* ==========================================================================
+   SkoolSys UI Primitives: StatusBadge Styles
+   ========================================================================== */
+
+.sk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Sizing */
+.sk-badge--sm {
+  padding: 3px 8px;
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+
+.sk-badge--md {
+  padding: 5px 10px;
+  font-size: 0.75rem;
+}
+
+.sk-badge--lg {
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+}
+
+.sk-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* --- Attendance Status Variants --- */
+
+/* Present [P] */
+.sk-badge--present.sk-badge--subtle {
+  background-color: var(--status-present-bg);
+  color: var(--status-present);
+  border-color: var(--status-present-border);
+}
+.sk-badge--present.sk-badge--solid {
+  background-color: var(--status-present);
+  color: #ffffff;
+  border-color: var(--status-present);
+}
+
+/* Absent [A] */
+.sk-badge--absent.sk-badge--subtle {
+  background-color: var(--status-absent-bg);
+  color: var(--status-absent);
+  border-color: var(--status-absent-border);
+}
+.sk-badge--absent.sk-badge--solid {
+  background-color: var(--status-absent);
+  color: #ffffff;
+  border-color: var(--status-absent);
+}
+
+/* Late [L] */
+.sk-badge--late.sk-badge--subtle {
+  background-color: var(--status-late-bg);
+  color: var(--status-late);
+  border-color: var(--status-late-border);
+}
+.sk-badge--late.sk-badge--solid {
+  background-color: var(--status-late);
+  color: #ffffff;
+  border-color: var(--status-late);
+}
+
+/* Excused [E] */
+.sk-badge--excused.sk-badge--subtle {
+  background-color: var(--status-excused-bg);
+  color: var(--status-excused);
+  border-color: var(--status-excused-border);
+}
+.sk-badge--excused.sk-badge--solid {
+  background-color: var(--status-excused);
+  color: #ffffff;
+  border-color: var(--status-excused);
+}
+
+/* --- Academic Grade Chips --- */
+.sk-badge--grade-a {
+  background-color: var(--grade-a-bg);
+  color: var(--grade-a);
+  border-color: #a7f3d0;
+}
+.sk-badge--grade-b {
+  background-color: var(--grade-b-bg);
+  color: var(--grade-b);
+  border-color: #bae6fd;
+}
+.sk-badge--grade-c {
+  background-color: var(--grade-c-bg);
+  color: var(--grade-c);
+  border-color: #bfdbfe;
+}
+.sk-badge--grade-s {
+  background-color: var(--grade-s-bg);
+  color: var(--grade-s);
+  border-color: #fde68a;
+}
+.sk-badge--grade-f {
+  background-color: var(--grade-f-bg);
+  color: var(--grade-f);
+  border-color: #fecaca;
+}
+
+/* --- Workflow & Sync Statuses --- */
+.sk-badge--draft {
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+
+.sk-badge--pending {
+  background-color: var(--status-late-bg);
+  color: var(--status-late);
+  border-color: var(--status-late-border);
+}
+
+.sk-badge--syncing {
+  background-color: #f0fdfa;
+  color: #0f766e;
+  border-color: #99f6e4;
+}
+
+.sk-badge--synced,
+.sk-badge--submitted {
+  background-color: var(--status-present-bg);
+  color: var(--status-present);
+  border-color: var(--status-present-border);
+}
+
+.sk-badge--published {
+  background-color: var(--primary-light);
+  color: var(--primary);
+  border-color: #bbf7d0;
+  font-weight: 700;
+}
+
+.sk-badge--conflicted {
+  background-color: var(--status-absent-bg);
+  color: var(--status-absent);
+  border-color: var(--status-absent-border);
+  animation: sk-pulse 2s infinite ease-in-out;
+}
+
+@keyframes sk-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-badge--conflicted {
+    animation: none;
+  }
+}

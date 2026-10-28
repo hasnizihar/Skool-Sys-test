@@ -11,7 +11,8 @@ import {
   Moon,
   Sun,
   School,
-  X
+  X,
+  Sparkles
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -154,6 +155,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <History size={18} />
                 <span>Audit Trail</span>
+              </button>
+
+              <button
+                className={`nav-item ${currentTab === 'design-system' ? 'active' : ''}`}
+                onClick={() => handleNav('design-system')}
+                aria-current={currentTab === 'design-system' ? 'page' : undefined}
+              >
+                <Sparkles size={18} />
+                <span>UI Primitives Preview</span>
               </button>
             </>
           )}
