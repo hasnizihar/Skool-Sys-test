@@ -11,10 +11,11 @@ import {
   UserCheck
 } from 'lucide-react';
 import { api } from '../api/client';
+import { getColomboCivilDate } from '../utils/dateUtils';
 
 export const AttendanceReports: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-17');
+  const [selectedDate, setSelectedDate] = useState<string>(getColomboCivilDate());
 
   // Daily Report State
   const [dailyData, setDailyData] = useState<any | null>(null);
@@ -86,18 +87,24 @@ export const AttendanceReports: React.FC = () => {
   let totalPresent = 0;
   let totalAbsent = 0;
   let totalLate = 0;
+  let recordedSessions = 0;
 
   if (dailyData?.classes) {
     dailyData.classes.forEach((c: any) => {
       totalEnrolled += Number(c.enrolled_count || 0);
-      totalPresent += Number(c.present_count || 0);
-      totalAbsent += Number(c.absent_count || 0);
-      totalLate += Number(c.late_count || 0);
+      if (c.session_id) {
+        recordedSessions++;
+        totalPresent += Number(c.present_count || 0);
+        totalAbsent += Number(c.absent_count || 0);
+        totalLate += Number(c.late_count || 0);
+      }
     });
   }
 
   const schoolPercentage =
-    totalEnrolled > 0 ? Math.round(((totalPresent + totalLate) / totalEnrolled) * 100) : 0;
+    recordedSessions > 0 && totalEnrolled > 0
+      ? Math.round(((totalPresent + totalLate) / totalEnrolled) * 100)
+      : null;
 
   return (
     <div>
@@ -166,7 +173,9 @@ export const AttendanceReports: React.FC = () => {
                 <CheckCircle size={24} />
               </div>
               <div>
-                <div className="stat-val">{schoolPercentage}%</div>
+                <div className="stat-val" style={{ fontSize: schoolPercentage !== null ? undefined : '1.35rem' }}>
+                  {schoolPercentage !== null ? `${schoolPercentage}%` : 'Not Recorded'}
+                </div>
                 <div className="stat-label">Overall Attendance</div>
               </div>
             </div>

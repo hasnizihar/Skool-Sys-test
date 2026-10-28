@@ -1,0 +1,73 @@
+name: SkoolSys 2.0 CI - PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - 'feature/**'
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Safety Baseline & Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x, 24.x]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install Server Dependencies
+        run: npm --prefix server ci || npm --prefix server install
+
+      - name: Install Client Dependencies
+        run: npm --prefix client ci || npm --prefix client install
+
+      - name: Run Client Lint Checks
+        run: npm run lint
+
+      - name: Run Server Type Check
+        run: npm run typecheck
+
+      - name: Run Isolated Automated Test Suite
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-isolated-synthetic-test-key-32chars-min!
+        run: npm test
+
+      - name: Build Backend (TypeScript compile)
+        run: npm run build:server
+
+      - name: Build Frontend (Vite production bundle)
+        run: npm run build:client
+
+      - name: Install Playwright Chromium Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Genuine Browser E2E Test Suite
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-isolated-synthetic-test-key-32chars-min!
+        run: npm run test:browser

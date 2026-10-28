@@ -6,6 +6,13 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/helpers/run_backend.ts",
+    "test:browser": "tsx --test test/attendance_browser_real.test.ts test/examination_browser_real.test.ts test/principal_walkthrough_browser_real.test.ts",
+    "test:browser:attendance": "tsx --test test/attendance_browser_real.test.ts",
+    "test:browser:exam": "tsx --test test/examination_browser_real.test.ts",
+    "test:browser:walkthrough": "tsx --test test/principal_walkthrough_browser_real.test.ts",
+    "test:all": "tsx --test test/**/*.test.ts",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts"
   },
@@ -22,6 +29,7 @@
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.2",
+    "playwright": "^1.64.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

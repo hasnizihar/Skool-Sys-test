@@ -1,249 +1,240 @@
 import { Router } from 'express';
 import { db } from '../db/database.js';
-import { requireAuth, getUserAssignments } from '../middleware/auth.js';
-import { logAudit } from '../utils/audit.js';
+import {
+  requireAuth,
+  getUserAssignments,
+  canManageClassAttendance,
+  canViewClassAttendance
+} from '../middleware/auth.js';
+import { getColomboCivilDate, isValidCivilDate } from '../utils/dateUtils.js';
+import {
+  validateAttendancePayload,
+  createProblemDetails
+} from '../validation/attendanceValidation.js';
+import {
+  processAttendanceSubmission,
+  processSyncBatch,
+  getAttendanceSessionWithRoster,
+  AttendanceServiceError
+} from '../services/attendanceService.js';
 
 const router = Router();
 
-// Check if user is authorized to manage attendance for this class
-function canManageAttendance(user: any, classId: number): boolean {
-  if (user.role === 'admin') return true;
-  if (user.role === 'class_teacher') {
-    const assignments = getUserAssignments(user.id);
-    return assignments.assignedClassIds.includes(Number(classId));
-  }
-  return false;
-}
-
-// Get Attendance Session for a Class and Date
+// ============================================================================
+// GET /api/attendance/session
+// Retrieve attendance session details, current roster, and historical records
+// ============================================================================
 router.get('/session', requireAuth, (req, res) => {
   const { classId, date } = req.query;
 
   if (!classId || !date) {
-    res.status(400).json({ error: 'classId and date (YYYY-MM-DD) are required.' });
+    res.status(400).json(
+      createProblemDetails(
+        400,
+        'MISSING_REQUIRED_PARAMETERS',
+        'Missing Parameters',
+        'Both classId and date (YYYY-MM-DD) are required.',
+        '/api/attendance/session'
+      )
+    );
     return;
   }
 
   const cId = Number(classId);
   const dt = String(date);
 
-  const session = db.prepare(`
-    SELECT s.*, u.full_name as taken_by_name, c.name as class_name, c.grade
-    FROM attendance_sessions s
-    JOIN classes c ON s.class_id = c.id
-    LEFT JOIN users u ON s.taken_by_user_id = u.id
-    WHERE s.class_id = ? AND s.date = ?
-  `).get(cId, dt) as any;
+  if (isNaN(cId) || cId <= 0) {
+    res.status(400).json(
+      createProblemDetails(
+        400,
+        'INVALID_CLASS_ID',
+        'Invalid Class ID',
+        'classId must be a positive integer.',
+        '/api/attendance/session'
+      )
+    );
+    return;
+  }
 
-  // Fetch class roster
-  const students = db.prepare(`
-    SELECT s.id as student_id, s.admission_no, s.full_name, s.calling_name, s.gender, s.guardian_phone,
-           e.roll_number,
-           ar.status as attendance_status, ar.remarks as attendance_remarks, ar.id as record_id
-    FROM enrollments e
-    JOIN students s ON e.student_id = s.id
-    LEFT JOIN attendance_records ar ON ar.student_id = s.id AND ar.session_id = ?
-    WHERE e.class_id = ? AND e.status = 'enrolled'
-    ORDER BY e.roll_number ASC, s.admission_no ASC
-  `).all(session ? session.id : null, cId) as any[];
+  if (!isValidCivilDate(dt)) {
+    res.status(400).json(
+      createProblemDetails(
+        400,
+        'INVALID_CIVIL_DATE',
+        'Invalid Civil Date',
+        `The date '${dt}' is not a valid Gregorian calendar date in Asia/Colombo.`,
+        '/api/attendance/session'
+      )
+    );
+    return;
+  }
 
-  // Calculate summary counts
-  let presentCount = 0;
-  let absentCount = 0;
-  let lateCount = 0;
-  let excusedCount = 0;
-  let unmarkedCount = 0;
+  // Record-level permission check: must be admin or assigned to this class
+  if (!canViewClassAttendance(req.user!, cId)) {
+    res.status(403).json(
+      createProblemDetails(
+        403,
+        'FORBIDDEN_CLASS_VIEW',
+        'Forbidden',
+        'Access denied. You are not assigned to view attendance for this class.',
+        '/api/attendance/session'
+      )
+    );
+    return;
+  }
 
-  students.forEach(st => {
-    if (st.attendance_status === 'present') presentCount++;
-    else if (st.attendance_status === 'absent') absentCount++;
-    else if (st.attendance_status === 'late') lateCount++;
-    else if (st.attendance_status === 'excused') excusedCount++;
-    else unmarkedCount++;
-  });
-
-  res.json({
-    session: session || null,
-    students,
-    summary: {
-      total: students.length,
-      present: presentCount,
-      absent: absentCount,
-      late: lateCount,
-      excused: excusedCount,
-      unmarked: unmarkedCount,
-      attendanceRate: students.length > 0 ? Math.round(((presentCount + lateCount) / students.length) * 100) : 0
+  try {
+    const result = getAttendanceSessionWithRoster(db, req.user!, cId, dt);
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof AttendanceServiceError) {
+      res.status(err.problemDetails.status).json(err.problemDetails);
+    } else {
+      res.status(500).json(
+        createProblemDetails(
+          500,
+          'INTERNAL_ERROR',
+          'Internal Server Error',
+          err.message || 'Failed to retrieve attendance session.',
+          '/api/attendance/session'
+        )
+      );
     }
-  });
+  }
 });
 
-// Save or Update Daily Attendance Session
+// ============================================================================
+// POST /api/attendance/session
+// Save draft or submit finalized daily attendance register
+// ============================================================================
 router.post('/session', requireAuth, (req, res) => {
-  const { classId, date, records, notes, status } = req.body;
-  const user = req.user!;
+  const classId = Number(req.body?.classId);
 
-  if (!classId || !date || !Array.isArray(records)) {
-    res.status(400).json({ error: 'Missing classId, date, or records.' });
+  // Authorization check: must be assigned class teacher or admin
+  if (isNaN(classId) || !canManageClassAttendance(req.user!, classId)) {
+    res.status(403).json({
+      error: 'Access denied. You are not assigned as the class teacher for this class.',
+      ...createProblemDetails(
+        403,
+        'UNASSIGNED_CLASS_TEACHER',
+        'Unassigned Class Teacher',
+        'Access denied. You are not assigned as the class teacher for this class.',
+        '/api/attendance/session'
+      )
+    });
     return;
   }
 
-  const cId = Number(classId);
-  const dt = String(date);
-
-  // Check authorization
-  if (!canManageAttendance(user, cId)) {
-    res.status(403).json({ error: 'You are not assigned as the class teacher for this class.' });
+  const validation = validateAttendancePayload(req.body, '/api/attendance/session');
+  if (!validation.valid) {
+    res.status(validation.error!.status).json(validation.error);
     return;
   }
 
-  const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
+  const payload = validation.payload!;
 
-  // Find or create session
-  let existingSession = db.prepare('SELECT id FROM attendance_sessions WHERE class_id = ? AND date = ?').get(cId, dt) as any;
-  let sessionId: number;
-
-  if (existingSession) {
-    sessionId = existingSession.id;
-    db.prepare(`
-      UPDATE attendance_sessions SET
-        status = ?, notes = ?, taken_by_user_id = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(status || 'submitted', notes || null, user.id, sessionId);
-  } else {
-    const uuid = `sess-${cId}-${dt}-${Date.now()}`;
-    const insertSession = db.prepare(`
-      INSERT INTO attendance_sessions (uuid, class_id, date, academic_year_id, taken_by_user_id, status, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    const sResult = insertSession.run(uuid, cId, dt, currentYear?.id || null, user.id, status || 'submitted', notes || null);
-    sessionId = Number(sResult.lastInsertRowid);
-  }
-
-  // Upsert records
-  const upsertRecord = db.prepare(`
-    INSERT INTO attendance_records (session_id, student_id, status, remarks, synced_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(session_id, student_id) DO UPDATE SET
-      status = excluded.status,
-      remarks = excluded.remarks,
-      synced_at = datetime('now')
-  `);
-
-  for (const rec of records) {
-    const stStatus = ['present', 'absent', 'late', 'excused'].includes(rec.status) ? rec.status : 'present';
-    upsertRecord.run(sessionId, Number(rec.student_id), stStatus, rec.remarks || null);
-  }
-
-  logAudit(user.id, user.username, 'ATTENDANCE_SUBMIT', 'attendance_sessions', sessionId, { classId: cId, date: dt, recordCount: records.length }, req.ip);
-
-  res.json({
-    success: true,
-    sessionId,
-    message: `Attendance register for ${dt} saved successfully with ${records.length} records.`
-  });
-});
-
-// Offline Sync Endpoint: Batched sync from IndexedDB
-router.post('/sync', requireAuth, (req, res) => {
-  const { queue } = req.body;
-  const user = req.user!;
-
-  if (!Array.isArray(queue) || queue.length === 0) {
-    res.json({ success: true, synced: 0, message: 'Nothing to sync.' });
-    return;
-  }
-
-  const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
-  const syncedSessions: any[] = [];
-  const errors: any[] = [];
-
-  for (const item of queue) {
-    try {
-      const cId = Number(item.classId);
-      const dt = String(item.date);
-
-      if (!canManageAttendance(user, cId)) {
-        errors.push({ id: item.id, error: `Unauthorized for class ${cId}` });
-        continue;
-      }
-
-      // Check existing session
-      let session = db.prepare('SELECT id FROM attendance_sessions WHERE class_id = ? AND date = ?').get(cId, dt) as any;
-      let sessionId: number;
-
-      if (session) {
-        sessionId = session.id;
-        db.prepare(`
-          UPDATE attendance_sessions SET
-            notes = ?, updated_at = datetime('now')
-          WHERE id = ?
-        `).run(item.notes || null, sessionId);
-      } else {
-        const uuid = item.uuid || `sync-${cId}-${dt}-${Date.now()}`;
-        const sRes = db.prepare(`
-          INSERT INTO attendance_sessions (uuid, class_id, date, academic_year_id, taken_by_user_id, status, notes)
-          VALUES (?, ?, ?, ?, ?, 'submitted', ?)
-        `).run(uuid, cId, dt, currentYear?.id || null, user.id, item.notes || 'Offline synced');
-        sessionId = Number(sRes.lastInsertRowid);
-      }
-
-      // Upsert records
-      const upsert = db.prepare(`
-        INSERT INTO attendance_records (session_id, student_id, status, remarks, synced_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(session_id, student_id) DO UPDATE SET
-          status = excluded.status,
-          remarks = excluded.remarks,
-          synced_at = datetime('now')
-      `);
-
-      if (Array.isArray(item.records)) {
-        for (const r of item.records) {
-          upsert.run(sessionId, Number(r.student_id), r.status || 'present', r.remarks || null);
-        }
-      }
-
-      syncedSessions.push({
-        id: item.id,
-        sessionId,
-        classId: cId,
-        date: dt,
-        recordsCount: item.records?.length || 0,
-        syncedAt: new Date().toISOString()
-      });
-    } catch (err: any) {
-      errors.push({ id: item.id, error: err.message });
+  try {
+    const result = processAttendanceSubmission(
+      db,
+      req.user!,
+      payload,
+      req.ip || '127.0.0.1'
+    );
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof AttendanceServiceError) {
+      res.status(err.problemDetails.status).json(err.problemDetails);
+    } else {
+      res.status(500).json(
+        createProblemDetails(
+          500,
+          'INTERNAL_ERROR',
+          'Internal Server Error',
+          err.message || 'Failed to submit attendance.',
+          '/api/attendance/session'
+        )
+      );
     }
   }
-
-  logAudit(user.id, user.username, 'ATTENDANCE_OFFLINE_SYNC', 'attendance_sessions', null, { syncedCount: syncedSessions.length, errorCount: errors.length }, req.ip);
-
-  res.json({
-    success: true,
-    syncedCount: syncedSessions.length,
-    syncedSessions,
-    errors
-  });
 });
 
-// Daily Attendance Report (Summary of all classes for date)
+// ============================================================================
+// POST /api/attendance/sync
+// Batched offline synchronization endpoint with per-item atomicity
+// ============================================================================
+router.post('/sync', requireAuth, (req, res) => {
+  const queue = Array.isArray(req.body?.queue)
+    ? req.body.queue
+    : Array.isArray(req.body)
+    ? req.body
+    : [];
+
+  if (queue.length === 0) {
+    res.json({
+      success: true,
+      processedCount: 0,
+      results: [],
+      message: 'Empty sync queue received.'
+    });
+    return;
+  }
+
+  try {
+    const result = processSyncBatch(
+      db,
+      req.user!,
+      queue,
+      req.ip || '127.0.0.1'
+    );
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json(
+      createProblemDetails(
+        500,
+        'INTERNAL_ERROR',
+        'Sync Batch Processing Error',
+        err.message || 'Failed to process offline sync batch.',
+        '/api/attendance/sync'
+      )
+    );
+  }
+});
+
+// ============================================================================
+// GET /api/attendance/reports/daily
+// Summary of all classes for a specific date
+// ============================================================================
 router.get('/reports/daily', requireAuth, (req, res) => {
   const { date } = req.query;
-  const dt = (date as string) || new Date().toISOString().split('T')[0];
+  const dt = (date as string) || getColomboCivilDate();
+
+  if (!isValidCivilDate(dt)) {
+    res.status(400).json(
+      createProblemDetails(
+        400,
+        'INVALID_CIVIL_DATE',
+        'Invalid Civil Date',
+        `The date '${dt}' is not a valid Gregorian calendar date in Asia/Colombo.`,
+        '/api/attendance/reports/daily'
+      )
+    );
+    return;
+  }
 
   const classSummaries = db.prepare(`
     SELECT 
       c.id as class_id, c.name as class_name, c.grade,
       u.full_name as class_teacher_name,
       sess.id as session_id, sess.status as session_status, sess.updated_at as submitted_at,
-      COUNT(e.student_id) as enrolled_count,
-      SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) as present_count,
-      SUM(CASE WHEN ar.status = 'absent' THEN 1 ELSE 0 END) as absent_count,
-      SUM(CASE WHEN ar.status = 'late' THEN 1 ELSE 0 END) as late_count,
-      SUM(CASE WHEN ar.status = 'excused' THEN 1 ELSE 0 END) as excused_count
+      COUNT(DISTINCT CASE WHEN e.status = 'enrolled' AND s.status = 'Active' THEN e.student_id END) as enrolled_count,
+      COUNT(DISTINCT CASE WHEN ar.status = 'present' THEN ar.student_id END) as present_count,
+      COUNT(DISTINCT CASE WHEN ar.status = 'absent' THEN ar.student_id END) as absent_count,
+      COUNT(DISTINCT CASE WHEN ar.status = 'late' THEN ar.student_id END) as late_count,
+      COUNT(DISTINCT CASE WHEN ar.status = 'excused' THEN ar.student_id END) as excused_count
     FROM classes c
     LEFT JOIN users u ON c.class_teacher_id = u.id
-    LEFT JOIN enrollments e ON e.class_id = c.id AND e.status = 'enrolled'
+    LEFT JOIN enrollments e ON e.class_id = c.id AND e.academic_year_id = c.academic_year_id AND e.status = 'enrolled'
+    LEFT JOIN students s ON e.student_id = s.id AND s.status = 'Active'
     LEFT JOIN attendance_sessions sess ON sess.class_id = c.id AND sess.date = ?
     LEFT JOIN attendance_records ar ON ar.session_id = sess.id AND ar.student_id = e.student_id
     GROUP BY c.id
@@ -263,40 +254,99 @@ router.get('/reports/daily', requireAuth, (req, res) => {
     ORDER BY c.grade ASC, c.name ASC, s.admission_no ASC
   `).all(dt);
 
+  let classes = classSummaries;
+  let absents = absentStudents;
+
+  // Record-level permission check: non-admin teachers only see reports for their assigned classes
+  if (req.user!.role !== 'admin') {
+    const assignments = getUserAssignments(req.user!.id);
+    const allowed = new Set(assignments.assignedClassIds);
+    classes = classSummaries.filter((c: any) => allowed.has(Number(c.class_id)));
+    const classMap = new Map<string, number>();
+    classSummaries.forEach((c: any) => classMap.set(c.class_name, Number(c.class_id)));
+    absents = absentStudents.filter((st: any) => {
+      const cid = classMap.get(st.class_name);
+      return cid ? allowed.has(cid) : false;
+    });
+  }
+
   res.json({
     date: dt,
-    classes: classSummaries,
-    absentStudents
+    classes,
+    absentStudents: absents
   });
 });
 
+// ============================================================================
+// GET /api/attendance/reports/monthly
 // Monthly Attendance Grid Report for a Class
+// ============================================================================
 router.get('/reports/monthly', requireAuth, (req, res) => {
   const { classId, year, month } = req.query;
 
   if (!classId || !year || !month) {
-    res.status(400).json({ error: 'classId, year, and month are required.' });
+    res.status(400).json(
+      createProblemDetails(
+        400,
+        'MISSING_REQUIRED_PARAMETERS',
+        'Missing Parameters',
+        'classId, year, and month are required.',
+        '/api/attendance/reports/monthly'
+      )
+    );
     return;
   }
 
   const cId = Number(classId);
   const y = Number(year);
-  const m = Number(month); // 1-12
+  const m = Number(month);
+
+  if (isNaN(cId) || isNaN(y) || isNaN(m) || m < 1 || m > 12) {
+    res.status(400).json(
+      createProblemDetails(
+        400,
+        'INVALID_PARAMETERS',
+        'Invalid Parameters',
+        'Invalid classId, year, or month parameters.',
+        '/api/attendance/reports/monthly'
+      )
+    );
+    return;
+  }
+
+  // Record-level permission check: must be admin or assigned to this class
+  if (!canViewClassAttendance(req.user!, cId)) {
+    res.status(403).json(
+      createProblemDetails(
+        403,
+        'FORBIDDEN_CLASS_VIEW',
+        'Forbidden',
+        'Access denied. You are not assigned to view attendance for this class.',
+        '/api/attendance/reports/monthly'
+      )
+    );
+    return;
+  }
+
+  const classRow = db.prepare('SELECT academic_year_id FROM classes WHERE id = ?').get(cId) as
+    | { academic_year_id: number | null }
+    | undefined;
+
   const monthStr = m < 10 ? `0${m}` : `${m}`;
   const datePrefix = `${y}-${monthStr}%`;
 
-  // Get enrolled students
+  // Get active enrolled students
   const students = db.prepare(`
     SELECT s.id, s.admission_no, s.full_name, e.roll_number
     FROM enrollments e
     JOIN students s ON e.student_id = s.id
-    WHERE e.class_id = ? AND e.status = 'enrolled'
+    WHERE e.class_id = ? AND e.academic_year_id = ? AND e.status = 'enrolled' AND s.status = 'Active'
     ORDER BY e.roll_number ASC, s.admission_no ASC
-  `).all(cId) as any[];
+  `).all(cId, classRow?.academic_year_id || 1) as any[];
 
   // Get all attendance sessions in this month
   const sessions = db.prepare(`
-    SELECT id, date, status
+    SELECT id, date, status, revision
     FROM attendance_sessions
     WHERE class_id = ? AND date LIKE ?
     ORDER BY date ASC
@@ -311,11 +361,11 @@ router.get('/reports/monthly', requireAuth, (req, res) => {
   `).all(cId, datePrefix) as any[];
 
   const studentMap: Record<number, Record<string, string>> = {};
-  students.forEach(st => {
+  students.forEach((st) => {
     studentMap[st.id] = {};
   });
 
-  records.forEach(r => {
+  records.forEach((r: any) => {
     if (studentMap[r.student_id]) {
       studentMap[r.student_id][r.date] = r.status;
     }

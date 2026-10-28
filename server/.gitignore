@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+skoolsys.db*
+test_*.db*
+.env
+.env.*
+!.env.example
+*.log

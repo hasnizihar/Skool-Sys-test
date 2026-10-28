@@ -4,6 +4,12 @@ import { db } from '../db/database.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 import { runSeed } from '../db/seed.js';
+import {
+  grantAcademicAuthorization,
+  revokeAcademicAuthorization,
+  AcademicAuthRole,
+  GradeBand
+} from '../services/academicAuthorizationService.js';
 
 const router = Router();
 
@@ -20,12 +26,36 @@ router.get('/users', (req, res) => {
   res.json({ users });
 });
 
+/**
+ * Institutional Password Policy Validator
+ * Enforces minimum 8 characters with both letters and numbers.
+ */
+export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, error: 'Password is required.' };
+  }
+  if (password.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters long.' };
+  }
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+    return { valid: false, error: 'Password must contain both letters and numbers for institutional security.' };
+  }
+  return { valid: true };
+}
+
 // Create User
 router.post('/users', (req, res) => {
   const { username, email, password, full_name, role } = req.body;
 
   if (!username || !email || !password || !full_name || !role) {
     res.status(400).json({ error: 'All user fields are required.' });
+    return;
+  }
+
+  // Enforce institutional password policy
+  const passCheck = validatePasswordStrength(password);
+  if (!passCheck.valid) {
+    res.status(400).json({ error: passCheck.error });
     return;
   }
 
@@ -39,8 +69,8 @@ router.post('/users', (req, res) => {
   const hash = bcrypt.hashSync(password, salt);
 
   const stmt = db.prepare(`
-    INSERT INTO users (username, email, password_hash, full_name, role)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO users (username, email, password_hash, full_name, role, token_version)
+    VALUES (?, ?, ?, ?, ?, 1)
   `);
 
   const result = stmt.run(username, email, hash, full_name, role);
@@ -63,14 +93,21 @@ router.put('/users/:id', (req, res) => {
   }
 
   let passHash = current.password_hash;
-  if (newPassword && newPassword.trim().length >= 6) {
+  if (newPassword) {
+    const passCheck = validatePasswordStrength(newPassword);
+    if (!passCheck.valid) {
+      res.status(400).json({ error: passCheck.error });
+      return;
+    }
     const salt = bcrypt.genSaltSync(10);
     passHash = bcrypt.hashSync(newPassword, salt);
   }
 
+  // Increment token_version whenever account is modified or deactivated to invalidate existing tokens
   const update = db.prepare(`
     UPDATE users SET
-      full_name = ?, email = ?, role = ?, is_active = ?, password_hash = ?
+      full_name = ?, email = ?, role = ?, is_active = ?, password_hash = ?,
+      token_version = COALESCE(token_version, 1) + 1
     WHERE id = ?
   `);
 
@@ -85,7 +122,7 @@ router.put('/users/:id', (req, res) => {
 
   logAudit(req.user!.id, req.user!.username, 'USER_UPDATE', 'users', targetId, { role, is_active, passwordReset: !!newPassword }, req.ip);
 
-  res.json({ success: true, message: 'User updated successfully.' });
+  res.json({ success: true, message: 'User updated successfully. Existing sessions invalidated.' });
 });
 
 // Teacher Assignments List
@@ -155,6 +192,121 @@ router.delete('/assignments/:id', (req, res) => {
   res.json({ success: true, message: 'Assignment removed.' });
 });
 
+// List Academic Staff Authorizations
+router.get('/academic-authorizations', (req, res) => {
+  const { user_id, academic_year_id, is_active } = req.query;
+
+  let query = `
+    SELECT asa.*, u.full_name as user_full_name, u.email as user_email, u.role as system_role,
+           ay.name as academic_year_name,
+           granter.full_name as granter_name,
+           revoker.full_name as revoker_name
+    FROM academic_staff_authorizations asa
+    JOIN users u ON asa.user_id = u.id
+    JOIN academic_years ay ON asa.academic_year_id = ay.id
+    JOIN users granter ON asa.granted_by_user_id = granter.id
+    LEFT JOIN users revoker ON asa.revoked_by_user_id = revoker.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+
+  if (user_id) {
+    query += ' AND asa.user_id = ?';
+    params.push(Number(user_id));
+  }
+  if (academic_year_id) {
+    query += ' AND asa.academic_year_id = ?';
+    params.push(Number(academic_year_id));
+  }
+  if (is_active !== undefined) {
+    query += ' AND asa.is_active = ?';
+    params.push(is_active === 'true' || is_active === '1' ? 1 : 0);
+  }
+
+  query += ' ORDER BY asa.id DESC';
+  const authorizations = db.prepare(query).all(...params);
+  res.json({ authorizations });
+});
+
+// Grant Academic Staff Authorization
+router.post('/academic-authorizations', (req, res) => {
+  const { user_id, academic_year_id, auth_role, grade_band } = req.body;
+
+  if (!user_id || !academic_year_id || !auth_role || !grade_band) {
+    res.status(400).json({ error: 'user_id, academic_year_id, auth_role, and grade_band are required.' });
+    return;
+  }
+
+  const validRoles: AcademicAuthRole[] = ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'];
+  if (!validRoles.includes(auth_role)) {
+    res.status(400).json({ error: `Invalid auth_role '${auth_role}'. Must be one of: ${validRoles.join(', ')}.` });
+    return;
+  }
+
+  const validBands: GradeBand[] = ['junior_6_9', 'ol_10_11', 'al_12_13', 'all'];
+  if (!validBands.includes(grade_band)) {
+    res.status(400).json({ error: `Invalid grade_band '${grade_band}'. Must be one of: ${validBands.join(', ')}.` });
+    return;
+  }
+
+  try {
+    const result = grantAcademicAuthorization({
+      userId: Number(user_id),
+      academicYearId: Number(academic_year_id),
+      authRole: auth_role as AcademicAuthRole,
+      gradeBand: grade_band as GradeBand,
+      grantedByUserId: req.user!.id
+    });
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'ACADEMIC_AUTHORIZATION_GRANT',
+      'academic_staff_authorizations',
+      result.id,
+      { user_id, academic_year_id, auth_role, grade_band },
+      req.ip
+    );
+
+    res.status(201).json({ success: true, id: result.id });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to grant academic authorization.' });
+  }
+});
+
+// Revoke Academic Staff Authorization
+router.post('/academic-authorizations/:id/revoke', (req, res) => {
+  const authorizationId = Number(req.params.id);
+  const { reason } = req.body;
+
+  if (!reason || !reason.trim()) {
+    res.status(400).json({ error: 'A mandatory revocation reason must be provided.' });
+    return;
+  }
+
+  try {
+    revokeAcademicAuthorization({
+      authorizationId,
+      revokedByUserId: req.user!.id,
+      reason: reason.trim()
+    });
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'ACADEMIC_AUTHORIZATION_REVOKE',
+      'academic_staff_authorizations',
+      authorizationId,
+      { reason: reason.trim() },
+      req.ip
+    );
+
+    res.json({ success: true, message: 'Academic authorization revoked successfully.' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to revoke academic authorization.' });
+  }
+});
+
 // Audit Logs
 router.get('/audit-logs', (req, res) => {
   const { action, limit = 100 } = req.query;
@@ -201,74 +353,42 @@ router.get('/backup', (req, res) => {
   res.json(exportPayload);
 });
 
-// Restore System Backup
+// Restore System Backup (CONTAINMENT GUARD: Disabled for data safety; live transactional restore scheduled for PR-006)
 router.post('/restore', (req, res) => {
-  const { backupData } = req.body;
+  logAudit(
+    req.user!.id,
+    req.user!.username,
+    'SECURITY_CONTAINMENT_BLOCK',
+    'System',
+    null,
+    { reason: 'Attempted invocation of disabled non-transactional restore endpoint' },
+    req.ip
+  );
 
-  if (!backupData || !backupData.data) {
-    res.status(400).json({ error: 'Invalid backup file structure.' });
-    return;
-  }
-
-  const { data } = backupData;
-
-  try {
-    // Clear in reverse order
-    db.exec('DELETE FROM attendance_records;');
-    db.exec('DELETE FROM attendance_sessions;');
-    db.exec('DELETE FROM marks;');
-    db.exec('DELETE FROM examinations;');
-    db.exec('DELETE FROM enrollments;');
-    db.exec('DELETE FROM teacher_assignments;');
-    db.exec('DELETE FROM class_subjects;');
-    db.exec('DELETE FROM classes;');
-    db.exec('DELETE FROM subjects;');
-    db.exec('DELETE FROM students;');
-    db.exec('DELETE FROM users;');
-    db.exec('DELETE FROM academic_years;');
-
-    // Helper to insert rows dynamically
-    function restoreTable(tableName: string, rows: any[]) {
-      if (!Array.isArray(rows) || rows.length === 0) return;
-      const columns = Object.keys(rows[0]);
-      const placeholders = columns.map(() => '?').join(', ');
-      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-      const stmt = db.prepare(sql);
-      for (const row of rows) {
-        stmt.run(...columns.map(c => row[c]));
-      }
-    }
-
-    if (data.academic_years) restoreTable('academic_years', data.academic_years);
-    if (data.users) restoreTable('users', data.users);
-    if (data.classes) restoreTable('classes', data.classes);
-    if (data.subjects) restoreTable('subjects', data.subjects);
-    if (data.class_subjects) restoreTable('class_subjects', data.class_subjects);
-    if (data.teacher_assignments) restoreTable('teacher_assignments', data.teacher_assignments);
-    if (data.students) restoreTable('students', data.students);
-    if (data.enrollments) restoreTable('enrollments', data.enrollments);
-    if (data.examinations) restoreTable('examinations', data.examinations);
-    if (data.marks) restoreTable('marks', data.marks);
-    if (data.attendance_sessions) restoreTable('attendance_sessions', data.attendance_sessions);
-    if (data.attendance_records) restoreTable('attendance_records', data.attendance_records);
-
-    logAudit(req.user!.id, req.user!.username, 'BACKUP_RESTORE', 'System', null, { restoredAt: new Date().toISOString() }, req.ip);
-
-    res.json({ success: true, message: 'Database successfully restored from backup.' });
-  } catch (err: any) {
-    res.status(500).json({ error: `Restore failed: ${err.message}` });
-  }
+  res.status(503).json({
+    error: 'Database restore is disabled for safety during live operations. Live atomic transactional recovery is scheduled for PR-006. Restore must be performed strictly during offline maintenance with server process and all database connections shut down.',
+    status: 'disabled',
+    safety_notice: 'Destructive live restore is blocked to prevent database corruption. Use verified offline backup utilities under controlled maintenance.'
+  });
 });
 
-// Re-seed Database Demo Data
+// Re-seed Database Demo Data (CONTAINMENT GUARD: Disabled in standard API routes to protect school data)
 router.post('/reset-seed', (req, res) => {
-  try {
-    runSeed();
-    logAudit(req.user!.id, req.user!.username, 'DATABASE_SEED_RESET', 'System', null, {}, req.ip);
-    res.json({ success: true, message: 'Database reset to default pilot state.' });
-  } catch (err: any) {
-    res.status(500).json({ error: `Seed reset failed: ${err.message}` });
-  }
+  logAudit(
+    req.user!.id,
+    req.user!.username,
+    'SECURITY_CONTAINMENT_BLOCK',
+    'System',
+    null,
+    { reason: 'Attempted invocation of disabled reset-seed endpoint' },
+    req.ip
+  );
+
+  res.status(503).json({
+    error: 'Database reset-seed endpoint is disabled for safety. Run migrations or seeds strictly via controlled offline CLI scripts.',
+    status: 'disabled',
+    safety_notice: 'Destructive database wipe is blocked to protect school data.'
+  });
 });
 
 export default router;

@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Production & Build Outputs
+dist/
+client/dist/
+server/dist/
+build/
+*.tsbuildinfo
+
+# SQLite Database & Storage Engine Files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+server/skoolsys.db*
+skoolsys.db*
+test_*.db*
+
+# Environment & Secret Files
+.env
+.env.local
+.env.*.local
+server/.env
+client/.env
+
+# Local Archives and Backups
+*.zip
+*.tar.gz
+*.bak
+skoolsys-backup-*.json
+
+# Logs & Debug Output
+logs/
+test-results/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System & IDE Artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agents/
+skills-lock.json
+.playwright-mcp/

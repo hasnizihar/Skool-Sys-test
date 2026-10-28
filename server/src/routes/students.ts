@@ -19,8 +19,8 @@ router.get('/', requireAuth, (req, res) => {
   `;
   const params: any[] = [];
 
-  // Role Scoping
-  if (user.role === 'class_teacher') {
+  // Role Scoping: Teachers (both class and subject) only see students in their assigned classes
+  if (user.role !== 'admin') {
     const assignments = getUserAssignments(user.id);
     if (assignments.assignedClassIds.length > 0) {
       const placeholders = assignments.assignedClassIds.map(() => '?').join(',');
@@ -28,6 +28,12 @@ router.get('/', requireAuth, (req, res) => {
       params.push(...assignments.assignedClassIds);
     } else {
       sql += ` AND 1=0`; // No assigned classes
+    }
+
+    // If teacher explicitly requested a classId, verify authorization
+    if (classId && !assignments.assignedClassIds.includes(Number(classId))) {
+      res.status(403).json({ error: 'Access denied. You are not assigned to this class.' });
+      return;
     }
   }
 
@@ -78,6 +84,15 @@ router.get('/:id', requireAuth, (req, res) => {
   if (!student) {
     res.status(404).json({ error: 'Student not found.' });
     return;
+  }
+
+  // Record-level permission check: non-admin teachers can only view students enrolled in their assigned classes
+  if (req.user!.role !== 'admin') {
+    const assignments = getUserAssignments(req.user!.id);
+    if (!student.class_id || !assignments.assignedClassIds.includes(student.class_id)) {
+      res.status(403).json({ error: 'Access denied. You are not assigned to teach this student.' });
+      return;
+    }
   }
 
   // Attendance stats for student
