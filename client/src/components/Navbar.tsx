@@ -27,7 +27,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebar,
-  title,
+  title: _title,
   currentTab: _currentTab = 'dashboard',
   onNavigate,
   user,
@@ -165,9 +165,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         <div className="navbar-heading-group">
-          {/* Primary View Title & Academic Context */}
+          {/* Academic Context Badge */}
           <div className="navbar-title-row">
-            <h1 className="navbar-page-title navbar-title">{title}</h1>
             <div className="navbar-academic-badge navbar-subtitle">
               <span className="navbar-academic-dot" aria-hidden="true" />
               <span>{academicPeriodStr}</span>
