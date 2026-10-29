@@ -1,0 +1,269 @@
+/* ==========================================================================
+   SkoolSys 2.0: Navbar & Header Styles
+   Sticky Top Bar, Truthful Sync Status Chip, Breadcrumb Hierarchy
+   ========================================================================== */
+
+.top-navbar {
+  height: 64px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  user-select: none;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.mobile-menu-toggle {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-full, 9999px);
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.mobile-menu-toggle:hover {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+  border-color: var(--primary);
+}
+
+@media (max-width: 1024px) {
+  .mobile-menu-toggle {
+    display: inline-flex;
+  }
+}
+
+/* Heading Group */
+.navbar-heading-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.navbar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Unified Top Bar Pill Elements
+   Consistent 32px Height, Pill Capsule Geometry, and Proportional Spacing
+   ========================================================================== */
+.navbar-academic-badge,
+.navbar-date-badge,
+.sync-status-chip,
+.navbar-admin-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-full, 9999px);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  line-height: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+/* 1. Academic Context Badge (Left Pill) */
+.navbar-academic-badge {
+  gap: 0.45rem;
+  padding: 0 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.navbar-academic-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--primary);
+  flex-shrink: 0;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+/* 2. Real Local Date Pill */
+.navbar-date-badge {
+  gap: 0.4rem;
+  padding: 0 0.8rem;
+  font-weight: 500;
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+/* 3. Truthful Global Sync Status Chip */
+.sync-status-chip {
+  gap: 0.4rem;
+  padding: 0 0.85rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.sync-status-chip:focus-visible {
+  outline: 2px solid var(--border-focus);
+}
+
+/* Status: Online & Synced */
+.sync-status-chip--synced {
+  background-color: var(--status-present-bg, #ecfdf5);
+  color: var(--status-present, #059669);
+  border-color: var(--status-present-border, #a7f3d0);
+}
+
+/* Status: Syncing in Background */
+.sync-status-chip--syncing {
+  background-color: #f0fdfa;
+  color: #0f766e;
+  border-color: #99f6e4;
+}
+
+/* Status: Pending Offline Mutations */
+.sync-status-chip--pending {
+  background-color: var(--status-late-bg, #fffbeb);
+  color: var(--status-late, #d97706);
+  border-color: var(--status-late-border, #fde68a);
+}
+
+/* Status: Concurrency Conflict */
+.sync-status-chip--conflicted {
+  background-color: var(--status-absent-bg, #fef2f2);
+  color: var(--status-absent, #dc2626);
+  border-color: var(--status-absent-border, #fecaca);
+  animation: sk-pulse 2s infinite ease-in-out;
+}
+
+/* Status: Offline (Local Mode) */
+.sync-status-chip--offline {
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+
+.sync-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+/* 4. Admin Role Pill */
+.navbar-admin-pill {
+  gap: 0.4rem;
+  padding: 0 0.8rem;
+  font-weight: 600;
+  background-color: var(--status-present-bg, #ecfdf5);
+  color: var(--primary);
+  border: 1px solid var(--status-present-border, #a7f3d0);
+}
+
+/* 5. Theme Toggle Button (Circular Pill Button) */
+.navbar-theme-toggle {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-full, 9999px);
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.navbar-theme-toggle:hover {
+  background-color: var(--bg-surface);
+  border-color: var(--primary);
+  color: var(--text-main);
+}
+
+.navbar-theme-toggle:active {
+  transform: scale(0.94);
+}
+
+/* Responsive Progressive Hiding to Prevent Crowding */
+@media (max-width: 1080px) {
+  .navbar-date-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .navbar-admin-pill {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar-academic-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .top-navbar {
+    padding: 0 1rem;
+    height: 56px;
+  }
+
+  .navbar-academic-badge,
+  .navbar-date-badge,
+  .sync-status-chip,
+  .navbar-admin-pill {
+    height: 28px;
+    min-height: 28px;
+    font-size: 0.6875rem;
+    padding: 0 0.65rem;
+  }
+
+  .navbar-theme-toggle,
+  .mobile-menu-toggle {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+  }
+}

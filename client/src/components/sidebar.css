@@ -1,0 +1,545 @@
+/* ==========================================================================
+   SkoolSys 2.0: Collapsible Sidebar Styles
+   Expanded (240px) vs Compact (68px), CSS Floating Tooltips, Mobile Drawer
+   ========================================================================== */
+
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 40;
+  transition: width var(--transition-normal), transform var(--transition-normal);
+  user-select: none;
+}
+
+/* Sidebar Header */
+.sidebar-header {
+  padding: 0.95rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  min-height: 64px;
+}
+
+.brand-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.brand-badge,
+.brand-logo-container {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-logo-img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  display: block;
+}
+
+.brand-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.brand-info h2 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.brand-info p {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapse Toggle Button (Desktop) - Modern Ghost Icon Button */
+.sidebar-collapse-toggle {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.sidebar-collapse-toggle:hover {
+  background-color: var(--bg-subtle);
+  color: var(--primary);
+  border-color: var(--border-color);
+}
+
+.sidebar-collapse-toggle:active {
+  transform: scale(0.94);
+}
+
+.sidebar-collapse-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.sidebar-mobile-close {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border-radius: var(--radius-sm);
+}
+
+/* Navigation Links Container */
+.nav-links {
+  list-style: none;
+  padding: 0.75rem 0.65rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Section Header Titles */
+.nav-section-title {
+  font-size: 0.65625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 0.75rem 0.65rem 0.35rem;
+  font-weight: 700;
+  margin-top: 0.35rem;
+}
+
+.nav-section-title:first-child {
+  margin-top: 0;
+  padding-top: 0.25rem;
+}
+
+/* Navigation Items */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.84375rem;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  min-height: 42px;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-item svg {
+  flex-shrink: 0;
+  color: inherit;
+  transition: transform var(--transition-fast), color var(--transition-fast);
+}
+
+.nav-item-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-item:hover {
+  background-color: var(--bg-subtle);
+  color: var(--text-main);
+}
+
+.nav-item:hover svg {
+  transform: translateX(1px);
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+/* Active Navigation Item */
+.nav-item.active {
+  background-color: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+  border-color: rgba(2, 101, 54, 0.22);
+}
+
+.nav-item.active svg {
+  color: var(--primary);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3.5px;
+  border-radius: 0 var(--radius-xs, 4px) var(--radius-xs, 4px) 0;
+  background-color: var(--primary);
+}
+
+/* Sidebar Footer & User Profile */
+.sidebar-footer {
+  padding: 0.85rem 0.9rem;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.user-snippet {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full, 9999px);
+  background: linear-gradient(135deg, var(--primary) 0%, #047857 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.8125rem;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-xs);
+}
+
+.user-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.user-role-badge {
+  display: inline-block;
+  font-size: 0.625rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-xs, 4px);
+  background: var(--bg-surface);
+  color: var(--primary);
+  font-weight: 600;
+  text-transform: capitalize;
+  border: 1px solid var(--border-color);
+  margin-top: 2px;
+}
+
+.sidebar-actions-row {
+  display: flex;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.sidebar-logout-btn {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--absent);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.sidebar-logout-btn:hover {
+  background-color: var(--status-absent-bg, #fef2f2);
+  border-color: var(--status-absent-border, #fecaca);
+  color: var(--absent);
+}
+
+.sidebar-logout-text {
+  display: inline;
+}
+
+/* ==========================================================================
+   Compact / Collapsed Desktop Mode (68px)
+   ========================================================================== */
+
+.sidebar--collapsed {
+  width: 68px;
+}
+
+.sidebar--collapsed .brand-info,
+.sidebar--collapsed .nav-section-title,
+.sidebar--collapsed .nav-item-label,
+.sidebar--collapsed .user-details,
+.sidebar--collapsed .sidebar-logout-text {
+  display: none !important;
+}
+
+.sidebar--collapsed .sidebar-header {
+  padding: 1rem 0.5rem;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.sidebar--collapsed .brand-wrapper {
+  justify-content: center;
+  width: 100%;
+}
+
+.sidebar--collapsed .brand-logo-container {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+}
+
+.sidebar--collapsed .brand-logo-img {
+  width: 38px;
+  height: 38px;
+}
+
+.sidebar--collapsed .sidebar-collapse-toggle {
+  margin: 0;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.sidebar--collapsed .nav-links {
+  padding: 0.75rem 0.5rem;
+  align-items: center;
+}
+
+.sidebar--collapsed .nav-item {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius-sm, 6px);
+  margin-bottom: 4px;
+  position: relative;
+}
+
+.sidebar--collapsed .nav-item.active::before {
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+}
+
+.sidebar--collapsed .sidebar-footer {
+  padding: 0.75rem 0.5rem;
+  align-items: center;
+}
+
+.sidebar--collapsed .sidebar-actions-row {
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar--collapsed .sidebar-logout-btn {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.sidebar--collapsed .user-snippet {
+  justify-content: center;
+}
+
+/* Instant CSS Floating Tooltips in Collapsed Mode */
+.sidebar--collapsed [data-tooltip] {
+  position: relative;
+}
+
+.sidebar--collapsed [data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+  background-color: #172b22;
+  color: #ffffff;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  z-index: 100;
+}
+
+.sidebar--collapsed [data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent #172b22 transparent transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+  z-index: 100;
+}
+
+.sidebar--collapsed [data-tooltip]:hover::after,
+.sidebar--collapsed [data-tooltip]:focus-visible::after,
+.sidebar--collapsed [data-tooltip]:hover::before,
+.sidebar--collapsed [data-tooltip]:focus-visible::before {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+/* In dark mode, style tooltips with lighter elevated surface */
+[data-theme="dark"] .sidebar--collapsed [data-tooltip]::after {
+  background-color: #1e3528;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f0fdf4;
+}
+
+[data-theme="dark"] .sidebar--collapsed [data-tooltip]::before {
+  border-right-color: #1e3528;
+}
+
+/* Backdrop for Mobile Drawer */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 1050;
+  animation: sk-fade-in 180ms ease-out forwards;
+}
+
+@keyframes sk-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Tablet (< 1024px) & Mobile Adaptations */
+@media (max-width: 1024px) {
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    transform: translateX(-100%);
+    width: 280px;
+    box-shadow: var(--shadow-xl);
+    z-index: 1100; /* Must sit above mobile bottom bar (z-index: 1000) */
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar--collapsed {
+    width: 280px;
+  }
+
+  .sidebar--collapsed .brand-info,
+  .sidebar--collapsed .nav-section-title,
+  .sidebar--collapsed .nav-item-label,
+  .sidebar--collapsed .user-details,
+  .sidebar--collapsed .sidebar-logout-text {
+    display: inline !important;
+  }
+
+  .sidebar--collapsed .sidebar-header {
+    flex-direction: row;
+    padding: 1.15rem 1.15rem;
+    justify-content: space-between;
+  }
+
+  .sidebar--collapsed .nav-item {
+    width: 100%;
+    height: auto;
+    min-height: 48px;
+    padding: 0.75rem 0.9rem;
+    justify-content: flex-start;
+  }
+
+  .sidebar--collapsed .sidebar-actions-row {
+    flex-direction: row;
+  }
+
+  .sidebar-actions-row .sidebar-logout-btn {
+    min-height: 44px;
+    width: 100%;
+  }
+}

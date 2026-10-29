@@ -1,0 +1,870 @@
+/* ==========================================================================
+   SkoolSys 2.0 — Marks Management & Grading Workspace Styles
+   File: client/src/pages/marksEntry.css
+   ========================================================================== */
+
+/* Workspace Container Layout */
+.marks-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+/* Header & Meta Badges */
+.marks-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding-bottom: 0.25rem;
+}
+
+.marks-workspace-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.marks-workspace-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.marks-workspace-title-row h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+.marks-workspace-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.marks-appointment-pills {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.marks-appointment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
+  line-height: 1.2;
+}
+
+.marks-appointment-pill.admin {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.marks-appointment-pill.principal {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.marks-appointment-pill.vp {
+  background: #f0fdfa;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+
+.marks-appointment-pill.section-head {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+/* Exam Lifecycle Stepper (Screen 08) */
+.exam-lifecycle-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  overflow-x: auto;
+  gap: 0.5rem;
+  margin-bottom: var(--space-4, 1rem);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.exam-lifecycle-stepper::-webkit-scrollbar {
+  display: none;
+}
+
+.lifecycle-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  position: relative;
+  transition: all var(--transition-fast);
+}
+
+.lifecycle-step-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.lifecycle-step.completed {
+  color: var(--present);
+}
+
+.lifecycle-step.completed .lifecycle-step-dot {
+  background: var(--present-bg);
+  border-color: var(--present);
+  color: var(--present);
+}
+
+.lifecycle-step.active {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.lifecycle-step.active .lifecycle-step-dot {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(2, 101, 54, 0.15);
+}
+
+.lifecycle-divider {
+  flex: 1;
+  min-width: 24px;
+  height: 2px;
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+.lifecycle-divider.completed {
+  background: var(--present);
+}
+
+/* Workspace Tab Navigation */
+.workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  padding-bottom: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.workspace-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.48rem 0.52rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.775rem;
+  cursor: pointer;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  position: relative;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.workspace-tab-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-subtle);
+}
+
+.workspace-tab-btn.active {
+  color: var(--primary);
+  background: var(--bg-surface);
+  border-bottom: 2px solid var(--primary);
+  margin-bottom: -2px;
+  font-weight: 700;
+}
+
+.workspace-tab-badge {
+  font-size: 0.7rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.workspace-tab-btn.active .workspace-tab-badge {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* Filter Card & Layout */
+.marks-filter-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  padding: 0.85rem 1.25rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.25rem;
+}
+
+.marks-filter-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.marks-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.marks-filter-label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.marks-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.marks-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.marks-search-input {
+  height: 40px;
+  padding-left: 2.25rem;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.marks-filter-select {
+  height: 40px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: var(--text-sm, 0.875rem);
+  padding: 0 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .marks-filter-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 580px) {
+  .marks-filter-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Filter & Selector Bar */
+.marks-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.marks-sheet-controls {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.marks-status-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+/* Statistics Grid & Grade Distribution */
+.marks-stats-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.marks-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.marks-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.marks-stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.marks-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.marks-stat-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.marks-stat-label {
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* Grade Distribution Mini Bar */
+.marks-distribution-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.distribution-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* View Mode Switcher (Desktop Table vs Mobile Stepper) */
+.marks-view-toggle {
+  display: inline-flex;
+  background: var(--bg-subtle);
+  padding: 0.2rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  gap: 0.25rem;
+}
+
+.marks-view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.marks-view-toggle-btn.active {
+  background: var(--bg-surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-xs);
+  font-weight: 700;
+}
+
+/* Spreadsheet Data Table Styling */
+.marks-table-wrapper {
+  position: relative;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.marks-spreadsheet-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.marks-spreadsheet-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--border-color);
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.marks-spreadsheet-table td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  transition: background var(--transition-fast);
+}
+
+.marks-spreadsheet-table tr:hover td {
+  background: var(--bg-subtle);
+}
+
+/* Sticky Frozen Columns on Desktop */
+@media (min-width: 900px) {
+  .marks-sticky-roll {
+    position: sticky;
+    left: 0;
+    background: var(--bg-surface);
+    z-index: 3;
+    width: 60px;
+    text-align: center;
+  }
+  .marks-sticky-adm {
+    position: sticky;
+    left: 60px;
+    background: var(--bg-surface);
+    z-index: 3;
+    width: 130px;
+  }
+  .marks-sticky-name {
+    position: sticky;
+    left: 190px;
+    background: var(--bg-surface);
+    z-index: 3;
+    border-right: 2px solid var(--border-color) !important;
+  }
+  .marks-spreadsheet-table tr:hover .marks-sticky-roll,
+  .marks-spreadsheet-table tr:hover .marks-sticky-adm,
+  .marks-spreadsheet-table tr:hover .marks-sticky-name {
+    background: var(--bg-subtle);
+  }
+  .marks-spreadsheet-table th.marks-sticky-roll,
+  .marks-spreadsheet-table th.marks-sticky-adm,
+  .marks-spreadsheet-table th.marks-sticky-name {
+    background: var(--bg-subtle);
+    z-index: 6;
+  }
+}
+
+/* Score Input Styling */
+.marks-score-input {
+  width: 96px;
+  font-weight: 700;
+  text-align: center;
+  font-size: 1rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  transition: all var(--transition-fast);
+  font-variant-numeric: tabular-nums;
+}
+
+.marks-score-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(2, 101, 54, 0.2);
+  background: #fff;
+}
+
+.marks-score-input.score-invalid {
+  border-color: var(--absent) !important;
+  background-color: var(--absent-bg) !important;
+  color: var(--absent) !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2) !important;
+}
+
+.marks-score-input:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Assessment Status Button Group */
+.marks-status-btngroup {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  background: var(--bg-subtle);
+  padding: 0.2rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.marks-status-btn {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+  line-height: 1.2;
+}
+
+.marks-status-btn:hover:not(:disabled) {
+  color: var(--text-main);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.marks-status-btn.active-present {
+  background: var(--present);
+  color: #fff;
+  border-color: var(--present);
+}
+
+.marks-status-btn.active-absent {
+  background: var(--absent);
+  color: #fff;
+  border-color: var(--absent);
+}
+
+.marks-status-btn.active-medical {
+  background: #f59e0b;
+  color: #fff;
+  border-color: #d97706;
+}
+
+.marks-status-btn.active-exempt {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+/* Grade Pills Distinction Styling */
+.grade-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  font-family: var(--font-display, inherit);
+  transition: transform var(--transition-fast);
+}
+
+.grade-badge:hover {
+  transform: scale(1.1);
+}
+
+.grade-a {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.grade-b {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+
+.grade-c {
+  background: #fef9c3;
+  color: #a16207;
+  border: 1px solid #fde047;
+}
+
+.grade-s {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
+
+.grade-f {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+/* Keyboard Navigation Assist Tooltip Bar */
+.marks-keyboard-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border-color);
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyboard-shortcut-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  padding: 0.15rem 0.4rem;
+  font-family: monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-main);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+
+/* ==========================================================================
+   Mobile Single-Student Stepper Card Mode (< 768px)
+   ========================================================================== */
+.marks-stepper-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.marks-stepper-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.marks-stepper-counter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.85rem;
+}
+
+.marks-stepper-counter-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-light);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-full);
+}
+
+.marks-stepper-student-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.marks-stepper-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.marks-stepper-names {
+  flex: 1;
+}
+
+.marks-stepper-names h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.marks-stepper-names p {
+  margin: 0.2rem 0 0;
+  font-size: 0.825rem;
+  color: var(--text-muted);
+}
+
+.marks-stepper-input-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--bg-subtle);
+  padding: 1.25rem;
+  border-radius: var(--radius-md);
+}
+
+.marks-stepper-score-input {
+  font-size: 2.2rem;
+  font-weight: 800;
+  text-align: center;
+  width: 140px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  transition: all var(--transition-fast);
+}
+
+.marks-stepper-score-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(2, 101, 54, 0.2);
+}
+
+.marks-stepper-grade-pill {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 900;
+  font-family: var(--font-display, inherit);
+}
+
+.marks-stepper-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem;
+}
+
+.marks-stepper-status-btn {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.marks-stepper-nav-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.marks-stepper-nav-btn {
+  flex: 1;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border-radius: var(--radius-md);
+}
+
+/* Publication Ceremony & Integrity Watermark */
+.ceremony-card {
+  background: linear-gradient(135deg, rgba(2, 101, 54, 0.04) 0%, rgba(2, 101, 54, 0.01) 100%);
+  border: 1.5px solid var(--primary-light);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.watermark-hash-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: monospace;
+  font-size: 0.78rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+

@@ -1,0 +1,81 @@
+/* ==========================================================================
+   SkoolSys 2.0: Mobile Bottom Navigation Bar (< 768px)
+   48px Touch Targets, High Contrast Active States, Safe Area Support
+   ========================================================================== */
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    z-index: 1000;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    justify-content: space-around;
+    align-items: stretch;
+    user-select: none;
+  }
+
+  .mobile-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 2px calc(6px + env(safe-area-inset-bottom, 0px));
+    min-height: 48px;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+  }
+
+  .mobile-nav-btn svg {
+    flex-shrink: 0;
+    transition: transform var(--transition-fast), color var(--transition-fast);
+  }
+
+  .mobile-nav-btn:hover {
+    color: var(--text-main);
+  }
+
+  .mobile-nav-btn:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: -2px;
+  }
+
+  .mobile-nav-btn.active {
+    color: var(--primary);
+  }
+
+  .mobile-nav-btn.active svg {
+    color: var(--primary);
+  }
+
+  .mobile-nav-btn.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background-color: var(--primary);
+  }
+}

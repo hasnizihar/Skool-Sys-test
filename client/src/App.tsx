@@ -12,6 +12,8 @@ import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
+import { ToastProvider } from './ui';
+import { MobileBottomNav } from './components/MobileBottomNav';
 
 const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
 
@@ -24,9 +26,20 @@ export function App() {
   const [user, setUser] = useState<any | null>(getCurrentUser());
   const [currentTab, setCurrentTab] = useState<string>(getInitialTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('skoolsys_sidebar_collapsed') === 'true';
+  });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('skoolsys_theme') as 'light' | 'dark') || 'light';
   });
+
+  const toggleSidebarCollapsed = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('skoolsys_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     window.location.hash = `/${currentTab}`;
@@ -123,54 +136,67 @@ export function App() {
   };
 
   return (
-    <div className="app-container">
-      <Sidebar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-        user={user}
-        onLogout={handleLogout}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        theme={theme}
-        toggleTheme={toggleTheme}
-      />
-
-      <div className="main-wrapper">
-        <OfflineBanner />
-
-        <Navbar
-          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-          title={getPageTitle()}
+    <ToastProvider>
+      <div className="app-container">
+        <Sidebar
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
           user={user}
+          onLogout={handleLogout}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
           theme={theme}
           toggleTheme={toggleTheme}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
         />
 
-        <main className="page-container">
-          {currentTab === 'dashboard' && (
-            <Dashboard onNavigate={setCurrentTab} user={user} />
-          )}
-          {currentTab === 'students' && (
-            <Students user={user} />
-          )}
-          {currentTab === 'attendance' && (
-            <Attendance user={user} />
-          )}
-          {currentTab === 'attendance-reports' && (
-            <AttendanceReports />
-          )}
-          {currentTab === 'marks' && (
-            <MarksEntry user={user} />
-          )}
-          {currentTab === 'admin' && user.role === 'admin' && (
-            <AdminSettings />
-          )}
-          {currentTab === 'audit' && user.role === 'admin' && (
-            <AuditLogs />
-          )}
-        </main>
+        <div className="main-wrapper">
+          <OfflineBanner />
+
+          <Navbar
+            onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+            title={getPageTitle()}
+            currentTab={currentTab}
+            onNavigate={setCurrentTab}
+            user={user}
+            theme={theme}
+            toggleTheme={toggleTheme}
+          />
+
+          <main className="page-container">
+            {currentTab === 'dashboard' && (
+              <Dashboard onNavigate={setCurrentTab} user={user} />
+            )}
+            {currentTab === 'students' && (
+              <Students user={user} />
+            )}
+            {currentTab === 'attendance' && (
+              <Attendance user={user} />
+            )}
+            {currentTab === 'attendance-reports' && (
+              <AttendanceReports />
+            )}
+            {currentTab === 'marks' && (
+              <MarksEntry user={user} />
+            )}
+            {currentTab === 'admin' && user.role === 'admin' && (
+              <AdminSettings />
+            )}
+            {currentTab === 'audit' && user.role === 'admin' && (
+              <AuditLogs />
+            )}
+          </main>
+
+          <MobileBottomNav
+            currentTab={currentTab}
+            onNavigate={setCurrentTab}
+            onOpenMore={() => setSidebarOpen(true)}
+            user={user}
+          />
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }
 

@@ -1,0 +1,154 @@
+/* ==========================================================================
+   SkoolSys UI Primitives: SegmentedControl Styles
+   Optimized for Attendance: 48px touch targets, Arrow navigation, Tactile states
+   ========================================================================== */
+
+.sk-segmented-control {
+  display: inline-flex;
+  align-items: stretch;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+  user-select: none;
+  width: auto;
+}
+
+.sk-segmented-control--full {
+  display: flex;
+  width: 100%;
+}
+
+.sk-segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: 0 var(--space-md);
+  height: 38px;
+  min-height: 38px;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast),
+              color var(--transition-fast),
+              border-color var(--transition-fast),
+              transform var(--transition-fast);
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sk-segmented-control--full .sk-segmented-btn {
+  flex: 1;
+}
+
+/* Attendance Register Sizing: 48px on mobile & touch devices */
+.sk-segmented-control--attendance {
+  height: 44px;
+}
+
+.sk-segmented-control--attendance .sk-segmented-btn {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 var(--space-sm);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+  .sk-segmented-control--attendance {
+    height: var(--touch-target-attendance);
+    width: 100%;
+  }
+
+  .sk-segmented-control--attendance .sk-segmented-btn {
+    height: 100%;
+    min-height: var(--touch-target-attendance);
+    flex: 1;
+  }
+}
+
+/* Hover on unselected */
+.sk-segmented-btn:hover:not(:disabled):not(.is-selected) {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+}
+
+.sk-segmented-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* Keyboard Focus (WCAG 2.2 AA) */
+.sk-segmented-btn:focus-visible {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+/* --- Selected Status Colors --- */
+
+/* Present [P] */
+.sk-segmented-btn.is-selected.sk-seg--present {
+  background-color: var(--status-present);
+  color: #ffffff;
+  border-color: var(--status-present);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Absent [A] */
+.sk-segmented-btn.is-selected.sk-seg--absent {
+  background-color: var(--status-absent);
+  color: #ffffff;
+  border-color: var(--status-absent);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Late [L] */
+.sk-segmented-btn.is-selected.sk-seg--late {
+  background-color: var(--status-late);
+  color: #ffffff;
+  border-color: var(--status-late);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Excused [E] */
+.sk-segmented-btn.is-selected.sk-seg--excused {
+  background-color: var(--status-excused);
+  color: #ffffff;
+  border-color: var(--status-excused);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Default / Primary */
+.sk-segmented-btn.is-selected.sk-seg--primary,
+.sk-segmented-btn.is-selected:not([class*='sk-seg--']) {
+  background-color: var(--bg-surface);
+  color: var(--primary);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Disabled */
+.sk-segmented-btn:disabled,
+.sk-segmented-btn.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.sk-segmented-letter {
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-segmented-btn {
+    transition: none !important;
+    transform: none !important;
+  }
+}

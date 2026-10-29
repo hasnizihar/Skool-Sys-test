@@ -1,0 +1,259 @@
+/* ==========================================================================
+   SkoolSys 2.0: Minimalist Institutional Login Styles
+   Quiet, Disciplined Aesthetic, Focused Authentication Card
+   ========================================================================== */
+
+.login-viewport {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-app, #f8fafc);
+  padding: 2rem 1rem;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  background-color: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-lg, 14px);
+  padding: 2.25rem 2rem 1.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 10px 15px -3px rgba(0, 0, 0, 0.02);
+  box-sizing: border-box;
+  animation: sk-scale-up 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ==========================================================================
+   School Identity Header
+   ========================================================================== */
+
+.login-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.login-crest {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  margin: 0 auto 0.75rem;
+  display: block;
+}
+
+.login-title {
+  font-family: var(--font-display, var(--font-sans));
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+  line-height: 1.25;
+  margin: 0 0 2px;
+}
+
+.login-tamil {
+  font-family: var(--font-tamil);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary, #065f46);
+  margin-bottom: 4px;
+}
+
+.login-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Alerts
+   ========================================================================== */
+
+.login-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.78125rem;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+
+.login-alert--error {
+  background-color: var(--absent-bg, #fef2f2);
+  color: var(--status-absent, #dc2626);
+  border: 1px solid var(--absent-border, #fecaca);
+}
+
+.login-alert--success {
+  background-color: var(--present-bg, #ecfdf5);
+  color: var(--status-present, #059669);
+  border: 1px solid var(--present-border, #a7f3d0);
+}
+
+/* ==========================================================================
+   Sign In Form
+   ========================================================================== */
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.login-submit-btn {
+  margin-top: 0.25rem;
+  height: 42px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: var(--radius-md, 8px);
+}
+
+/* ==========================================================================
+   Testing & Demo Accounts (Minimalist Quick-Access)
+   ========================================================================== */
+
+.login-demo-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
+.login-demo-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 0.65rem;
+}
+
+.login-demo-icon {
+  color: var(--text-muted, #94a3b8);
+}
+
+.login-demo-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.demo-chip-group {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-subtle, #f8fafc);
+  overflow: hidden;
+  transition: border-color var(--transition-fast, 150ms ease), background-color var(--transition-fast, 150ms ease);
+}
+
+.demo-chip-group:hover {
+  border-color: var(--primary, #065f46);
+  background: var(--bg-surface, #ffffff);
+}
+
+.demo-chip-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.65rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.demo-chip-role {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-main, #0f172a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.demo-chip-tag {
+  font-size: 0.625rem;
+  color: var(--primary, #065f46);
+  background: var(--primary-light, #ecfdf5);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.demo-chip-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.6rem;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all var(--transition-fast, 150ms ease);
+}
+
+.demo-chip-go:hover {
+  background: var(--primary, #065f46);
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   Minimal Institutional Footer
+   ========================================================================== */
+
+.login-footer {
+  margin-top: 1.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-muted, #94a3b8);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.footer-dot {
+  opacity: 0.5;
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   ========================================================================== */
+
+@media (max-width: 480px) {
+  .login-viewport {
+    padding: 1rem 0.75rem;
+    align-items: flex-start;
+  }
+
+  .login-card {
+    padding: 1.5rem 1.15rem;
+    border-radius: var(--radius-md, 10px);
+  }
+
+  .login-title {
+    font-size: 1.15rem;
+  }
+
+  .demo-chip-role {
+    font-size: 0.6875rem;
+  }
+}
