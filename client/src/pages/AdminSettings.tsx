@@ -18,13 +18,15 @@ import {
   Edit3,
   UserCheck,
   School,
-  ChevronRight
+  ChevronRight,
+  GraduationCap
 } from 'lucide-react';
 import { api } from '../api/client';
 import { ClassManagement } from './ClassManagement';
+import { TeacherDirectory } from './TeacherDirectory';
 
 export const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sections' | 'classes' | 'users' | 'assignments' | 'backup'>('sections');
+  const [activeTab, setActiveTab] = useState<'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup'>('teachers');
 
   // Sections State (Phase 1)
   const [sections, setSections] = useState<any[]>([]);
@@ -393,6 +395,12 @@ export const AdminSettings: React.FC = () => {
 
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           <button
+            onClick={() => setActiveTab('teachers')}
+            className={`btn btn-sm ${activeTab === 'teachers' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <GraduationCap size={14} /> Faculty & Teachers
+          </button>
+          <button
             onClick={() => setActiveTab('sections')}
             className={`btn btn-sm ${activeTab === 'sections' ? 'btn-primary' : 'btn-secondary'}`}
           >
@@ -424,6 +432,17 @@ export const AdminSettings: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Tab: Faculty & Teachers Directory (Phase 3 Task 2) */}
+      {activeTab === 'teachers' && (
+        <TeacherDirectory
+          onAddUser={() => {
+            setActiveTab('users');
+            setShowAddUserModal(true);
+          }}
+          onManageAssignments={() => setActiveTab('assignments')}
+        />
+      )}
 
       {/* Tab 0: School Sections & Structure (Phase 1) */}
       {activeTab === 'sections' && (

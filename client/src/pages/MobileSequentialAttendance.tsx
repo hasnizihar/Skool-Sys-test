@@ -19,8 +19,25 @@ import {
   List,
   Sparkles,
   Wifi,
-  WifiOff
+  WifiOff,
+  Phone
 } from 'lucide-react';
+import {
+  Paper,
+  Badge,
+  Button,
+  Group,
+  Stack,
+  Text,
+  Title,
+  Progress,
+  Drawer,
+  Modal,
+  Box,
+  SimpleGrid,
+  ScrollArea,
+  Tooltip
+} from '@mantine/core';
 import { api, HttpError } from '../api/client';
 import {
   cacheClassRoster,
@@ -31,6 +48,7 @@ import {
 } from '../api/offlineQueue';
 import { getColomboCivilDate } from '../utils/dateUtils';
 import { useToast } from '../ui/useToast';
+import { LoadingState, EmptyState } from '../ui/mantine';
 import './mobileSequentialAttendance.css';
 
 interface Props {
@@ -310,6 +328,16 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
     else setViewMode('summary');
   };
 
+  const handleQuickMarkExcused = () => {
+    if (!currentStudent) return;
+    setAttendanceMap((prev) => ({
+      ...prev,
+      [currentStudent.student_id]: { status: 'excused', remarks: 'Excused Leave' }
+    }));
+    if (currentIndex < students.length - 1) setCurrentIndex((prev) => prev + 1);
+    else setViewMode('summary');
+  };
+
   const handleClearCurrentStatus = () => {
     if (!currentStudent) return;
     setAttendanceMap((prev) => {
@@ -419,11 +447,12 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
   };
 
   const selectedClass = classes.find((c) => c.id === selectedClassId);
+  const progressPercent = students.length > 0 ? (counts.recorded / students.length) * 100 : 0;
 
   return (
     <div className="msa-container" role="region" aria-label="Mobile Sequential Attendance">
       {/* 1. Header Bar with Class & Date Selectors */}
-      <header className="msa-top-bar">
+      <Paper p="sm" radius="md" withBorder className="msa-top-bar" shadow="xs">
         <div className="msa-top-meta">
           <div className="msa-class-selector-wrapper">
             <label htmlFor="msa-class-select" className="sr-only">Select Class</label>
@@ -455,105 +484,152 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
 
         <div className="msa-view-actions">
           {isOffline && (
-            <span className="msa-offline-pill" title="Working offline">
-              <WifiOff size={13} /> Offline
-            </span>
+            <Badge
+              color="yellow"
+              variant="light"
+              leftSection={<WifiOff size={12} />}
+              size="sm"
+            >
+              Offline
+            </Badge>
           )}
 
           {onSwitchToTableMode && (
-            <button
-              type="button"
-              className="msa-btn-subtle"
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<List size={14} />}
               onClick={onSwitchToTableMode}
               title="Switch to full table register view"
             >
-              <List size={15} /> Table View
-            </button>
+              Table View
+            </Button>
           )}
 
-          <button
-            type="button"
-            className={`msa-mode-pill ${viewMode === 'summary' ? 'active' : ''}`}
+          <Button
+            variant={viewMode === 'summary' ? 'filled' : 'light'}
+            color="blue"
+            size="xs"
             onClick={() => setViewMode((prev) => (prev === 'card' ? 'summary' : 'card'))}
           >
             {viewMode === 'card' ? 'Review & Submit' : 'Card View'}
-          </button>
+          </Button>
         </div>
-      </header>
+      </Paper>
 
       {/* Existing Session Status Banner */}
       {existingSession && (
-        <div className={`msa-session-banner ${existingSession.status === 'submitted' ? 'submitted' : 'draft'}`}>
+        <Paper
+          p="xs"
+          radius="sm"
+          withBorder
+          className={`msa-session-banner ${existingSession.status === 'submitted' ? 'submitted' : 'draft'}`}
+        >
           <div className="msa-banner-text">
             <strong>{existingSession.status === 'submitted' ? 'Register Finalized' : 'Draft Saved'}</strong>
             <span> · Revision {serverRevision}</span>
           </div>
           {existingSession.status === 'submitted' && (
-            <span className="msa-submitted-tag">Completed</span>
+            <Badge color="green" size="xs" variant="filled">Completed</Badge>
           )}
-        </div>
+        </Paper>
       )}
 
       {/* Progress Ribbon */}
-      <div className="msa-progress-ribbon">
-        <div className="msa-progress-info">
-          <span className="msa-progress-count">
+      <Paper p="xs" radius="md" withBorder className="msa-progress-ribbon" shadow="xs">
+        <Group justify="space-between" mb={6}>
+          <Text size="sm" fw={700} c="dark.7">
             {viewMode === 'card' && currentStudent
               ? `Student ${currentIndex + 1} of ${students.length}`
               : `${counts.recorded} of ${counts.total} Recorded`}
-          </span>
-          <span className="msa-progress-stats">
-            <span className="msa-dot msa-dot--green" /> {counts.present} P
-            <span className="msa-dot msa-dot--red" /> {counts.absent} A
-            {counts.unrecorded > 0 && (
-              <span className="msa-unrecorded-badge">{counts.unrecorded} Left</span>
+          </Text>
+          <Group gap="xs">
+            <Badge color="green" variant="light" size="sm">
+              {counts.present} P
+            </Badge>
+            <Badge color="red" variant="light" size="sm">
+              {counts.absent} A
+            </Badge>
+            {counts.late > 0 && (
+              <Badge color="yellow" variant="light" size="sm">
+                {counts.late} L
+              </Badge>
             )}
-          </span>
-        </div>
-        <div className="msa-progress-track">
-          <div
-            className="msa-progress-fill"
-            style={{ width: `${students.length > 0 ? (counts.recorded / students.length) * 100 : 0}%` }}
-          />
-        </div>
-      </div>
+            {counts.unrecorded > 0 && (
+              <Badge color="gray" variant="filled" size="sm">
+                {counts.unrecorded} Left
+              </Badge>
+            )}
+          </Group>
+        </Group>
+        <Progress
+          value={progressPercent}
+          color={counts.unrecorded === 0 ? 'green' : 'blue'}
+          size="sm"
+          radius="xl"
+          animated={loading}
+        />
+      </Paper>
 
       {/* 2. Main Content: Sequential Card Mode vs Summary Review Mode */}
       {loading ? (
-        <div className="msa-loading-state">
-          <div className="msa-spinner" />
-          <p>Loading class roster for {selectedClass?.name || 'class'}...</p>
-        </div>
+        <LoadingState message={`Loading class roster for ${selectedClass?.name || 'class'}...`} minHeight={240} />
       ) : students.length === 0 ? (
-        <div className="msa-empty-state">
-          <Users size={48} className="msa-empty-icon" />
-          <h3>No Enrolled Students Found</h3>
-          <p>There are no active pupils enrolled in this class for the selected academic year.</p>
-        </div>
+        <EmptyState
+          icon={<Users size={36} />}
+          title="No Enrolled Students Found"
+          description="There are no active pupils enrolled in this class for the selected academic year."
+        />
       ) : viewMode === 'card' ? (
         /* Sequential Card Mode */
         <main className="msa-card-stage">
           {currentStudent && (
-            <article className="msa-student-card" key={currentStudent.student_id}>
+            <Paper
+              p="md"
+              radius="lg"
+              withBorder
+              className="msa-student-card"
+              shadow="sm"
+              key={currentStudent.student_id}
+            >
               {/* Card Meta Badges */}
-              <div className="msa-card-badges">
-                <span className="msa-roll-badge">
-                  Roll #{currentStudent.roll_number || (currentIndex + 1)}
-                </span>
-                <span className="msa-adm-badge">
-                  Index: {currentStudent.admission_no}
-                </span>
+              <Group justify="space-between" align="center" className="msa-card-badges">
+                <Group gap="xs">
+                  <Badge color="blue" variant="filled" size="md">
+                    Roll #{currentStudent.roll_number || (currentIndex + 1)}
+                  </Badge>
+                  <Badge color="gray" variant="light" size="md">
+                    Index: {currentStudent.admission_no}
+                  </Badge>
+                </Group>
                 {currentRecord?.status && (
-                  <span className={`msa-status-pill ${currentRecord.status}`}>
+                  <Badge
+                    color={
+                      currentRecord.status === 'present'
+                        ? 'green'
+                        : currentRecord.status === 'absent'
+                        ? 'red'
+                        : currentRecord.status === 'late'
+                        ? 'yellow'
+                        : 'blue'
+                    }
+                    variant="filled"
+                    size="md"
+                  >
                     {currentRecord.status.toUpperCase()}
                     {currentRecord.remarks && ` · ${currentRecord.remarks}`}
-                  </span>
+                  </Badge>
                 )}
-              </div>
+              </Group>
 
               {/* Student Name & Avatar */}
               <div className="msa-card-avatar-row">
-                <div className={`msa-avatar ${currentStudent.gender?.toLowerCase() === 'female' ? 'avatar-f' : 'avatar-m'}`}>
+                <div
+                  className={`msa-avatar ${
+                    currentStudent.gender?.toLowerCase() === 'female' ? 'avatar-f' : 'avatar-m'
+                  }`}
+                >
                   {currentStudent.calling_name?.charAt(0) || currentStudent.full_name?.charAt(0) || 'S'}
                 </div>
                 <div className="msa-name-block">
@@ -568,21 +644,25 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
 
               {/* Quick Jump Ribbon Trigger */}
               <div className="msa-jump-trigger-row">
-                <button
-                  type="button"
-                  className="msa-jump-btn"
+                <Button
+                  variant="subtle"
+                  color="blue"
+                  size="xs"
+                  leftSection={<List size={13} />}
                   onClick={() => setJumpDrawerOpen(true)}
                   title="View full roster to jump to student"
                 >
-                  <List size={14} /> Quick Roster Jump
-                </button>
+                  Quick Roster Jump
+                </Button>
               </div>
 
               {/* Primary Dual Actions: PRESENT (Green) vs ABSENT (Red) */}
               <div className="msa-action-buttons-grid">
                 <button
                   type="button"
-                  className={`msa-big-action-btn msa-btn--present ${currentRecord?.status === 'present' ? 'selected' : ''}`}
+                  className={`msa-big-action-btn msa-btn--present ${
+                    currentRecord?.status === 'present' ? 'selected' : ''
+                  }`}
                   onClick={handleMarkPresent}
                   aria-label={`Mark ${currentStudent.calling_name || 'student'} Present`}
                 >
@@ -592,7 +672,9 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
 
                 <button
                   type="button"
-                  className={`msa-big-action-btn msa-btn--absent ${currentRecord?.status === 'absent' ? 'selected' : ''}`}
+                  className={`msa-big-action-btn msa-btn--absent ${
+                    currentRecord?.status === 'absent' ? 'selected' : ''
+                  }`}
                   onClick={handleOpenAbsentModal}
                   aria-label={`Mark ${currentStudent.calling_name || 'student'} Absent`}
                 >
@@ -601,160 +683,221 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
                 </button>
               </div>
 
-              {/* Secondary Actions: Late / Clear */}
+              {/* Secondary Actions: Late / Excused / Clear */}
               <div className="msa-secondary-actions">
-                <button
-                  type="button"
-                  className="msa-subtle-btn"
-                  onClick={handleQuickMarkLate}
-                  title="Mark Late Arrival"
-                >
-                  <Clock size={14} /> Late
-                </button>
+                <Group gap="xs">
+                  <Button
+                    variant={currentRecord?.status === 'late' ? 'filled' : 'light'}
+                    color="yellow"
+                    size="xs"
+                    leftSection={<Clock size={13} />}
+                    onClick={handleQuickMarkLate}
+                    title="Mark Late Arrival"
+                  >
+                    Late
+                  </Button>
+
+                  <Button
+                    variant={currentRecord?.status === 'excused' ? 'filled' : 'light'}
+                    color="indigo"
+                    size="xs"
+                    leftSection={<HelpCircle size={13} />}
+                    onClick={handleQuickMarkExcused}
+                    title="Mark Excused Absence"
+                  >
+                    Excused
+                  </Button>
+                </Group>
 
                 {currentRecord?.status && (
-                  <button
-                    type="button"
-                    className="msa-subtle-btn msa-subtle-btn--clear"
+                  <Button
+                    variant="subtle"
+                    color="red"
+                    size="xs"
+                    leftSection={<RotateCcw size={13} />}
                     onClick={handleClearCurrentStatus}
                     title="Clear current mark"
                   >
-                    <RotateCcw size={14} /> Clear Selection
-                  </button>
+                    Clear Mark
+                  </Button>
                 )}
               </div>
-            </article>
+            </Paper>
           )}
 
           {/* Stepper Navigation Footer */}
-          <nav className="msa-stepper-nav" aria-label="Student Navigation">
-            <button
-              type="button"
-              className="msa-nav-btn"
+          <Paper p="xs" radius="md" withBorder className="msa-stepper-nav" shadow="xs">
+            <Button
+              variant="default"
+              size="md"
               disabled={currentIndex === 0}
               onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+              leftSection={<ChevronLeft size={18} />}
+              style={{ flex: 1 }}
               aria-label="Previous Student"
             >
-              <ChevronLeft size={20} /> Prev
-            </button>
+              Prev
+            </Button>
 
-            <button
-              type="button"
-              className="msa-summary-trigger-btn"
+            <Button
+              variant="light"
+              color="blue"
+              size="md"
               onClick={() => setViewMode('summary')}
+              style={{ flex: 1.4 }}
             >
               Summary ({counts.recorded}/{counts.total})
-            </button>
+            </Button>
 
-            <button
-              type="button"
-              className="msa-nav-btn"
+            <Button
+              variant="default"
+              size="md"
               disabled={currentIndex >= students.length - 1}
               onClick={() => setCurrentIndex((prev) => Math.min(students.length - 1, prev + 1))}
+              rightSection={<ChevronRight size={18} />}
+              style={{ flex: 1 }}
               aria-label="Next Student"
             >
-              Next <ChevronRight size={20} />
-            </button>
-          </nav>
+              Next
+            </Button>
+          </Paper>
         </main>
       ) : (
         /* Summary Review Mode */
         <main className="msa-summary-stage">
-          <div className="msa-summary-header">
-            <h2>Attendance Register Summary</h2>
-            <p>{selectedClass?.name} · {selectedDate}</p>
-          </div>
+          <Paper p="md" radius="lg" withBorder shadow="sm">
+            <div className="msa-summary-header">
+              <Title order={3}>Attendance Register Summary</Title>
+              <Text size="sm" c="dimmed">
+                {selectedClass?.name} · {selectedDate}
+              </Text>
+            </div>
 
-          {/* Key Metric Counters */}
-          <div className="msa-summary-cards-grid">
-            <div className="msa-sum-card msa-sum-card--present">
-              <span className="msa-sum-num">{counts.present}</span>
-              <span className="msa-sum-label">Present</span>
-            </div>
-            <div className="msa-sum-card msa-sum-card--absent">
-              <span className="msa-sum-num">{counts.absent}</span>
-              <span className="msa-sum-label">Absent</span>
-            </div>
-            <div className="msa-sum-card msa-sum-card--unrecorded">
-              <span className="msa-sum-num">{counts.unrecorded}</span>
-              <span className="msa-sum-label">Unrecorded</span>
-            </div>
-            <div className="msa-sum-card msa-sum-card--rate">
-              <span className="msa-sum-num">{counts.rate}%</span>
-              <span className="msa-sum-label">Rate</span>
-            </div>
-          </div>
+            {/* Key Metric Counters */}
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" mt="md">
+              <Paper p="sm" radius="md" withBorder bg="green.0">
+                <Text size="xs" fw={700} c="green.9" tt="uppercase">
+                  Present
+                </Text>
+                <Text size="xl" fw={800} c="green.8">
+                  {counts.present}
+                </Text>
+              </Paper>
+              <Paper p="sm" radius="md" withBorder bg="red.0">
+                <Text size="xs" fw={700} c="red.9" tt="uppercase">
+                  Absent
+                </Text>
+                <Text size="xl" fw={800} c="red.8">
+                  {counts.absent}
+                </Text>
+              </Paper>
+              <Paper p="sm" radius="md" withBorder bg="yellow.0">
+                <Text size="xs" fw={700} c="yellow.9" tt="uppercase">
+                  Unrecorded
+                </Text>
+                <Text size="xl" fw={800} c="yellow.8">
+                  {counts.unrecorded}
+                </Text>
+              </Paper>
+              <Paper p="sm" radius="md" withBorder bg="blue.0">
+                <Text size="xs" fw={700} c="blue.9" tt="uppercase">
+                  Rate
+                </Text>
+                <Text size="xl" fw={800} c="blue.8">
+                  {counts.rate}%
+                </Text>
+              </Paper>
+            </SimpleGrid>
 
-          {/* Absence Breakdown List */}
-          <div className="msa-absent-breakdown">
-            <h3>Absence Roster & Reasons ({counts.absent})</h3>
-            {counts.absent === 0 ? (
-              <p className="msa-no-absent">All marked students are Present! (Zero absences recorded)</p>
-            ) : (
-              <ul className="msa-absent-list">
-                {students
-                  .filter((st) => attendanceMap[st.student_id]?.status === 'absent')
-                  .map((st) => {
-                    const rec = attendanceMap[st.student_id];
-                    return (
-                      <li
-                        key={st.student_id}
-                        className="msa-absent-item"
-                        onClick={() => {
-                          const idx = students.findIndex((s) => s.student_id === st.student_id);
-                          if (idx >= 0) {
-                            setCurrentIndex(idx);
-                            setViewMode('card');
-                          }
-                        }}
-                        title="Click to jump to student card"
-                      >
-                        <div className="msa-absent-info">
-                          <strong>{st.calling_name || st.full_name}</strong>
-                          <span className="msa-absent-adm">Index {st.admission_no}</span>
-                        </div>
-                        <div className="msa-absent-reason">
-                          {rec.remarks ? rec.remarks : <span className="msa-no-reason">No reason given</span>}
-                          <Edit3 size={13} className="msa-edit-icon" />
-                        </div>
-                      </li>
-                    );
-                  })}
-              </ul>
+            {/* Absence Breakdown List */}
+            <Box mt="lg">
+              <Group justify="space-between" mb="xs">
+                <Title order={4}>Absence Roster & Reasons ({counts.absent})</Title>
+                <Badge color="red" variant="light" size="sm">
+                  {counts.absent} Absent
+                </Badge>
+              </Group>
+
+              {counts.absent === 0 ? (
+                <Paper p="sm" radius="sm" bg="green.0" withBorder>
+                  <Text size="sm" c="green.8" fw={600}>
+                    All recorded students are Present! (Zero absences recorded)
+                  </Text>
+                </Paper>
+              ) : (
+                <ScrollArea.Autosize mah={260}>
+                  <Stack gap="xs">
+                    {students
+                      .filter((st) => attendanceMap[st.student_id]?.status === 'absent')
+                      .map((st) => {
+                        const rec = attendanceMap[st.student_id];
+                        return (
+                          <Paper
+                            key={st.student_id}
+                            p="xs"
+                            radius="md"
+                            withBorder
+                            className="msa-absent-item"
+                            onClick={() => {
+                              const idx = students.findIndex((s) => s.student_id === st.student_id);
+                              if (idx >= 0) {
+                                setCurrentIndex(idx);
+                                setViewMode('card');
+                              }
+                            }}
+                            title="Click to jump to student card"
+                          >
+                            <div className="msa-absent-info">
+                              <strong>{st.calling_name || st.full_name}</strong>
+                              <span className="msa-absent-adm">Index {st.admission_no}</span>
+                            </div>
+                            <div className="msa-absent-reason">
+                              {rec.remarks ? rec.remarks : <span className="msa-no-reason">No reason given</span>}
+                              <Edit3 size={13} className="msa-edit-icon" />
+                            </div>
+                          </Paper>
+                        );
+                      })}
+                  </Stack>
+                </ScrollArea.Autosize>
+              )}
+            </Box>
+
+            {/* Unrecorded Students Warning if any */}
+            {counts.unrecorded > 0 && (
+              <Box mt="md" className="msa-unrecorded-alert" role="alert">
+                <AlertTriangle size={18} />
+                <div>
+                  <strong>{counts.unrecorded} Student(s) Unrecorded</strong>
+                  <p>All students must have attendance marked before final register submission.</p>
+                </div>
+              </Box>
             )}
-          </div>
 
-          {/* Unrecorded Students Warning if any */}
-          {counts.unrecorded > 0 && (
-            <div className="msa-unrecorded-alert" role="alert">
-              <AlertTriangle size={18} />
-              <div>
-                <strong>{counts.unrecorded} Student(s) Unrecorded</strong>
-                <p>All students must have attendance marked before final register submission.</p>
-              </div>
+            {/* Final Action Submission Bar */}
+            <div className="msa-final-actions-bar">
+              <Button
+                variant="default"
+                size="md"
+                leftSection={<Save size={16} />}
+                onClick={() => handleSaveAttendance('draft')}
+                loading={saving}
+              >
+                Save Draft
+              </Button>
+
+              <Button
+                color="blue"
+                size="md"
+                leftSection={<Send size={16} />}
+                onClick={() => handleSaveAttendance('submitted')}
+                loading={saving}
+                disabled={saving || counts.unrecorded > 0}
+              >
+                Submit Final Register
+              </Button>
             </div>
-          )}
-
-          {/* Final Action Submission Bar */}
-          <div className="msa-final-actions-bar">
-            <button
-              type="button"
-              className="msa-btn-secondary"
-              onClick={() => handleSaveAttendance('draft')}
-              disabled={saving}
-            >
-              <Save size={16} /> Save Draft
-            </button>
-
-            <button
-              type="button"
-              className="msa-btn-primary"
-              onClick={() => handleSaveAttendance('submitted')}
-              disabled={saving || counts.unrecorded > 0}
-            >
-              <Send size={16} /> Submit Final Register
-            </button>
-          </div>
+          </Paper>
         </main>
       )}
 
@@ -821,9 +964,9 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
 
             {/* Modal Actions */}
             <div className="msa-modal-actions">
-              <button
-                type="button"
-                className="msa-modal-btn msa-modal-btn--secondary"
+              <Button
+                variant="default"
+                size="md"
                 onClick={() => {
                   setSelectedReasons([]);
                   setCustomReason('');
@@ -831,15 +974,15 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
                 }}
               >
                 Skip Reason
-              </button>
+              </Button>
 
-              <button
-                type="button"
-                className="msa-modal-btn msa-modal-btn--primary"
+              <Button
+                color="red"
+                size="md"
                 onClick={handleConfirmAbsent}
               >
                 Confirm Absent
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -854,7 +997,7 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
             aria-label="Quick Roster Jump Drawer"
           >
             <div className="msa-drawer-header">
-              <h3>Class Roster ({students.length})</h3>
+              <Title order={4}>Class Roster ({students.length})</Title>
               <button
                 type="button"
                 className="msa-modal-close"

@@ -14,10 +14,30 @@ import {
   CheckCircle2,
   UserCheck,
   Building,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  School,
+  AlertCircle
 } from 'lucide-react';
+import {
+  Modal,
+  Badge,
+  Paper,
+  Text,
+  Title,
+  Group,
+  Stack,
+  SimpleGrid,
+  Box,
+  Divider,
+  Alert,
+  Tooltip,
+  ScrollArea,
+  Button
+} from '@mantine/core';
 import { api } from '../api/client';
 import { StudentFullView } from './StudentFullView';
+import { EmptyState, LoadingState } from '../ui/mantine';
 import './students.css';
 
 interface StudentsProps {
@@ -259,6 +279,9 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
         <div className="students-header-titles">
           <div className="students-title-row">
             <h2 className="students-title">Student Information Records</h2>
+            <Badge variant="light" color="refinedBlue" size="md">
+              {metrics.total} Registered Pupils
+            </Badge>
           </div>
           <p className="students-subtitle">
             Permanent admission registry, class enrollment rosters, and verified guardian contact records.
@@ -276,7 +299,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             <span>Export CSV</span>
           </button>
 
-          {user.role === 'admin' && (
+          {user?.role === 'admin' && (
             <>
               <button
                 type="button"
@@ -303,50 +326,122 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
       </div>
 
       {/* Summary KPI Metric Cards */}
-      <div className="students-kpi-grid">
-        <div className="students-kpi-card">
-          <div className="students-kpi-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-            <Users size={22} />
-          </div>
-          <div className="students-kpi-info">
-            <span className="students-kpi-value">{metrics.total}</span>
-            <span className="students-kpi-label">Total Enrolled</span>
-          </div>
-        </div>
+      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="sm">
+        <Paper withBorder radius="md" p="md" bg="var(--bg-surface, #ffffff)">
+          <Group justify="space-between" align="center">
+            <Stack gap={2}>
+              <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em">
+                Total Enrolled
+              </Text>
+              <Text size="xl" fw={800} c="slate.9" style={{ fontSize: '1.65rem', lineHeight: 1.1 }}>
+                {metrics.total}
+              </Text>
+            </Stack>
+            <Box
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                background: 'var(--primary-light, #eff6ff)',
+                color: 'var(--primary, #2563eb)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+            >
+              <Users size={22} />
+            </Box>
+          </Group>
+        </Paper>
 
-        <div className="students-kpi-card">
-          <div className="students-kpi-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)' }}>
-            <UserCheck size={22} />
-          </div>
-          <div className="students-kpi-info">
-            <span className="students-kpi-value">{metrics.active}</span>
-            <span className="students-kpi-label">Active Pupils</span>
-          </div>
-        </div>
+        <Paper withBorder radius="md" p="md" bg="var(--bg-surface, #ffffff)">
+          <Group justify="space-between" align="center">
+            <Stack gap={2}>
+              <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em">
+                Active Pupils
+              </Text>
+              <Text size="xl" fw={800} c="statusGreen.7" style={{ fontSize: '1.65rem', lineHeight: 1.1 }}>
+                {metrics.active}
+              </Text>
+            </Stack>
+            <Box
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                background: 'var(--present-bg, #ecfdf5)',
+                color: 'var(--present, #10b981)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+            >
+              <UserCheck size={22} />
+            </Box>
+          </Group>
+        </Paper>
 
-        <div className="students-kpi-card">
-          <div className="students-kpi-icon" style={{ background: 'var(--late-bg)', color: 'var(--late)' }}>
-            <Calendar size={22} />
-          </div>
-          <div className="students-kpi-info">
-            <span className="students-kpi-value">{metrics.male}M / {metrics.female}F</span>
-            <span className="students-kpi-label">Gender Breakdown</span>
-          </div>
-        </div>
+        <Paper withBorder radius="md" p="md" bg="var(--bg-surface, #ffffff)">
+          <Group justify="space-between" align="center">
+            <Stack gap={2}>
+              <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em">
+                Gender Breakdown
+              </Text>
+              <Text size="xl" fw={800} c="slate.9" style={{ fontSize: '1.65rem', lineHeight: 1.1 }}>
+                {metrics.male}M <Text component="span" size="sm" c="dimmed" fw={600}>/ {metrics.female}F</Text>
+              </Text>
+            </Stack>
+            <Box
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                background: 'var(--late-bg, #fffbeb)',
+                color: 'var(--late, #d97706)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+            >
+              <Calendar size={22} />
+            </Box>
+          </Group>
+        </Paper>
 
-        <div className="students-kpi-card">
-          <div className="students-kpi-icon" style={{ background: 'var(--excused-bg)', color: 'var(--excused)' }}>
-            <Building size={22} />
-          </div>
-          <div className="students-kpi-info">
-            <span className="students-kpi-value">{metrics.uniqueClasses}</span>
-            <span className="students-kpi-label">Classes Represented</span>
-          </div>
-        </div>
-      </div>
+        <Paper withBorder radius="md" p="md" bg="var(--bg-surface, #ffffff)">
+          <Group justify="space-between" align="center">
+            <Stack gap={2}>
+              <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em">
+                Classes Represented
+              </Text>
+              <Text size="xl" fw={800} c="refinedBlue.7" style={{ fontSize: '1.65rem', lineHeight: 1.1 }}>
+                {metrics.uniqueClasses} <Text component="span" size="xs" c="dimmed" fw={600}>Active</Text>
+              </Text>
+            </Stack>
+            <Box
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                background: 'var(--excused-bg, #f0fdf4)',
+                color: 'var(--excused, #059669)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+            >
+              <Building size={22} />
+            </Box>
+          </Group>
+        </Paper>
+      </SimpleGrid>
 
       {/* Filter & Search Toolbar */}
-      <div className="students-filter-card">
+      <Paper withBorder radius="md" p="md" bg="var(--bg-surface, #ffffff)" className="students-filter-card">
         <div className="students-filter-row">
           <div className="students-search-wrapper">
             <Search size={16} className="students-search-icon" aria-hidden="true" />
@@ -480,11 +575,11 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             </button>
           </div>
         )}
-      </div>
+      </Paper>
 
       {/* Student Records Table Card */}
-      <div className="students-table-card card" style={{ padding: 0 }}>
-        <div className="table-responsive">
+      <Paper withBorder radius="md" bg="var(--bg-surface, #ffffff)" className="students-table-card card" style={{ padding: 0 }}>
+        <ScrollArea>
           <table className="students-table data-table">
             <thead>
               <tr>
@@ -500,29 +595,36 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '3.5rem' }}>
-                    <div className="animate-spin" style={{ display: 'inline-block', width: 26, height: 26, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
-                    <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      Loading student records...
-                    </p>
+                  <td colSpan={7} style={{ padding: '3.5rem 1rem' }}>
+                    <LoadingState message="Loading student records..." minHeight={120} />
                   </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '3.5rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      No student records matching criteria found.
-                    </div>
-                    {hasActiveFilters && (
-                      <button
-                        type="button"
-                        onClick={handleResetFilters}
-                        className="btn btn-secondary btn-sm"
-                        style={{ marginTop: '0.75rem' }}
-                      >
-                        <RotateCcw size={14} /> Clear Active Filters
-                      </button>
-                    )}
+                  <td colSpan={7} style={{ padding: '2.5rem 1rem' }}>
+                    <EmptyState
+                      icon={<Users size={36} />}
+                      title="No Student Records Found"
+                      description={
+                        hasActiveFilters
+                          ? 'No student admissions match the active search criteria and filters.'
+                          : 'No students have been enrolled in the registry yet.'
+                      }
+                      action={
+                        hasActiveFilters ? (
+                          <Button
+                            variant="light"
+                            color="refinedBlue"
+                            size="xs"
+                            leftSection={<RotateCcw size={14} />}
+                            onClick={handleResetFilters}
+                          >
+                            Clear Active Filters
+                          </Button>
+                        ) : undefined
+                      }
+                      withBorder={false}
+                    />
                   </td>
                 </tr>
               ) : (
@@ -544,7 +646,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                           className="students-avatar"
                           onClick={() => setFullViewStudentId(st.id)}
                           style={{
-                            backgroundColor: st.gender === 'Female' ? '#db2777' : '#4f46e5'
+                            backgroundColor: st.gender === 'Female' ? '#db2777' : '#2563eb'
                           }}
                           title="Click to view full record"
                           aria-hidden="true"
@@ -567,12 +669,16 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                     </td>
 
                     <td>
-                      <span className="badge" style={{ background: 'var(--bg-subtle)', fontWeight: 600 }}>
+                      <Badge variant="light" color="slate" size="sm" radius="sm">
                         {st.class_name || 'Unassigned'}
-                      </span>
+                      </Badge>
                     </td>
 
-                    <td>{st.gender}</td>
+                    <td>
+                      <Text size="sm" c="slate.7">
+                        {st.gender}
+                      </Text>
+                    </td>
 
                     <td>
                       <div className="students-guardian-cell">
@@ -624,317 +730,293 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
               )}
             </tbody>
           </table>
-        </div>
-      </div>
+        </ScrollArea>
+      </Paper>
 
       {/* Add Student Modal */}
-      {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '640px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>Add New Student Admission</h3>
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="btn btn-secondary btn-icon btn-sm"
-                aria-label="Close add student modal"
-              >
-                <X size={18} />
-              </button>
+      <Modal
+        opened={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title={
+          <Group gap="xs">
+            <School size={20} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Add New Student Admission</Text>
+          </Group>
+        }
+        size="lg"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleAddSubmit}>
+          <Stack gap="md">
+            {formError && (
+              <Alert icon={<AlertCircle size={16} />} color="red" radius="md">
+                {formError}
+              </Alert>
+            )}
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Admission Number *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.admission_no}
+                  onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
+                  placeholder="e.g. SCH-2026-031"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Calling Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.calling_name}
+                  onChange={(e) => setFormData({ ...formData, calling_name: e.target.value })}
+                  placeholder="e.g. Kasun"
+                  required
+                />
+              </div>
+            </SimpleGrid>
+
+            <div className="form-group">
+              <label className="form-label">Full Name *</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                placeholder="e.g. Kasun Malinda Ranasinghe"
+                required
+              />
             </div>
 
-            <form onSubmit={handleAddSubmit}>
-              <div className="modal-body">
-                {formError && (
-                  <div
-                    style={{
-                      background: 'var(--absent-bg)',
-                      color: 'var(--absent)',
-                      padding: '0.75rem',
-                      borderRadius: 'var(--radius-md)',
-                      marginBottom: '1rem',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    {formError}
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Admission Number *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={formData.admission_no}
-                      onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
-                      placeholder="e.g. SCH-2026-031"
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Calling Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={formData.calling_name}
-                      onChange={(e) => setFormData({ ...formData, calling_name: e.target.value })}
-                      placeholder="e.g. Kasun"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={formData.full_name}
-                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                    placeholder="e.g. Kasun Malinda Ranasinghe"
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Date of Birth *</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      value={formData.dob}
-                      onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Gender *</label>
-                    <select
-                      className="form-select"
-                      value={formData.gender}
-                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                    >
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Class Assignment</label>
-                    <select
-                      className="form-select"
-                      value={formData.class_id}
-                      onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
-                    >
-                      <option value="">Select Class</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Roll Number</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.roll_number}
-                      onChange={(e) => setFormData({ ...formData, roll_number: e.target.value })}
-                      placeholder="e.g. 21"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Residential Address</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Home address"
-                  />
-                </div>
-
-                <div style={{ borderTop: '1px solid var(--border-color)', margin: '1rem 0', paddingTop: '1rem' }}>
-                  <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>Guardian & Emergency Contact</h4>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Guardian Name *</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={formData.guardian_name}
-                        onChange={(e) => setFormData({ ...formData, guardian_name: e.target.value })}
-                        placeholder="Parent / Guardian name"
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Relation *</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={formData.guardian_relation}
-                        onChange={(e) => setFormData({ ...formData, guardian_relation: e.target.value })}
-                        placeholder="Father / Mother / Guardian"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Guardian Phone Number *</label>
-                      <input
-                        type="tel"
-                        className="form-input"
-                        value={formData.guardian_phone}
-                        onChange={(e) => setFormData({ ...formData, guardian_phone: e.target.value })}
-                        placeholder="e.g. 0771234567"
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Guardian Email</label>
-                      <input
-                        type="email"
-                        className="form-input"
-                        value={formData.guardian_email}
-                        onChange={(e) => setFormData({ ...formData, guardian_email: e.target.value })}
-                        placeholder="guardian@example.com"
-                      />
-                    </div>
-                  </div>
-                </div>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Date of Birth *</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={formData.dob}
+                  onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                  required
+                />
               </div>
 
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAddModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Admission Record
-                </button>
+              <div className="form-group">
+                <label className="form-label">Gender *</label>
+                <select
+                  className="form-select"
+                  value={formData.gender}
+                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                >
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Class Assignment</label>
+                <select
+                  className="form-select"
+                  value={formData.class_id}
+                  onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
+                >
+                  <option value="">Select Class</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Roll Number</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={formData.roll_number}
+                  onChange={(e) => setFormData({ ...formData, roll_number: e.target.value })}
+                  placeholder="e.g. 21"
+                />
+              </div>
+            </SimpleGrid>
+
+            <div className="form-group">
+              <label className="form-label">Residential Address</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Home address"
+              />
+            </div>
+
+            <Divider my="xs" label="Guardian & Emergency Contact" labelPosition="left" />
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Guardian Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.guardian_name}
+                  onChange={(e) => setFormData({ ...formData, guardian_name: e.target.value })}
+                  placeholder="Parent / Guardian name"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Relation *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.guardian_relation}
+                  onChange={(e) => setFormData({ ...formData, guardian_relation: e.target.value })}
+                  placeholder="Father / Mother / Guardian"
+                  required
+                />
+              </div>
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Guardian Phone Number *</label>
+                <input
+                  type="tel"
+                  className="form-input"
+                  value={formData.guardian_phone}
+                  onChange={(e) => setFormData({ ...formData, guardian_phone: e.target.value })}
+                  placeholder="e.g. 0771234567"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Guardian Email</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  value={formData.guardian_email}
+                  onChange={(e) => setFormData({ ...formData, guardian_email: e.target.value })}
+                  placeholder="guardian@example.com"
+                />
+              </div>
+            </SimpleGrid>
+
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowAddModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue">
+                Save Admission Record
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* Student Profile Quick Modal */}
-      {showProfileModal && selectedStudent && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '680px' }}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div className="brand-badge" style={{ width: 44, height: 44, borderRadius: '50%' }}>
-                  {selectedStudent.calling_name?.charAt(0)}
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '1.2rem', margin: 0 }}>{selectedStudent.full_name}</h3>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.15rem 0 0' }}>
-                    Admission ID: <strong>{selectedStudent.admission_no}</strong> • Class: {selectedStudent.class_name || 'N/A'}
-                  </p>
-                </div>
+      <Modal
+        opened={showProfileModal && !!selectedStudent}
+        onClose={() => setShowProfileModal(false)}
+        title={
+          selectedStudent && (
+            <Group gap="sm">
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  background: selectedStudent.gender === 'Female' ? '#db2777' : '#2563eb',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  fontSize: '0.9rem'
+                }}
+              >
+                {selectedStudent.calling_name?.charAt(0) || selectedStudent.full_name?.charAt(0)}
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowProfileModal(false);
-                    setFullViewStudentId(selectedStudent.id);
-                  }}
-                  className="btn btn-primary btn-sm"
-                  title="Expand to Full View Dossier"
-                >
-                  <Maximize2 size={13} />
-                  <span>Full View</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowProfileModal(false)}
-                  className="btn btn-secondary btn-icon btn-sm"
-                  aria-label="Close quick preview modal"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
+              <Stack gap={0}>
+                <Text fw={700} size="sm">{selectedStudent.full_name}</Text>
+                <Text size="xs" c="dimmed">
+                  Admission ID: <strong>{selectedStudent.admission_no}</strong> • Class: {selectedStudent.class_name || 'N/A'}
+                </Text>
+              </Stack>
+            </Group>
+          )
+        }
+        size="lg"
+        radius="md"
+        centered
+      >
+        {selectedStudent && (
+          <Stack gap="md">
+            {studentDetails ? (
+              <>
+                {/* Attendance & Key Stats */}
+                <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
+                    <Text size="lg" fw={800} c="statusGreen.7">
+                      {studentDetails.attendance?.attendanceRate ?? 100}%
+                    </Text>
+                    <Text size="xs" c="dimmed">Attendance Rate</Text>
+                  </Paper>
 
-            <div className="modal-body">
-              {studentDetails ? (
-                <>
-                  {/* Attendance & Key Stats */}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                      gap: '0.75rem',
-                      marginBottom: '1.5rem'
-                    }}
-                  >
-                    <div style={{ padding: '0.85rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--present)' }}>
-                        {studentDetails.attendance?.attendanceRate || 100}%
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Attendance Rate</div>
-                    </div>
+                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
+                    <Text size="lg" fw={800} c="slate.8">
+                      {studentDetails.attendance?.present_days ?? 0}
+                    </Text>
+                    <Text size="xs" c="dimmed">Days Present</Text>
+                  </Paper>
 
-                    <div style={{ padding: '0.85rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>
-                        {studentDetails.attendance?.present_days || 0}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Present</div>
-                    </div>
+                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
+                    <Text size="lg" fw={800} c="statusRed.7">
+                      {studentDetails.attendance?.absent_days ?? 0}
+                    </Text>
+                    <Text size="xs" c="dimmed">Days Absent</Text>
+                  </Paper>
 
-                    <div style={{ padding: '0.85rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--absent)' }}>
-                        {studentDetails.attendance?.absent_days || 0}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Absent</div>
-                    </div>
+                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
+                    <Text size="lg" fw={800} c="statusAmber.7">
+                      {studentDetails.attendance?.late_days ?? 0}
+                    </Text>
+                    <Text size="xs" c="dimmed">Days Late</Text>
+                  </Paper>
+                </SimpleGrid>
 
-                    <div style={{ padding: '0.85rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--late)' }}>
-                        {studentDetails.attendance?.late_days || 0}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days Late</div>
-                    </div>
-                  </div>
+                {/* Details Card */}
+                <Paper withBorder p="sm" radius="md" bg="var(--bg-subtle, #f8fafc)">
+                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em" mb="xs">
+                    Personal & Guardian Information
+                  </Text>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                    <Text size="sm"><strong>Date of Birth:</strong> {selectedStudent.dob}</Text>
+                    <Text size="sm"><strong>Gender:</strong> {selectedStudent.gender}</Text>
+                    <Text size="sm"><strong>Guardian:</strong> {selectedStudent.guardian_name} ({selectedStudent.guardian_relation})</Text>
+                    <Text size="sm"><strong>Phone:</strong> {selectedStudent.guardian_phone}</Text>
+                    <Box style={{ gridColumn: '1 / -1' }}>
+                      <Text size="sm"><strong>Address:</strong> {selectedStudent.address || 'Not provided'}</Text>
+                    </Box>
+                  </SimpleGrid>
+                </Paper>
 
-                  {/* Details Card */}
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
-                      Personal & Guardian Information
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.875rem' }}>
-                      <div><strong>Date of Birth:</strong> {selectedStudent.dob}</div>
-                      <div><strong>Gender:</strong> {selectedStudent.gender}</div>
-                      <div><strong>Guardian:</strong> {selectedStudent.guardian_name} ({selectedStudent.guardian_relation})</div>
-                      <div><strong>Phone:</strong> {selectedStudent.guardian_phone}</div>
-                      <div style={{ gridColumn: '1 / -1' }}>
-                        <strong>Address:</strong> {selectedStudent.address || 'Not provided'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Academic Marks History */}
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
-                      Term Examination Marks
-                    </h4>
-                    {studentDetails.marks && studentDetails.marks.length > 0 ? (
-                      <table className="data-table">
+                {/* Academic Marks History */}
+                <Box>
+                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em" mb="xs">
+                    Term Examination Marks
+                  </Text>
+                  {studentDetails.marks && studentDetails.marks.length > 0 ? (
+                    <ScrollArea mah={160}>
+                      <table className="data-table" style={{ fontSize: '0.825rem' }}>
                         <thead>
                           <tr>
                             <th>Exam</th>
@@ -958,155 +1040,152 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                           ))}
                         </tbody>
                       </table>
-                    ) : (
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        No examination marks submitted for this student yet.
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p>Loading full profile details...</p>
-              )}
-            </div>
+                    </ScrollArea>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No examination marks submitted for this student yet.
+                    </Text>
+                  )}
+                </Box>
+              </>
+            ) : (
+              <LoadingState message="Loading full profile details..." minHeight={120} />
+            )}
 
-            <div className="modal-footer">
-              <button type="button" onClick={() => setShowProfileModal(false)} className="btn btn-secondary">
+            <Divider my="xs" />
+
+            <Group justify="space-between" align="center">
+              <Button variant="default" onClick={() => setShowProfileModal(false)}>
                 Close
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                color="refinedBlue"
+                leftSection={<Maximize2 size={15} />}
                 onClick={() => {
                   setShowProfileModal(false);
                   setFullViewStudentId(selectedStudent.id);
                 }}
-                className="btn btn-primary"
               >
-                <Maximize2 size={15} />
-                <span>Open Comprehensive Full View</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                Open Comprehensive Full View
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       {/* CSV Bulk Import Modal */}
-      {showImportModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '720px' }}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <FileSpreadsheet size={22} style={{ color: 'var(--primary)' }} />
-                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Bulk CSV Student Import & Validation</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowImportModal(false)}
-                className="btn btn-secondary btn-icon btn-sm"
-                aria-label="Close import modal"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      <Modal
+        opened={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title={
+          <Group gap="xs">
+            <FileSpreadsheet size={20} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Bulk CSV Student Import & Validation</Text>
+          </Group>
+        }
+        size="lg"
+        radius="md"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Paste CSV data below. The system will validate required columns, detect duplicate admission numbers, and match classes before importing.
+          </Text>
 
-            <div className="modal-body">
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                Paste CSV data below. The system will validate required columns, detect duplicate admission numbers, and match classes before importing.
-              </p>
+          <Group justify="space-between" align="center">
+            <Button
+              variant="light"
+              color="slate"
+              size="xs"
+              onClick={() => setCsvText(sampleCsvTemplate)}
+            >
+              Load Sample Template
+            </Button>
+            <Button
+              variant="light"
+              color="refinedBlue"
+              size="xs"
+              onClick={handleCsvPreview}
+              loading={importing}
+              disabled={importing || !csvText.trim()}
+            >
+              Validate & Preview CSV
+            </Button>
+          </Group>
 
-              <div style={{ marginBottom: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setCsvText(sampleCsvTemplate)}
-                  className="btn btn-secondary btn-sm"
-                  style={{ fontSize: '0.75rem' }}
+          <textarea
+            className="form-textarea"
+            rows={6}
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            placeholder="Paste CSV rows here..."
+            style={{ fontFamily: 'monospace', fontSize: '0.8rem', width: '100%', borderRadius: 8 }}
+          />
+
+          {/* Preview Results Table */}
+          {importPreview && (
+            <Paper withBorder p="sm" radius="md">
+              <Group justify="space-between" align="center" mb="xs">
+                <Text size="sm" fw={600}>CSV Validation Summary</Text>
+                <Badge
+                  color={importPreview.hasErrors ? 'red' : 'green'}
+                  variant="light"
+                  size="sm"
                 >
-                  Load Sample Template
-                </button>
-              </div>
+                  {importPreview.preview?.length || 0} rows parsed • {importPreview.hasErrors ? 'Errors detected' : 'All rows valid'}
+                </Badge>
+              </Group>
 
-              <textarea
-                className="form-textarea"
-                rows={6}
-                value={csvText}
-                onChange={(e) => setCsvText(e.target.value)}
-                placeholder="Paste CSV rows here..."
-                style={{ fontFamily: 'monospace', fontSize: '0.8rem', width: '100%' }}
-              />
+              <ScrollArea mah={200}>
+                <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Row</th>
+                      <th>Admission</th>
+                      <th>Student Name</th>
+                      <th>Class</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.preview?.map((p: any) => (
+                      <tr key={p.rowNumber}>
+                        <td>{p.rowNumber}</td>
+                        <td>{p.data?.admission_no}</td>
+                        <td>{p.data?.full_name}</td>
+                        <td>{p.data?.class_name}</td>
+                        <td>
+                          {p.errors?.length > 0 ? (
+                            <span style={{ color: 'var(--absent)' }}>{p.errors.join(', ')}</span>
+                          ) : (
+                            <span style={{ color: 'var(--present)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <CheckCircle2 size={12} /> Valid
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </Paper>
+          )}
 
-              <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={handleCsvPreview}
-                  disabled={importing || !csvText.trim()}
-                  className="btn btn-secondary btn-sm"
-                >
-                  {importing ? 'Validating...' : 'Validate & Preview CSV'}
-                </button>
-              </div>
-
-              {/* Preview Results Table */}
-              {importPreview && (
-                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <h4 style={{ fontSize: '0.9rem' }}>CSV Validation Summary</h4>
-                    <span className="badge" style={{ background: importPreview.hasErrors ? 'var(--absent-bg)' : 'var(--present-bg)', color: importPreview.hasErrors ? 'var(--absent)' : 'var(--present)' }}>
-                      {importPreview.preview?.length || 0} rows parsed • {importPreview.hasErrors ? 'Errors detected' : 'All rows valid'}
-                    </span>
-                  </div>
-
-                  <div className="table-responsive" style={{ maxHeight: '200px' }}>
-                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
-                      <thead>
-                        <tr>
-                          <th>Row</th>
-                          <th>Admission</th>
-                          <th>Student Name</th>
-                          <th>Class</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importPreview.preview?.map((p: any) => (
-                          <tr key={p.rowNumber}>
-                            <td>{p.rowNumber}</td>
-                            <td>{p.data?.admission_no}</td>
-                            <td>{p.data?.full_name}</td>
-                            <td>{p.data?.class_name}</td>
-                            <td>
-                              {p.errors?.length > 0 ? (
-                                <span style={{ color: 'var(--absent)' }}>{p.errors.join(', ')}</span>
-                              ) : (
-                                <span style={{ color: 'var(--present)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                  <CheckCircle2 size={12} /> Valid
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" onClick={() => setShowImportModal(false)} className="btn btn-secondary">
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCsvCommit}
-                disabled={importing || !importPreview || importPreview.hasErrors}
-                className="btn btn-primary"
-              >
-                {importing ? 'Importing...' : 'Commit & Import Valid Students'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          <Group justify="flex-end" gap="sm" mt="sm">
+            <Button variant="default" onClick={() => setShowImportModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="refinedBlue"
+              onClick={handleCsvCommit}
+              loading={importing}
+              disabled={importing || !importPreview || importPreview.hasErrors}
+            >
+              Commit & Import Valid Students
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </div>
   );
 };

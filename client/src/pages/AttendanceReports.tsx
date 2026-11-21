@@ -8,10 +8,29 @@ import {
   Printer,
   ChevronLeft,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  FileSpreadsheet,
+  Users,
+  Search,
+  Filter
 } from 'lucide-react';
+import {
+  Paper,
+  Badge,
+  Button,
+  Group,
+  Stack,
+  Text,
+  Title,
+  SimpleGrid,
+  ScrollArea,
+  Progress,
+  Tooltip,
+  Box
+} from '@mantine/core';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
+import { LoadingState, EmptyState } from '../ui/mantine';
 import './attendanceReports.css';
 
 export const AttendanceReports: React.FC = () => {
@@ -122,46 +141,51 @@ export const AttendanceReports: React.FC = () => {
   return (
     <div className="attendance-reports-page">
       {/* Top Header */}
-      <div className="reports-header">
-        <div className="reports-header-titles">
-          <h2 className="reports-title">Attendance Reports & Registry</h2>
-          <p className="reports-subtitle">
-            Daily breakdown, absent student follow-up directory, and monthly attendance matrix.
-          </p>
-        </div>
-
-        <div className="reports-actions">
-          <div className="reports-view-toggle">
-            <button
-              type="button"
-              onClick={() => setActiveTab('daily')}
-              className={`reports-tab-btn ${activeTab === 'daily' ? 'active' : ''}`}
-            >
-              Daily Summary
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('monthly')}
-              className={`reports-tab-btn ${activeTab === 'monthly' ? 'active' : ''}`}
-            >
-              Monthly Register
-            </button>
+      <Paper p="md" radius="lg" withBorder shadow="xs" className="reports-header-card">
+        <Group justify="space-between" align="center" wrap="wrap" gap="md">
+          <div className="reports-header-titles">
+            <Title order={2} className="reports-title">
+              Attendance Reports & Registry
+            </Title>
+            <Text size="sm" c="dimmed" className="reports-subtitle">
+              Daily breakdown, absent student follow-up directory, and monthly attendance matrix.
+            </Text>
           </div>
 
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="btn btn-secondary btn-sm btn-no-print"
-            title="Print report"
-          >
-            <Printer size={15} />
-            <span>Print Report</span>
-          </button>
-        </div>
-      </div>
+          <Group gap="sm" wrap="wrap" className="reports-actions">
+            <div className="reports-view-toggle">
+              <button
+                type="button"
+                onClick={() => setActiveTab('daily')}
+                className={`reports-tab-btn ${activeTab === 'daily' ? 'active' : ''}`}
+              >
+                Daily Summary
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('monthly')}
+                className={`reports-tab-btn ${activeTab === 'monthly' ? 'active' : ''}`}
+              >
+                Monthly Register
+              </button>
+            </div>
+
+            <Button
+              variant="default"
+              size="sm"
+              leftSection={<Printer size={15} />}
+              onClick={() => window.print()}
+              className="btn-no-print"
+              title="Print report"
+            >
+              Print Report
+            </Button>
+          </Group>
+        </Group>
+      </Paper>
 
       {/* View Switcher & Toolbar Card */}
-      <div className="reports-toolbar-card">
+      <Paper p="md" radius="lg" withBorder shadow="xs" className="reports-toolbar-card">
         <div className="reports-toolbar-row">
           {activeTab === 'daily' ? (
             <>
@@ -209,14 +233,19 @@ export const AttendanceReports: React.FC = () => {
               </div>
 
               <div className="reports-status-summary">
-                <span className={`reports-status-pill ${recordedSessions > 0 ? 'reports-status-pill--active' : 'reports-status-pill--empty'}`}>
+                <Badge
+                  color={recordedSessions > 0 ? 'green' : 'gray'}
+                  variant="light"
+                  size="lg"
+                  className="reports-status-pill"
+                >
                   <span className="reports-status-dot" />
                   <span>
                     {recordedSessions > 0
                       ? `${recordedSessions} of ${dailyData?.classes?.length || 18} Classes Submitted`
                       : 'No Registers Submitted for this Date'}
                   </span>
-                </span>
+                </Badge>
               </div>
             </>
           ) : (
@@ -270,246 +299,245 @@ export const AttendanceReports: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
+      </Paper>
 
       {activeTab === 'daily' && (
         <>
-          {/* Daily Summary Stats Grid */}
-          <div className="dashboard-stats-grid">
-            <div className="stat-card">
-              <div className="stat-header-row">
-                <span className="stat-label">Overall Attendance</span>
-                <div className="stat-icon" style={{ background: 'var(--present-bg)', color: 'var(--present)', borderColor: 'var(--present-border)' }}>
-                  <CheckCircle size={18} />
-                </div>
-              </div>
-              <div className="stat-content">
-                <div className="stat-val">
-                  {schoolPercentage !== null ? `${schoolPercentage}%` : '—'}
-                </div>
-                <div className="stat-meta">
-                  <span
-                    className="stat-meta-dot"
-                    style={{ background: schoolPercentage !== null ? 'var(--present)' : 'var(--text-muted)' }}
-                  />
-                  <span>
-                    {schoolPercentage !== null
-                      ? `${totalPresent + totalLate} / ${totalEnrolled} Pupils present`
-                      : 'No attendance recorded'}
-                  </span>
-                </div>
-              </div>
-            </div>
+          {loadingDaily ? (
+            <LoadingState message="Compiling daily attendance report..." minHeight={200} />
+          ) : (
+            <>
+              {/* Daily Summary Stats Grid */}
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
+                  <Group justify="space-between" align="flex-start" mb="xs">
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                      Overall Attendance
+                    </Text>
+                    <Badge color="green" variant="light" size="lg" circle>
+                      <CheckCircle size={18} />
+                    </Badge>
+                  </Group>
+                  <div className="stat-content">
+                    <Text size="2rem" fw={800} lh={1}>
+                      {schoolPercentage !== null ? `${schoolPercentage}%` : '—'}
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {schoolPercentage !== null
+                        ? `${totalPresent + totalLate} / ${totalEnrolled} Pupils present`
+                        : 'No attendance recorded'}
+                    </Text>
+                  </div>
+                </Paper>
 
-            <div className="stat-card">
-              <div className="stat-header-row">
-                <span className="stat-label">Students Present</span>
-                <div className="stat-icon" style={{ background: 'rgba(99, 102, 241, 0.12)', color: '#4f46e5', borderColor: 'rgba(99, 102, 241, 0.25)' }}>
-                  <UserCheck size={18} />
-                </div>
-              </div>
-              <div className="stat-content">
-                <div className="stat-val">{totalPresent}</div>
-                <div className="stat-meta">
-                  <span className="stat-meta-dot" style={{ background: '#4f46e5' }} />
-                  <span>Confirmed in classrooms</span>
-                </div>
-              </div>
-            </div>
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
+                  <Group justify="space-between" align="flex-start" mb="xs">
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                      Students Present
+                    </Text>
+                    <Badge color="blue" variant="light" size="lg" circle>
+                      <UserCheck size={18} />
+                    </Badge>
+                  </Group>
+                  <div className="stat-content">
+                    <Text size="2rem" fw={800} lh={1} c="blue.7">
+                      {totalPresent}
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      Confirmed in classrooms
+                    </Text>
+                  </div>
+                </Paper>
 
-            <div className="stat-card">
-              <div className="stat-header-row">
-                <span className="stat-label">Students Absent</span>
-                <div className="stat-icon" style={{ background: 'var(--absent-bg)', color: 'var(--absent)', borderColor: 'var(--absent-border)' }}>
-                  <AlertCircle size={18} />
-                </div>
-              </div>
-              <div className="stat-content">
-                <div className="stat-val">{totalAbsent}</div>
-                <div className="stat-meta">
-                  <span
-                    className="stat-meta-dot"
-                    style={{ background: totalAbsent > 0 ? 'var(--absent)' : 'var(--text-muted)' }}
-                  />
-                  <span>
-                    {totalAbsent > 0 ? 'Listed in action directory' : 'Zero reported absences'}
-                  </span>
-                </div>
-              </div>
-            </div>
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
+                  <Group justify="space-between" align="flex-start" mb="xs">
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                      Students Absent
+                    </Text>
+                    <Badge color="red" variant="light" size="lg" circle>
+                      <AlertCircle size={18} />
+                    </Badge>
+                  </Group>
+                  <div className="stat-content">
+                    <Text size="2rem" fw={800} lh={1} c="red.7">
+                      {totalAbsent}
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {totalAbsent > 0 ? 'Listed in action directory' : 'Zero reported absences'}
+                    </Text>
+                  </div>
+                </Paper>
 
-            <div className="stat-card">
-              <div className="stat-header-row">
-                <span className="stat-label">Students Late</span>
-                <div className="stat-icon" style={{ background: 'var(--late-bg)', color: 'var(--late)', borderColor: 'var(--late-border)' }}>
-                  <Clock size={18} />
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
+                  <Group justify="space-between" align="flex-start" mb="xs">
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                      Students Late
+                    </Text>
+                    <Badge color="yellow" variant="light" size="lg" circle>
+                      <Clock size={18} />
+                    </Badge>
+                  </Group>
+                  <div className="stat-content">
+                    <Text size="2rem" fw={800} lh={1} c="yellow.8">
+                      {totalLate}
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {totalLate > 0 ? 'Admitted with late record' : 'Zero recorded late arrivals'}
+                    </Text>
+                  </div>
+                </Paper>
+              </SimpleGrid>
+
+              {/* Class Breakdown Table */}
+              <Paper radius="lg" withBorder shadow="xs" className="reports-table-card">
+                <div className="reports-card-header">
+                  <div>
+                    <h3 className="reports-card-title">Class-wise Attendance Breakdown</h3>
+                    <p className="reports-card-subtext">Roll-call submission status and attendance percentage across classes</p>
+                  </div>
                 </div>
-              </div>
-              <div className="stat-content">
-                <div className="stat-val">{totalLate}</div>
-                <div className="stat-meta">
-                  <span
-                    className="stat-meta-dot"
-                    style={{ background: totalLate > 0 ? 'var(--late)' : 'var(--text-muted)' }}
-                  />
-                  <span>
-                    {totalLate > 0 ? 'Admitted with late record' : 'Zero recorded late arrivals'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Class Breakdown Table */}
-          <div className="reports-table-card card" style={{ padding: 0 }}>
-            <div className="reports-card-header">
-              <div>
-                <h3 className="reports-card-title">Class-wise Attendance Breakdown</h3>
-                <p className="reports-card-subtext">Roll-call submission status and attendance percentage across classes</p>
-              </div>
-            </div>
-
-            <div className="table-responsive">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Grade & Class</th>
-                    <th>Class Teacher</th>
-                    <th>Status</th>
-                    <th>Enrolled</th>
-                    <th>Present</th>
-                    <th>Absent</th>
-                    <th>Late</th>
-                    <th>Attendance %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailyData?.classes?.map((c: any) => {
-                    const enrolled = Number(c.enrolled_count || 0);
-                    const present = Number(c.present_count || 0);
-                    const absent = Number(c.absent_count || 0);
-                    const late = Number(c.late_count || 0);
-                    const pct = enrolled > 0 ? Math.round(((present + late) / enrolled) * 100) : 0;
-                    const isSubmitted = !!c.session_id;
-
-                    return (
-                      <tr key={c.class_id}>
-                        <td><strong>{c.class_name}</strong></td>
-                        <td style={{ color: 'var(--text-muted)' }}>
-                          {c.class_teacher_name ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim() : 'Unassigned'}
-                        </td>
-                        <td>
-                          <span
-                            className={`badge ${isSubmitted ? 'badge-present' : 'badge-late'}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: isSubmitted ? 'var(--present)' : 'var(--late)' }} />
-                            <span>{isSubmitted ? 'Submitted' : 'Pending'}</span>
-                          </span>
-                        </td>
-                        <td>{enrolled}</td>
-                        <td style={{ color: 'var(--present)', fontWeight: 600 }}>{present}</td>
-                        <td style={{ color: 'var(--absent)', fontWeight: 600 }}>{absent}</td>
-                        <td style={{ color: 'var(--late)', fontWeight: 600 }}>{late}</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                            <div
-                              style={{
-                                width: 80,
-                                height: 6,
-                                background: 'var(--border-color)',
-                                borderRadius: 'var(--radius-full)',
-                                overflow: 'hidden'
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: `${pct}%`,
-                                  height: '100%',
-                                  background: pct >= 80 ? 'var(--present)' : 'var(--absent)'
-                                }}
-                              />
-                            </div>
-                            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{pct}%</span>
-                          </div>
-                        </td>
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Grade & Class</th>
+                        <th>Class Teacher</th>
+                        <th>Status</th>
+                        <th>Enrolled</th>
+                        <th>Present</th>
+                        <th>Absent</th>
+                        <th>Late</th>
+                        <th>Attendance %</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    </thead>
+                    <tbody>
+                      {dailyData?.classes?.map((c: any) => {
+                        const enrolled = Number(c.enrolled_count || 0);
+                        const present = Number(c.present_count || 0);
+                        const absent = Number(c.absent_count || 0);
+                        const late = Number(c.late_count || 0);
+                        const pct = enrolled > 0 ? Math.round(((present + late) / enrolled) * 100) : 0;
+                        const isSubmitted = !!c.session_id;
 
-          {/* Absent Students Contact Directory */}
-          <div className="reports-table-card card" style={{ padding: 0 }}>
-            <div className="reports-card-header">
-              <div>
-                <h3 className="reports-card-title">Absent Students Action Directory</h3>
-                <p className="reports-card-subtext">
-                  Guardian telephone numbers for immediate school administrative verification
-                </p>
-              </div>
-              <span
-                className="badge badge-absent"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--absent)' }} />
-                <span>{dailyData?.absentStudents?.length || 0} Absentees</span>
-              </span>
-            </div>
+                        return (
+                          <tr key={c.class_id}>
+                            <td><strong>{c.class_name}</strong></td>
+                            <td style={{ color: 'var(--text-muted)' }}>
+                              {c.class_teacher_name ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim() : 'Unassigned'}
+                            </td>
+                            <td>
+                              <Badge
+                                color={isSubmitted ? 'green' : 'yellow'}
+                                variant="light"
+                                size="sm"
+                              >
+                                {isSubmitted ? 'Submitted' : 'Pending'}
+                              </Badge>
+                            </td>
+                            <td>{enrolled}</td>
+                            <td style={{ color: 'var(--present)', fontWeight: 600 }}>{present}</td>
+                            <td style={{ color: 'var(--absent)', fontWeight: 600 }}>{absent}</td>
+                            <td style={{ color: 'var(--late)', fontWeight: 600 }}>{late}</td>
+                            <td>
+                              <Group gap="xs" align="center">
+                                <Progress
+                                  value={pct}
+                                  color={pct >= 80 ? 'green' : pct >= 50 ? 'yellow' : 'red'}
+                                  size="sm"
+                                  radius="xl"
+                                  style={{ width: 80 }}
+                                />
+                                <Text size="sm" fw={700}>
+                                  {pct}%
+                                </Text>
+                              </Group>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Paper>
 
-            <div className="table-responsive">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Admission No</th>
-                    <th>Student Name</th>
-                    <th>Class</th>
-                    <th>Guardian Name</th>
-                    <th>Guardian Phone (Call Action)</th>
-                    <th>Remarks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailyData?.absentStudents?.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                        No absent students recorded for this date.
-                      </td>
-                    </tr>
-                  ) : (
-                    dailyData?.absentStudents?.map((st: any) => (
-                      <tr key={st.id}>
-                        <td><strong>{st.admission_no}</strong></td>
-                        <td>{st.full_name}</td>
-                        <td><span className="badge" style={{ background: 'var(--bg-subtle)' }}>{st.class_name}</span></td>
-                        <td>{st.guardian_name}</td>
-                        <td>
-                          <a
-                            href={`tel:${st.guardian_phone}`}
-                            className="btn btn-secondary btn-sm"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--primary)' }}
-                          >
-                            <Phone size={13} />
-                            <span>{st.guardian_phone}</span>
-                          </a>
-                        </td>
-                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                          {st.remarks || 'No reason specified'}
-                        </td>
+              {/* Absent Students Contact Directory */}
+              <Paper radius="lg" withBorder shadow="xs" className="reports-table-card">
+                <div className="reports-card-header">
+                  <div>
+                    <h3 className="reports-card-title">Absent Students Action Directory</h3>
+                    <p className="reports-card-subtext">
+                      Guardian telephone numbers for immediate school administrative verification
+                    </p>
+                  </div>
+                  <Badge color="red" variant="filled" size="md">
+                    {dailyData?.absentStudents?.length || 0} Absentees
+                  </Badge>
+                </div>
+
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Admission No</th>
+                        <th>Student Name</th>
+                        <th>Class</th>
+                        <th>Guardian Name</th>
+                        <th>Guardian Phone (Call Action)</th>
+                        <th>Remarks</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    </thead>
+                    <tbody>
+                      {dailyData?.absentStudents?.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+                            No absent students recorded for this date.
+                          </td>
+                        </tr>
+                      ) : (
+                        dailyData?.absentStudents?.map((st: any) => (
+                          <tr key={st.id}>
+                            <td><strong>{st.admission_no}</strong></td>
+                            <td>{st.full_name}</td>
+                            <td><Badge color="gray" variant="light" size="sm">{st.class_name}</Badge></td>
+                            <td>{st.guardian_name || '—'}</td>
+                            <td>
+                              {st.guardian_phone ? (
+                                <a
+                                  href={`tel:${st.guardian_phone}`}
+                                  className="reports-phone-btn"
+                                  style={{ textDecoration: 'none' }}
+                                >
+                                  <Button
+                                    variant="light"
+                                    color="blue"
+                                    size="xs"
+                                    leftSection={<Phone size={12} />}
+                                  >
+                                    {st.guardian_phone}
+                                  </Button>
+                                </a>
+                              ) : (
+                                <Text size="xs" c="dimmed">Not provided</Text>
+                              )}
+                            </td>
+                            <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                              {st.remarks || 'No reason specified'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Paper>
+            </>
+          )}
         </>
       )}
 
       {activeTab === 'monthly' && (
-        <div className="reports-table-card card" style={{ padding: 0 }}>
+        <Paper radius="lg" withBorder shadow="xs" className="reports-table-card">
           <div className="reports-card-header">
             <div>
               <h3 className="reports-card-title">
@@ -521,77 +549,83 @@ export const AttendanceReports: React.FC = () => {
             </div>
           </div>
 
-          <div className="table-responsive">
-            <table className="data-table" style={{ fontSize: '0.8rem' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 50 }}>Roll</th>
-                  <th>Student Name</th>
-                  {monthlyData?.sessions?.map((sess: any) => (
-                    <th key={sess.id} style={{ textAlign: 'center', padding: '0.5rem 0.35rem', minWidth: 38 }}>
-                      {sess.date.slice(8)}
-                    </th>
-                  ))}
-                  <th style={{ textAlign: 'center' }}>% Present</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlyData?.students?.map((st: any) => {
-                  const studentRecords = monthlyData.attendanceGrid[st.id] || {};
-                  let presentCount = 0;
-                  const sessionCount = monthlyData.sessions?.length || 0;
+          {loadingMonthly ? (
+            <LoadingState message="Loading monthly register matrix..." minHeight={240} />
+          ) : (
+            <div className="table-responsive">
+              <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 50 }}>Roll</th>
+                    <th>Student Name</th>
+                    {monthlyData?.sessions?.map((sess: any) => (
+                      <th key={sess.id} style={{ textAlign: 'center', padding: '0.5rem 0.35rem', minWidth: 38 }}>
+                        {sess.date.slice(8)}
+                      </th>
+                    ))}
+                    <th style={{ textAlign: 'center' }}>% Present</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyData?.students?.map((st: any) => {
+                    const studentRecords = monthlyData.attendanceGrid[st.id] || {};
+                    let presentCount = 0;
+                    const sessionCount = monthlyData.sessions?.length || 0;
 
-                  return (
-                    <tr key={st.id}>
-                      <td><strong>#{st.roll_number || '-'}</strong></td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{st.full_name}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{st.admission_no}</div>
-                      </td>
-                      {monthlyData.sessions?.map((sess: any) => {
-                        const status = studentRecords[sess.date];
-                        let letter = '-';
-                        let badgeClass = '';
+                    return (
+                      <tr key={st.id}>
+                        <td><strong>#{st.roll_number || '-'}</strong></td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{st.full_name}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{st.admission_no}</div>
+                        </td>
+                        {monthlyData.sessions?.map((sess: any) => {
+                          const status = studentRecords[sess.date];
+                          let letter = '-';
+                          let badgeColor = 'gray';
 
-                        if (status === 'present') {
-                          letter = 'P';
-                          badgeClass = 'badge-present';
-                          presentCount++;
-                        } else if (status === 'absent') {
-                          letter = 'A';
-                          badgeClass = 'badge-absent';
-                        } else if (status === 'late') {
-                          letter = 'L';
-                          badgeClass = 'badge-late';
-                          presentCount++;
-                        } else if (status === 'excused') {
-                          letter = 'E';
-                          badgeClass = 'badge-excused';
-                        }
+                          if (status === 'present') {
+                            letter = 'P';
+                            badgeColor = 'green';
+                            presentCount++;
+                          } else if (status === 'absent') {
+                            letter = 'A';
+                            badgeColor = 'red';
+                          } else if (status === 'late') {
+                            letter = 'L';
+                            badgeColor = 'yellow';
+                            presentCount++;
+                          } else if (status === 'excused') {
+                            letter = 'E';
+                            badgeColor = 'blue';
+                          }
 
-                        return (
-                          <td key={sess.id} style={{ textAlign: 'center', padding: '0.4rem 0.2rem' }}>
-                            <span
-                              className={`badge ${badgeClass}`}
-                              style={{ minWidth: 26, justifyContent: 'center', padding: '0.15rem 0.35rem' }}
-                            >
-                              {letter}
-                            </span>
-                          </td>
-                        );
-                      })}
-                      <td style={{ textAlign: 'center', fontWeight: 700 }}>
-                        {sessionCount > 0
-                          ? `${Math.round((presentCount / sessionCount) * 100)}%`
-                          : '100%'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                          return (
+                            <td key={sess.id} style={{ textAlign: 'center', padding: '0.4rem 0.2rem' }}>
+                              <Badge
+                                color={badgeColor}
+                                variant={status ? 'filled' : 'light'}
+                                size="xs"
+                                style={{ minWidth: 26, padding: '0 4px' }}
+                              >
+                                {letter}
+                              </Badge>
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                          {sessionCount > 0
+                            ? `${Math.round((presentCount / sessionCount) * 100)}%`
+                            : '100%'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Paper>
       )}
     </div>
   );

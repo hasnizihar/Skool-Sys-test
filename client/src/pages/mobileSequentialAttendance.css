@@ -1,6 +1,6 @@
 /* ==========================================================================
    Mobile Sequential Student Attendance Styling
-   Kattankudy Central College (National School) — SkoolSys MVP Phase 3
+   Kattankudy Central College — SkoolSys Modern Mantine Design System
    ========================================================================== */
 
 .msa-container {
@@ -13,6 +13,7 @@
   padding: 12px 16px 80px 16px;
   box-sizing: border-box;
   font-family: inherit;
+  gap: 12px;
 }
 
 /* 1. Header & Controls */
@@ -20,7 +21,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 .msa-top-meta {
@@ -36,20 +36,20 @@
 .msa-select {
   width: 100%;
   padding: 10px 12px;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 600;
-  color: var(--text-primary, #0f172a);
-  background-color: var(--surface-card, #ffffff);
-  border: 1.5px solid var(--border-color, #cbd5e1);
+  color: var(--text-main, #0f172a);
+  background-color: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 8px;
   outline: none;
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .msa-select:focus {
-  border-color: #075E3B;
-  box-shadow: 0 0 0 3px rgba(7, 94, 59, 0.15);
+  border-color: var(--primary, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .msa-date-wrapper {
@@ -57,14 +57,20 @@
   display: flex;
   align-items: center;
   position: relative;
-  background-color: var(--surface-card, #ffffff);
-  border: 1.5px solid var(--border-color, #cbd5e1);
+  background-color: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 8px;
   padding: 0 10px;
+  transition: border-color 0.15s ease;
+}
+
+.msa-date-wrapper:focus-within {
+  border-color: var(--primary, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .msa-date-icon {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   margin-right: 6px;
   flex-shrink: 0;
 }
@@ -75,7 +81,7 @@
   background: transparent;
   font-size: 0.88rem;
   font-weight: 500;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   outline: none;
   padding: 8px 0;
 }
@@ -109,16 +115,16 @@
   padding: 6px 10px;
   font-size: 0.8rem;
   font-weight: 500;
-  color: var(--text-secondary, #475569);
+  color: var(--text-muted, #475569);
   cursor: pointer;
 }
 
 .msa-btn-subtle:hover {
-  background-color: var(--surface-hover, #f1f5f9);
+  background-color: var(--bg-subtle, #f1f5f9);
 }
 
 .msa-mode-pill {
-  background: #075E3B;
+  background: var(--primary, #2563eb);
   color: #ffffff;
   border: none;
   border-radius: 6px;
@@ -130,7 +136,7 @@
 }
 
 .msa-mode-pill:hover {
-  background: #064e31;
+  background: #1d4ed8;
 }
 
 /* Session Status Banner */
@@ -139,9 +145,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.82rem;
-  margin-bottom: 10px;
 }
 
 .msa-session-banner.submitted {
@@ -167,12 +172,9 @@
 
 /* Progress Ribbon */
 .msa-progress-ribbon {
-  background: var(--surface-card, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .msa-progress-info {
@@ -185,7 +187,7 @@
 
 .msa-progress-count {
   font-weight: 700;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
 }
 
 .msa-progress-stats {
@@ -193,7 +195,7 @@
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  color: var(--text-secondary, #475569);
+  color: var(--text-muted, #475569);
 }
 
 .msa-dot {
@@ -237,11 +239,6 @@
 }
 
 .msa-student-card {
-  background-color: var(--surface-card, #ffffff);
-  border: 2px solid var(--border-color, #e2e8f0);
-  border-radius: 14px;
-  padding: 20px 16px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -256,7 +253,7 @@
 }
 
 .msa-roll-badge {
-  background: #075E3B;
+  background: var(--primary, #2563eb);
   color: #ffffff;
   font-size: 0.76rem;
   font-weight: 700;
@@ -266,8 +263,8 @@
 }
 
 .msa-adm-badge {
-  background: var(--surface-alt, #f1f5f9);
-  color: var(--text-secondary, #334155);
+  background: var(--bg-subtle, #f1f5f9);
+  color: var(--text-muted, #334155);
   font-size: 0.76rem;
   font-weight: 600;
   padding: 3px 8px;
@@ -324,7 +321,7 @@
 }
 
 .avatar-m {
-  background: linear-gradient(135deg, #075E3B, #0a8755);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
 }
 
 .avatar-f {
@@ -340,14 +337,14 @@
   margin: 0;
   font-size: 1.45rem;
   font-weight: 800;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   line-height: 1.2;
 }
 
 .msa-full-name {
   margin: 4px 0 0 0;
   font-size: 0.85rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -361,7 +358,7 @@
 .msa-jump-btn {
   background: none;
   border: none;
-  color: #075E3B;
+  color: var(--primary, #2563eb);
   font-size: 0.8rem;
   font-weight: 600;
   display: inline-flex;
@@ -375,7 +372,7 @@
   text-decoration: underline;
 }
 
-/* Big Action Buttons (PRESENT / ABSENT) */
+/* Big Action Buttons (PRESENT / ABSENT) - Minimum 64px for touch ergonomics */
 .msa-action-buttons-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -385,6 +382,7 @@
 
 .msa-big-action-btn {
   height: 68px;
+  min-height: 64px;
   border-radius: 12px;
   border: 2px solid transparent;
   display: flex;
@@ -438,13 +436,13 @@
 }
 
 .msa-subtle-btn {
-  background: var(--surface-alt, #f8fafc);
+  background: var(--bg-subtle, #f8fafc);
   border: 1px solid var(--border-color, #cbd5e1);
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-secondary, #475569);
+  color: var(--text-muted, #475569);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -469,12 +467,12 @@
 .msa-nav-btn {
   flex: 1;
   height: 48px;
-  background-color: var(--surface-card, #ffffff);
-  border: 1.5px solid var(--border-color, #cbd5e1);
+  background-color: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #cbd5e1);
   border-radius: 8px;
   font-size: 0.92rem;
   font-weight: 700;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -490,7 +488,7 @@
 .msa-summary-trigger-btn {
   flex: 1.4;
   height: 48px;
-  background-color: #075E3B;
+  background-color: var(--primary, #2563eb);
   color: #ffffff;
   border: none;
   border-radius: 8px;
@@ -501,26 +499,23 @@
 
 /* 3. Summary Review Screen */
 .msa-summary-stage {
-  background: var(--surface-card, #ffffff);
-  border: 1.5px solid var(--border-color, #e2e8f0);
-  border-radius: 12px;
-  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.msa-summary-header h2 {
+.msa-summary-header h2,
+.msa-summary-header h3 {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 800;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
 }
 
 .msa-summary-header p {
   margin: 4px 0 0 0;
   font-size: 0.85rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
 }
 
 .msa-summary-cards-grid {
@@ -558,7 +553,7 @@
   margin: 0 0 10px 0;
   font-size: 0.95rem;
   font-weight: 700;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
 }
 
 .msa-no-absent {
@@ -584,7 +579,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  background: var(--surface-alt, #f8fafc);
+  background: var(--bg-subtle, #f8fafc);
   border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 8px;
   cursor: pointer;
@@ -603,12 +598,12 @@
 
 .msa-absent-info strong {
   font-size: 0.9rem;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
 }
 
 .msa-absent-adm {
   font-size: 0.75rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   font-family: monospace;
 }
 
@@ -652,17 +647,17 @@
   display: grid;
   grid-template-columns: 1fr 1.6fr;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 14px;
 }
 
 .msa-btn-secondary {
   height: 48px;
-  background: var(--surface-alt, #f1f5f9);
-  border: 1.5px solid var(--border-color, #cbd5e1);
+  background: var(--bg-subtle, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
   border-radius: 8px;
   font-weight: 700;
   font-size: 0.9rem;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -672,7 +667,7 @@
 
 .msa-btn-primary {
   height: 48px;
-  background: #075E3B;
+  background: var(--primary, #2563eb);
   border: none;
   border-radius: 8px;
   font-weight: 700;
@@ -683,7 +678,7 @@
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(7, 94, 59, 0.25);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
 }
 
 .msa-btn-primary:disabled {
@@ -710,7 +705,7 @@
 }
 
 .msa-modal-sheet {
-  background: var(--surface-card, #ffffff);
+  background: var(--bg-card, #ffffff);
   width: 100%;
   max-width: 520px;
   border-radius: 20px 20px 0 0;
@@ -750,19 +745,19 @@
   margin: 0;
   font-size: 1.2rem;
   font-weight: 800;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
 }
 
 .msa-modal-subtitle {
   margin: 3px 0 0 0;
   font-size: 0.85rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
 }
 
 .msa-modal-close {
   background: none;
   border: none;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   cursor: pointer;
   padding: 4px;
 }
@@ -775,12 +770,12 @@
 
 .msa-reason-chip {
   padding: 10px 12px;
-  background: var(--surface-alt, #f8fafc);
-  border: 1.5px solid var(--border-color, #cbd5e1);
+  background: var(--bg-subtle, #f8fafc);
+  border: 1px solid var(--border-color, #cbd5e1);
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -808,16 +803,16 @@
 .msa-input-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-secondary, #475569);
+  color: var(--text-muted, #475569);
 }
 
 .msa-custom-input {
   width: 100%;
   padding: 10px 12px;
-  border: 1.5px solid var(--border-color, #cbd5e1);
+  border: 1px solid var(--border-color, #cbd5e1);
   border-radius: 8px;
   font-size: 0.88rem;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   outline: none;
   box-sizing: border-box;
 }
@@ -843,8 +838,8 @@
 }
 
 .msa-modal-btn--secondary {
-  background: var(--surface-alt, #f1f5f9);
-  color: var(--text-primary, #0f172a);
+  background: var(--bg-subtle, #f1f5f9);
+  color: var(--text-main, #0f172a);
   border: 1px solid var(--border-color, #cbd5e1);
 }
 
@@ -855,7 +850,7 @@
 
 /* 5. Quick Jump Drawer */
 .msa-drawer {
-  background: var(--surface-card, #ffffff);
+  background: var(--bg-card, #ffffff);
   width: 85%;
   max-width: 380px;
   height: 100%;
@@ -873,10 +868,12 @@
   border-bottom: 1px solid var(--border-color, #e2e8f0);
 }
 
-.msa-drawer-header h3 {
+.msa-drawer-header h3,
+.msa-drawer-header h4 {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 800;
+  color: var(--text-main, #0f172a);
 }
 
 .msa-drawer-list {
@@ -901,18 +898,18 @@
 }
 
 .msa-drawer-item:hover {
-  background: var(--surface-hover, #f1f5f9);
+  background: var(--bg-subtle, #f1f5f9);
 }
 
 .msa-drawer-item.current {
-  background: #ecfdf5;
-  border-color: #a7f3d0;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 
 .msa-drawer-roll {
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   width: 28px;
 }
 
@@ -920,7 +917,7 @@
   flex: 1;
   font-size: 0.88rem;
   font-weight: 600;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
 }
 
 .msa-drawer-status-pill {

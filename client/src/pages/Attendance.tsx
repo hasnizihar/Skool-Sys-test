@@ -12,8 +12,26 @@ import {
   UserCheck,
   X,
   Sparkles,
-  LayoutList
+  LayoutList,
+  Calendar,
+  School,
+  WifiOff,
+  Users
 } from 'lucide-react';
+import {
+  Badge,
+  Paper,
+  Button,
+  ScrollArea,
+  Group,
+  Stack,
+  Text,
+  Title,
+  SimpleGrid,
+  Box,
+  Alert,
+  Tooltip
+} from '@mantine/core';
 import { api, HttpError } from '../api/client';
 import { MobileSequentialAttendance } from './MobileSequentialAttendance';
 import {
@@ -29,6 +47,7 @@ import {
   buildStudentDiffList
 } from '../utils/conflictDiffUtils';
 import { useToast } from '../ui/useToast';
+import { LoadingState, EmptyState } from '../ui/mantine';
 import './attendance.css';
 
 interface AttendanceProps {
@@ -405,9 +424,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       setTimeout(() => setSaveSuccessMsg(null), 6000);
     } catch (err: any) {
       if (err instanceof HttpError) {
-        // Online HTTP Server Responses: NEVER masquerade as connection loss or queue offline
         if (err.status === 409) {
-          // 409 Concurrency Conflict or Fingerprint Mismatch -> Open Student-by-Student Diff Modal
           await openConflictResolutionModal(mutationPayload, err.problemDetails);
         } else if (err.status === 400 || err.status === 422) {
           setErrorMessage(`Validation / Policy Error (${err.code}): ${err.message}`);
@@ -423,7 +440,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           setErrorMessage(`Server Error (${err.status}): ${err.message}`);
         }
       } else {
-        // Genuine network transport failure (e.g. !navigator.onLine, TypeError: Failed to fetch)
         console.warn('Network transport failure during save, queueing offline mutation:', err);
         await queueOfflineAttendance(mutationPayload);
         setIsOfflineMode(true);
@@ -496,7 +512,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       const targetFingerprint =
         conflictModal.latestServerSession?.rosterFingerprint || rosterFingerprint;
 
-      // Rule ATT-014: Once a register has been finalized ('submitted') on server, it can NEVER be downgraded to draft.
       const isServerSubmitted = conflictModal.latestServerSession?.status === 'submitted';
       const isLocalSubmitted =
         existingSession?.status === 'submitted' || conflictModal.pendingMutation?.mode === 'submitted';
@@ -522,7 +537,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         })
         .filter((r) => r.status && r.status !== 'unmarked');
 
-      // If submitting finalized register, enforce 100% complete roster check
       if (targetMode === 'submitted' && resolvedRecords.length < students.length) {
         setConflictModal((prev) => ({
           ...prev,
@@ -564,7 +578,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       toast.showSuccess(`Revision ${res.revision} applied.`);
     } catch (err: any) {
       if (err instanceof HttpError && err.status === 409) {
-        // Second optimistic revision check caught concurrent collision!
         const fresh = await api.getAttendanceSession(selectedClassId, selectedDate);
         
         const priorChoices = new Map<number, 'local' | 'server'>();
@@ -661,9 +674,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           <div className="attendance-title-row">
             <h2 className="attendance-title">Daily Class Attendance Register</h2>
             {isOfflineMode && (
-              <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', fontSize: '0.75rem', fontWeight: 700 }}>
+              <Badge color="yellow" variant="light" size="sm" leftSection={<WifiOff size={12} />}>
                 Working Offline (IndexedDB v2)
-              </span>
+              </Badge>
             )}
           </div>
           <p className="attendance-subtitle">
@@ -970,17 +983,19 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', padding: '3.5rem' }}>
-                    <div className="animate-spin" style={{ display: 'inline-block', width: 28, height: 28, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
-                    <p style={{ marginTop: '0.85rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading class roster...</p>
+                  <td colSpan={4} style={{ padding: '3.5rem 1rem' }}>
+                    <LoadingState message="Loading class roster..." minHeight={120} />
                   </td>
                 </tr>
               ) : students.length === 0 ? null : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', padding: '3.5rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      No students found matching current filter or search criteria.
-                    </div>
+                  <td colSpan={4} style={{ padding: '2.5rem 1rem' }}>
+                    <EmptyState
+                      icon={<Users size={32} />}
+                      title="No Matching Students"
+                      description="No students found matching current filter or search criteria."
+                      withBorder={false}
+                    />
                   </td>
                 </tr>
               ) : (

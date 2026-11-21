@@ -15,8 +15,24 @@ import {
   X,
   AlertCircle
 } from 'lucide-react';
+import {
+  Modal,
+  Paper,
+  Text,
+  Title,
+  Group,
+  Stack,
+  SimpleGrid,
+  Box,
+  Divider,
+  Alert,
+  Badge,
+  Button,
+  ScrollArea
+} from '@mantine/core';
 import { api } from '../api/client';
 import { StudentReportCard } from './StudentReportCard';
+import { LoadingState, ErrorState } from '../ui/mantine';
 import './studentFullView.css';
 
 interface StudentFullViewProps {
@@ -132,26 +148,25 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '4.5rem 1rem' }}>
-        <div className="animate-spin" style={{ display: 'inline-block', width: 28, height: 28, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
-        <div style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '0.85rem' }}>Loading comprehensive student record...</div>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-          Retrieving academic enrollment, guardian contacts, and attendance history.
-        </p>
-      </div>
+      <Box py="xl">
+        <LoadingState
+          message="Retrieving comprehensive student dossier, enrollment, and attendance records..."
+          minHeight={240}
+        />
+      </Box>
     );
   }
 
   if (error || !data?.student) {
     return (
-      <div className="card" style={{ padding: '2.5rem', textAlign: 'center' }}>
-        <AlertCircle size={36} style={{ color: 'var(--absent)', margin: '0 auto 1rem' }} />
-        <h3>Failed to Load Student Record</h3>
-        <p style={{ color: 'var(--text-muted)', margin: '0.5rem 0 1.5rem' }}>{error || 'Student not found.'}</p>
-        <button type="button" onClick={onBack} className="btn btn-primary">
-          <ArrowLeft size={16} /> Back to Student Directory
-        </button>
-      </div>
+      <Paper withBorder p="xl" radius="md" style={{ textAlign: 'center' }}>
+        <ErrorState
+          title="Failed to Load Student Record"
+          message={error || 'The requested student record could not be found or loaded.'}
+          onRetry={onBack}
+          retryLabel="Back to Student Directory"
+        />
+      </Paper>
     );
   }
 
@@ -214,7 +229,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
             style={{
               background: isFemale
                 ? 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)'
-                : 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)'
+                : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
             }}
             aria-hidden="true"
           >
@@ -623,188 +638,173 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
       </div>
 
       {/* Edit Student Modal */}
-      {showEditModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '640px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Edit Student Record</h3>
-              <button
-                type="button"
-                onClick={() => setShowEditModal(false)}
-                className="btn btn-secondary btn-icon btn-sm"
-                aria-label="Close edit modal"
-              >
-                <X size={18} />
-              </button>
+      <Modal
+        opened={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title={
+          <Group gap="xs">
+            <Edit3 size={18} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Edit Student Record</Text>
+          </Group>
+        }
+        size="lg"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleEditSubmit}>
+          <Stack gap="md">
+            {editError && (
+              <Alert icon={<AlertCircle size={16} />} color="red" radius="md">
+                {editError}
+              </Alert>
+            )}
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Calling Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={editFormData.calling_name || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, calling_name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Full Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={editFormData.full_name || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
+                  required
+                />
+              </div>
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Date of Birth *</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={editFormData.dob || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, dob: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Gender *</label>
+                <select
+                  className="form-select"
+                  value={editFormData.gender || 'Male'}
+                  onChange={(e) => setEditFormData({ ...editFormData, gender: e.target.value })}
+                >
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Class Assignment</label>
+                <select
+                  className="form-select"
+                  value={editFormData.class_id || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, class_id: e.target.value })}
+                >
+                  <option value="">Select Class</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Roll Number</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={editFormData.roll_number || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, roll_number: e.target.value })}
+                />
+              </div>
+            </SimpleGrid>
+
+            <div className="form-group">
+              <label className="form-label">Residential Address</label>
+              <input
+                type="text"
+                className="form-input"
+                value={editFormData.address || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+              />
             </div>
 
-            <form onSubmit={handleEditSubmit}>
-              <div className="modal-body">
-                {editError && (
-                  <div
-                    style={{
-                      background: 'var(--absent-bg)',
-                      color: 'var(--absent)',
-                      padding: '0.75rem',
-                      borderRadius: 'var(--radius-md)',
-                      marginBottom: '1rem',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    {editError}
-                  </div>
-                )}
+            <Divider my="xs" label="Guardian Contacts" labelPosition="left" />
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Calling Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editFormData.calling_name || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, calling_name: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Full Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editFormData.full_name || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Date of Birth *</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      value={editFormData.dob || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, dob: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Gender *</label>
-                    <select
-                      className="form-select"
-                      value={editFormData.gender || 'Male'}
-                      onChange={(e) => setEditFormData({ ...editFormData, gender: e.target.value })}
-                    >
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Class Assignment</label>
-                    <select
-                      className="form-select"
-                      value={editFormData.class_id || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, class_id: e.target.value })}
-                    >
-                      <option value="">Select Class</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Roll Number</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={editFormData.roll_number || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, roll_number: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Residential Address</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={editFormData.address || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                  />
-                </div>
-
-                <div style={{ borderTop: '1px solid var(--border-color)', margin: '1rem 0', paddingTop: '1rem' }}>
-                  <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>Guardian Contacts</h4>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Guardian Name *</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={editFormData.guardian_name || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, guardian_name: e.target.value })}
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Relation *</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={editFormData.guardian_relation || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, guardian_relation: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Guardian Phone *</label>
-                      <input
-                        type="tel"
-                        className="form-input"
-                        value={editFormData.guardian_phone || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, guardian_phone: e.target.value })}
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Guardian Email</label>
-                      <input
-                        type="email"
-                        className="form-input"
-                        value={editFormData.guardian_email || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, guardian_email: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                </div>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Guardian Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={editFormData.guardian_name || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, guardian_name: e.target.value })}
+                  required
+                />
               </div>
 
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowEditModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" disabled={savingEdit} className="btn btn-primary">
-                  {savingEdit ? 'Saving...' : 'Save Updates'}
-                </button>
+              <div className="form-group">
+                <label className="form-label">Relation *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={editFormData.guardian_relation || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, guardian_relation: e.target.value })}
+                  required
+                />
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <div className="form-group">
+                <label className="form-label">Guardian Phone *</label>
+                <input
+                  type="tel"
+                  className="form-input"
+                  value={editFormData.guardian_phone || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, guardian_phone: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Guardian Email</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  value={editFormData.guardian_email || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, guardian_email: e.target.value })}
+                />
+              </div>
+            </SimpleGrid>
+
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowEditModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue" loading={savingEdit}>
+                Save Updates
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* Terminal Report Card Modal */}
       {showReportCard && (
