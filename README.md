@@ -39,6 +39,7 @@ The login screen features **1-Click Demo Buttons** for fast role switching:
 ## 📋 Implemented MVP Modules
 
 ### Module 1: Student Management
+
 - Permanent student admission numbers (`SCH-2024-001`...)
 - Student personal profile: full name, calling name, gender, DOB, home address
 - Guardian details: name, relation, telephone, email, emergency contact
@@ -49,6 +50,7 @@ The login screen features **1-Click Demo Buttons** for fast role switching:
 - Filtered roster CSV export
 
 ### Module 2: Daily Attendance (Highest Priority)
+
 - One register per class per school day (with duplicate register prevention)
 - 4-way touch segmented buttons: **[P] Present**, **[A] Absent**, **[L] Late**, **[E] Excused**
 - Quick bulk actions: "Mark All Present" & "Mark All Absent"
@@ -65,6 +67,7 @@ The login screen features **1-Click Demo Buttons** for fast role switching:
   - Monthly attendance register: Student × Day matrix with monthly presence percentage
 
 ### Module 3: Marks Management
+
 - Term and examination definitions (Term 1 Assessment 2026, Mid-Year, Year-End)
 - Subjects assigned to each class across Grades 6 to 13
 - Spreadsheet-style marks entry grid with keyboard navigation (0–100 score bounds)
@@ -79,13 +82,14 @@ The login screen features **1-Click Demo Buttons** for fast role switching:
   - Grading legend and signature lines for Class Teacher and Principal
 
 ### Module 4: Administration & Security
+
 - Role-based server authorization (Administrator, Class Teacher, Subject Teacher)
 - User account management: create faculty accounts, change roles, reset passwords
 - Teacher-to-class and teacher-to-subject assignments
 - System database backup: one-click full JSON dump export
 - System database restore: validate and restore snapshot
 - Demo seed reset button to return to the verified pilot state
-- Tamper-evident Audit Trail: filterable log of student additions, marks submissions, and system modifications
+- Tamper-evident Audit Trail: filterable log of student additions, marks submissions, and system modifications.
 
 ---
 
