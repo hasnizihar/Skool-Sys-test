@@ -17,6 +17,9 @@ import {
   Layers,
   School
 } from 'lucide-react';
+import { Tooltip } from '@mantine/core';
+import { isUserSectionHead, isUserClassTeacher } from '../utils/authUtils';
+import { MVP_CONFIG } from '../config/mvpConfig';
 import './sidebar.css';
 
 interface SidebarProps {
@@ -30,14 +33,6 @@ interface SidebarProps {
   toggleTheme?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-}
-
-interface NavItemDef {
-  id: string;
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number; 'aria-hidden'?: boolean }>;
-  visible: boolean;
-  badge?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -74,98 +69,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const navClass = (tab: string) => `nav-item ${currentTab === tab ? 'active' : ''}`;
-
-  // Grouped Navigation Structure
-  const navigationSections: Array<{
-    title: string;
-    items: NavItemDef[];
-  }> = [
-    {
-      title: 'Overview',
-      items: [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: LayoutDashboard,
-          visible: true
-        }
-      ]
-    },
-    {
-      title: 'Students',
-      items: [
-        {
-          id: 'students',
-          label: 'Student Records',
-          icon: Users,
-          visible: true
-        }
-      ]
-    },
-    {
-      title: 'Academics',
-      items: [
-        {
-          id: 'attendance',
-          label: 'Take Attendance',
-          icon: CalendarCheck,
-          visible: isClassTeacher
-        },
-        {
-          id: 'attendance-reports',
-          label: 'Attendance Reports',
-          icon: FileSpreadsheet,
-          visible: true
-        },
-        {
-          id: 'marks',
-          label: 'Marks Management',
-          icon: GraduationCap,
-          visible: true
-        }
-      ]
-    },
-    {
-      title: 'Live Tracking',
-      items: [
-        {
-          id: 'classroom-status',
-          label: 'Classroom Status',
-          icon: Activity,
-          visible: true
-        },
-        {
-          id: 'mobile-classroom-status',
-          label: 'Section Walkthrough',
-          icon: Smartphone,
-          visible: isSectionHead
-        }
-      ]
-    },
-    {
-      title: 'Administration',
-      items: [
-        {
-          id: 'teachers',
-          label: 'Teachers & Faculty',
-          icon: GraduationCap,
-          visible: isAdmin
-        },
-        {
-          id: 'admin',
-          label: 'School Administration',
-          icon: ShieldCheck,
-          visible: isAdmin
-        },
-        {
-          id: 'audit',
-          label: 'Audit Trail',
-          icon: History,
-          visible: isAdmin
-        }
-      ]
-    }
-  ];
 
   const userInitial = user?.full_name?.charAt(0)?.toUpperCase() || 'U';
   const roleDisplay = user?.role ? user.role.replace('_', ' ') : 'Faculty';
@@ -256,8 +159,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="nav-item-label">Dashboard</span>
           </button>
 
-          {/* SECTION 2: STUDENTS */}
-          <div className="nav-section-title">Students</div>
+          {/* SECTION 2: PEOPLE & STRUCTURE */}
+          <div className="nav-section-title">People & Structure</div>
 
           <button
             type="button"
@@ -271,8 +174,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="nav-item-label">Student Records</span>
           </button>
 
-          {/* SECTION 3: ACADEMICS */}
-          <div className="nav-section-title">Academics</div>
+          {isAdmin && (
+            <button
+              type="button"
+              className={navClass('teachers')}
+              onClick={() => handleNav('teachers')}
+              aria-current={currentTab === 'teachers' ? 'page' : undefined}
+              data-tooltip="Teaching Faculty"
+              title={isCollapsed ? 'Teaching Faculty' : undefined}
+            >
+              <School size={18} aria-hidden="true" />
+              <span className="nav-item-label">Teachers</span>
+            </button>
+          )}
+
+          {(isAdmin || isSectionHead) && (
+            <button
+              type="button"
+              className={navClass('sections')}
+              onClick={() => handleNav('sections')}
+              aria-current={currentTab === 'sections' ? 'page' : undefined}
+              data-tooltip="Sections & Classes"
+              title={isCollapsed ? 'Sections & Classes' : undefined}
+            >
+              <Layers size={18} aria-hidden="true" />
+              <span className="nav-item-label">Sections & Classes</span>
+            </button>
+          )}
+
+          {/* SECTION 3: ATTENDANCE */}
+          <div className="nav-section-title">Attendance</div>
 
           {isClassTeacher && (
             <>
@@ -314,17 +245,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="nav-item-label">Attendance Reports</span>
           </button>
 
-          <button
-            type="button"
-            className={navClass('marks')}
-            onClick={() => handleNav('marks')}
-            aria-current={currentTab === 'marks' ? 'page' : undefined}
-            data-tooltip="Marks Management"
-            title={isCollapsed ? 'Marks Management' : undefined}
-          >
-            <GraduationCap size={18} aria-hidden="true" />
-            <span className="nav-item-label">Marks Management</span>
-          </button>
+          {MVP_CONFIG.ENABLE_EXAM_MARKS_NAV && (
+            <button
+              type="button"
+              className={navClass('marks')}
+              onClick={() => handleNav('marks')}
+              aria-current={currentTab === 'marks' ? 'page' : undefined}
+              data-tooltip="Marks Management"
+              title={isCollapsed ? 'Marks Management' : undefined}
+            >
+              <GraduationCap size={18} aria-hidden="true" />
+              <span className="nav-item-label">Marks Management</span>
+            </button>
+          )}
 
           {/* SECTION 4: LIVE OPERATIONS (PHASE 2) */}
           <div className="nav-section-title">Live Tracking</div>

@@ -6,7 +6,6 @@ import { Navbar } from './components/Navbar';
 import { OfflineBanner } from './components/OfflineBanner';
 import { Dashboard } from './pages/Dashboard';
 import { Students } from './pages/Students';
-import { TeacherDirectory } from './pages/TeacherDirectory';
 import { Attendance } from './pages/Attendance';
 import { AttendanceReports } from './pages/AttendanceReports';
 import { MarksEntry } from './pages/MarksEntry';
@@ -25,6 +24,8 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 const VALID_TABS = [
   'dashboard',
   'students',
+  'teachers',
+  'sections',
   'attendance',
   'mobile-attendance',
   'attendance-reports',
@@ -145,6 +146,8 @@ export function App() {
     switch (currentTab) {
       case 'dashboard': return 'School Operations Dashboard';
       case 'students': return 'Student Information Records';
+      case 'teachers': return 'Faculty & Teachers Directory';
+      case 'sections': return 'School Sections & Classroom Assignments';
       case 'attendance': return 'Daily Attendance Register';
       case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
       case 'attendance-reports': return 'Attendance Reports & Registry';
@@ -192,6 +195,23 @@ export function App() {
             )}
             {currentTab === 'students' && (
               <Students user={user} />
+            )}
+            {currentTab === 'teachers' && (
+              user.role === 'admin' ? (
+                <Teachers user={user} onNavigate={setCurrentTab} />
+              ) : (
+                <PageContainer>
+                  <ErrorState
+                    title="Administrative Access Required"
+                    message="The comprehensive Faculty and Teachers Directory is restricted to authorized school administrators."
+                    onRetry={() => setCurrentTab('dashboard')}
+                    retryLabel="Return to Dashboard"
+                  />
+                </PageContainer>
+              )
+            )}
+            {currentTab === 'sections' && (
+              <AdminSettings initialTab="sections" />
             )}
             {currentTab === 'attendance' && (
               <Attendance user={user} />

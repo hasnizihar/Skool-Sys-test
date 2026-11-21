@@ -100,16 +100,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       setError(null);
       const today = getColomboCivilDate();
 
-      const [studentsRes, classesRes, dailyRes, examsRes] = await Promise.all([
+      const [studentsRes, classesRes, dailyRes, examsRes, summaryRes, classroomRes] = await Promise.all([
         api.getStudents().catch(() => ({ count: 0, students: [] })),
         api.getClasses().catch(() => ({ classes: [] })),
         api.getDailyAttendanceReport(today).catch(() => ({ classes: [], absentStudents: [] })),
-        api.getExaminations().catch(() => ({ examinations: [] }))
+        api.getExaminations().catch(() => ({ examinations: [] })),
+        api.getDashboardSummary(today).catch(() => null),
+        api.getClassroomStatusOverview().catch(() => null)
       ]);
 
       const classes = classesRes.classes || [];
       setClassesList(classes);
       setExaminations(examsRes.examinations || []);
+      setDashboardSummary(summaryRes);
+      if (classroomRes) {
+        setClassroomOverview(classroomRes);
+      }
 
       let totalPresent = 0;
       let totalAbsent = 0;
@@ -564,6 +570,188 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
               </div>
             </div>
           </div>
+
+          {/* Live Classroom Status Overview Widget (Executive Dashboard) */}
+          <div className="classroom-status-panel">
+            <div className="classroom-status-header">
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Activity size={18} style={{ color: 'var(--primary)' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Live Classroom Monitoring Overview
+                  </h3>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
+                  {classroomOverview?.context?.isSchoolHours
+                    ? `Period ${classroomOverview.context.periodNumber} (${classroomOverview.context.periodName || 'Active Session'}) • Real-time walkthrough monitoring`
+                    : 'Real-time instructional monitoring across school sections'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('classroom-status')}
+                  className="btn btn-secondary btn-sm"
+                  aria-label="View full live monitoring grid"
+                >
+                  <Activity size={13} />
+                  <span>Full Monitoring Grid</span>
+                  <ArrowRight size={13} />
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Status Metric Cards */}
+            <div className="classroom-status-grid">
+              <div className="classroom-status-metric-card status-teaching">
+                <CheckCircle size={20} style={{ color: 'var(--present)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--present)' }}>
+                    {classroomOverview?.summary?.teaching ?? 0}
+                  </div>
+                  <div className="classroom-status-label">In Instruction</div>
+                </div>
+              </div>
+
+              <div className="classroom-status-metric-card status-not-teaching">
+                <AlertTriangle size={20} style={{ color: 'var(--absent)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--absent)' }}>
+                    {classroomOverview?.summary?.notTeaching ?? 0}
+                  </div>
+                  <div className="classroom-status-label">Not Teaching</div>
+                </div>
+              </div>
+
+              <div className="classroom-status-metric-card status-other-activity">
+                <Clock size={20} style={{ color: 'var(--late)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--late)' }}>
+                    {classroomOverview?.summary?.otherActivity ?? 0}
+                  </div>
+                  <div className="classroom-status-label">Alternative Activity</div>
+                </div>
+              </div>
+
+              <div className="classroom-status-metric-card status-pending">
+                <School size={20} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--text-muted)' }}>
+                    {classroomOverview?.summary?.pending ?? (stats.classesCount || 18)}
+                  </div>
+                  <div className="classroom-status-label">Awaiting Report</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Attention Notice if Any Class is Unattended */}
+            {(classroomOverview?.summary?.notTeaching || 0) > 0 && (
+              <div
+                style={{
+                  padding: '0.75rem 1rem',
+                  background: 'var(--absent-bg)',
+                  border: '1px solid var(--absent-border)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--absent)' }}>
+                  <AlertTriangle size={18} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                    {classroomOverview.summary.notTeaching} classroom(s) currently flagged as unattended. Immediate relief teacher deployment advised.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('classroom-status')}
+                  className="btn btn-sm"
+                  style={{ background: 'var(--absent)', color: 'white', border: 'none', cursor: 'pointer' }}
+                >
+                  Investigate Classrooms
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Section-Wise Attendance Breakdown */}
+          {dashboardSummary?.sections && dashboardSummary.sections.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.25rem' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Layers size={18} style={{ color: 'var(--primary)' }} />
+                    <span>Section-Wise Attendance Breakdown</span>
+                  </div>
+                  <div className="card-subtitle">
+                    Real-time attendance rates and register submission progress across school sections
+                  </div>
+                </div>
+                <button
+                  onClick={() => onNavigate('sections')}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Manage Sections <ArrowRight size={14} />
+                </button>
+              </div>
+
+              <div className="table-responsive">
+                <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Section</th>
+                      <th scope="col">Grade Band</th>
+                      <th scope="col">Section Heads</th>
+                      <th scope="col">Enrolled</th>
+                      <th scope="col">Present</th>
+                      <th scope="col">Absent</th>
+                      <th scope="col">Attendance Rate</th>
+                      <th scope="col">Registers Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardSummary.sections.map((sec: any) => {
+                      const headNames = sec.section_heads && sec.section_heads.length > 0
+                        ? sec.section_heads.map((h: any) => h.full_name).join(', ')
+                        : 'Unassigned';
+
+                      return (
+                        <tr key={sec.id}>
+                          <td>
+                            <strong>{sec.name}</strong>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sec.code}</div>
+                          </td>
+                          <td>{sec.grade_range || 'Grades 6–13'}</td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{headNames}</td>
+                          <td><strong>{sec.student_count}</strong></td>
+                          <td style={{ color: 'var(--present)', fontWeight: 600 }}>{sec.present}</td>
+                          <td style={{ color: 'var(--absent)', fontWeight: 600 }}>{sec.absent}</td>
+                          <td>
+                            {sec.attendance_rate !== null ? (
+                              <span style={{ fontWeight: 700, color: sec.attendance_rate >= 80 ? 'var(--present)' : 'var(--late)' }}>
+                                {sec.attendance_rate}%
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge ${sec.submitted_classes === sec.classes_count && sec.classes_count > 0 ? 'badge-present' : 'badge-secondary'}`}>
+                              {sec.submitted_classes} / {sec.classes_count} Classes
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Primary Operations 2-Column Grid (Balanced 50% / 50%) */}
           <div className="dashboard-grid-dual">

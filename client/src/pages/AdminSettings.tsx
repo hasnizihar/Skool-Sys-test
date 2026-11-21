@@ -25,8 +25,18 @@ import { api } from '../api/client';
 import { ClassManagement } from './ClassManagement';
 import { TeacherDirectory } from './TeacherDirectory';
 
-export const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sections' | 'users' | 'assignments' | 'backup'>('sections');
+interface AdminSettingsProps {
+  initialTab?: 'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup';
+}
+
+export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sections' }) => {
+  const [activeTab, setActiveTab] = useState<'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Sections State (Phase 1)
   const [sections, setSections] = useState<any[]>([]);
