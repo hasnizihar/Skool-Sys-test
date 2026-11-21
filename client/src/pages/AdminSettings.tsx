@@ -1,4 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Card,
+  Table,
+  Badge,
+  Button,
+  Group,
+  Stack,
+  TextInput,
+  PasswordInput,
+  Select,
+  Textarea,
+  Checkbox,
+  Modal,
+  Text,
+  ActionIcon,
+  Paper,
+  SimpleGrid,
+  Alert,
+  Box,
+  ScrollArea,
+  Code,
+  Title,
+  Tabs
+} from '@mantine/core';
 import {
   ShieldCheck,
   UserPlus,
@@ -9,8 +33,6 @@ import {
   Upload,
   RotateCcw,
   Trash2,
-  Key,
-  CheckCircle2,
   AlertTriangle,
   Plus,
   X,
@@ -18,19 +40,26 @@ import {
   Edit3,
   UserCheck,
   School,
-  ChevronRight,
-  GraduationCap
+  GraduationCap,
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../api/client';
 import { ClassManagement } from './ClassManagement';
 import { TeacherDirectory } from './TeacherDirectory';
+import {
+  SectionHeader,
+  EmptyState,
+  ConfirmModal,
+  showAppNotification
+} from '../ui/mantine';
 
 interface AdminSettingsProps {
   initialTab?: 'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup';
 }
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sections' }) => {
-  const [activeTab, setActiveTab] = useState<'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup'>(initialTab);
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
 
   useEffect(() => {
     if (initialTab) {
@@ -38,8 +67,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     }
   }, [initialTab]);
 
-  // Sections State (Phase 1)
+  // Loading & Data States
+  const [loading, setLoading] = useState(true);
   const [sections, setSections] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+
+  // 1. Section Modal State
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [editingSection, setEditingSection] = useState<any | null>(null);
   const [sectionFormData, setSectionFormData] = useState({
@@ -47,25 +83,32 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     code: '',
     description: ''
   });
+  const [sectionSaving, setSectionSaving] = useState(false);
 
-  // Assign Classes Modal State
+  // Confirm Delete Section State
+  const [deletingSection, setDeletingSection] = useState<any | null>(null);
+  const [deleteSectionLoading, setDeleteSectionLoading] = useState(false);
+
+  // 2. Assign Classes to Section Modal State
   const [showAssignClassesModal, setShowAssignClassesModal] = useState(false);
   const [targetSectionForClasses, setTargetSectionForClasses] = useState<any | null>(null);
   const [selectedClassIdsForSection, setSelectedClassIdsForSection] = useState<number[]>([]);
+  const [assignClassesLoading, setAssignClassesLoading] = useState(false);
 
-  // Assign Section Head Modal State
+  // 3. Assign Section Head Modal State
   const [showAssignHeadModal, setShowAssignHeadModal] = useState(false);
   const [targetSectionForHead, setTargetSectionForHead] = useState<any | null>(null);
   const [selectedHeadUserId, setSelectedHeadUserId] = useState<string>('');
+  const [assignHeadLoading, setAssignHeadLoading] = useState(false);
 
-  // Class Teachers Management Modal State
+  // 4. Class Teachers Management Modal State
   const [showClassTeachersModal, setShowClassTeachersModal] = useState(false);
   const [targetClassForTeachers, setTargetClassForTeachers] = useState<any | null>(null);
   const [selectedTeacherIdForClass, setSelectedTeacherIdForClass] = useState<string>('');
   const [currentClassTeachers, setCurrentClassTeachers] = useState<any[]>([]);
+  const [classTeacherLoading, setClassTeacherLoading] = useState(false);
 
-  // Users State
-  const [users, setUsers] = useState<any[]>([]);
+  // 5. Add User Modal State
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [userFormData, setUserFormData] = useState({
     username: '',
@@ -74,11 +117,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     full_name: '',
     role: 'class_teacher'
   });
+  const [createUserLoading, setCreateUserLoading] = useState(false);
 
-  // Assignments State
-  const [assignments, setAssignments] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([]);
+  // 6. Add Assignment Modal State
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignFormData, setAssignFormData] = useState({
     teacher_id: '',
@@ -86,18 +127,19 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     subject_id: '',
     assignment_type: 'class_teacher'
   });
+  const [createAssignLoading, setCreateAssignLoading] = useState(false);
+
+  // Confirm Delete Assignment State
+  const [deletingAssignmentId, setDeletingAssignmentId] = useState<number | null>(null);
+  const [deleteAssignLoading, setDeleteAssignLoading] = useState(false);
 
   // Backup State
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
-  const [restoreJson, setRestoreJson] = useState('');
-  const [restoring, setRestoring] = useState(false);
+  const [backupExporting, setBackupExporting] = useState(false);
 
-  useEffect(() => {
-    loadAllAdminData();
-  }, []);
-
-  const loadAllAdminData = async () => {
+  const loadAllAdminData = useCallback(async () => {
     try {
+      setLoading(true);
       const [uRes, aRes, cRes, sRes, secRes] = await Promise.all([
         api.getUsers(),
         api.getAssignments(),
@@ -110,10 +152,13 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
       setClasses(cRes.classes || []);
       setSubjects(sRes.subjects || []);
       setSections(secRes.sections || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load admin data:', err);
+      showAppNotification.error('Data Loading Error', err.message || 'Failed to fetch administration data.');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
   const reloadSections = async () => {
     try {
@@ -123,10 +168,14 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
       ]);
       setSections(secRes.sections || []);
       setClasses(cRes.classes || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to reload sections:', err);
     }
   };
+
+  useEffect(() => {
+    loadAllAdminData();
+  }, [loadAllAdminData]);
 
   // Section Handlers
   const handleOpenAddSection = () => {
@@ -147,28 +196,40 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
 
   const handleSaveSection = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!sectionFormData.name.trim() || !sectionFormData.code.trim()) {
+      showAppNotification.error('Validation Error', 'Section name and code are required.');
+      return;
+    }
     try {
+      setSectionSaving(true);
       if (editingSection) {
         await api.updateSection(editingSection.id, sectionFormData);
+        showAppNotification.success('Section Updated', `Section "${sectionFormData.name}" updated successfully.`);
       } else {
         await api.createSection(sectionFormData);
+        showAppNotification.success('Section Created', `Section "${sectionFormData.name}" created successfully.`);
       }
       setShowSectionModal(false);
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to save section: ${err.message}`);
+      showAppNotification.error('Failed to Save Section', err.message || 'Operation failed.');
+    } finally {
+      setSectionSaving(false);
     }
   };
 
-  const handleDeleteSection = async (sec: any) => {
-    if (!window.confirm(`Are you sure you want to delete section "${sec.name}"?\nClasses in this section will be unassigned, but will NOT be deleted.`)) {
-      return;
-    }
+  const handleConfirmDeleteSection = async () => {
+    if (!deletingSection) return;
     try {
-      await api.deleteSection(sec.id);
+      setDeleteSectionLoading(true);
+      await api.deleteSection(deletingSection.id);
+      showAppNotification.success('Section Deleted', `Section "${deletingSection.name}" was removed. Linked classes were unassigned.`);
+      setDeletingSection(null);
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to delete section: ${err.message}`);
+      showAppNotification.error('Deletion Failed', err.message || 'Unable to delete section.');
+    } finally {
+      setDeleteSectionLoading(false);
     }
   };
 
@@ -184,20 +245,25 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     e.preventDefault();
     if (!targetSectionForClasses) return;
     try {
+      setAssignClassesLoading(true);
       await api.assignSectionClasses(targetSectionForClasses.id, selectedClassIdsForSection);
+      showAppNotification.success('Classes Linked', `${selectedClassIdsForSection.length} classes linked to ${targetSectionForClasses.name}.`);
       setShowAssignClassesModal(false);
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to assign classes: ${err.message}`);
+      showAppNotification.error('Link Error', err.message || 'Failed to link classes to section.');
+    } finally {
+      setAssignClassesLoading(false);
     }
   };
 
   const handleUnassignClassFromSection = async (sectionId: number, classId: number) => {
     try {
       await api.unassignSectionClass(sectionId, classId);
+      showAppNotification.success('Class Unlinked', 'Class successfully unlinked from section.');
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to unassign class: ${err.message}`);
+      showAppNotification.error('Unlink Failed', err.message || 'Unable to unlink class.');
     }
   };
 
@@ -210,23 +276,30 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
 
   const handleSaveSectionHead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetSectionForHead || !selectedHeadUserId) return;
+    if (!targetSectionForHead || !selectedHeadUserId) {
+      showAppNotification.error('Validation Error', 'Please select a faculty member.');
+      return;
+    }
     try {
+      setAssignHeadLoading(true);
       await api.assignSectionHead(targetSectionForHead.id, Number(selectedHeadUserId));
+      showAppNotification.success('Section Head Assigned', 'Supervisor assigned to section successfully.');
       setShowAssignHeadModal(false);
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to assign section head: ${err.message}`);
+      showAppNotification.error('Assignment Error', err.message || 'Failed to assign section head.');
+    } finally {
+      setAssignHeadLoading(false);
     }
   };
 
   const handleRemoveSectionHead = async (sectionId: number, userId: number) => {
-    if (!window.confirm('Remove this section head assignment?')) return;
     try {
       await api.removeSectionHead(sectionId, userId);
+      showAppNotification.success('Section Head Removed', 'Supervisory assignment removed.');
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to remove section head: ${err.message}`);
+      showAppNotification.error('Removal Error', err.message || 'Failed to remove section head.');
     }
   };
 
@@ -247,31 +320,45 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     e.preventDefault();
     if (!targetClassForTeachers || !selectedTeacherIdForClass) return;
     try {
+      setClassTeacherLoading(true);
       await api.assignClassTeacher(targetClassForTeachers.id, Number(selectedTeacherIdForClass));
       setSelectedTeacherIdForClass('');
       const res = await api.getClassTeachers(targetClassForTeachers.id);
       setCurrentClassTeachers(res.teachers || []);
+      showAppNotification.success('Class Teacher Assigned', 'Faculty member assigned to class.');
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to assign class teacher: ${err.message}`);
+      showAppNotification.error('Assignment Error', err.message || 'Failed to assign class teacher.');
+    } finally {
+      setClassTeacherLoading(false);
     }
   };
 
   const handleRemoveClassTeacher = async (teacherId: number) => {
     if (!targetClassForTeachers) return;
     try {
+      setClassTeacherLoading(true);
       await api.removeClassTeacher(targetClassForTeachers.id, teacherId);
       const res = await api.getClassTeachers(targetClassForTeachers.id);
       setCurrentClassTeachers(res.teachers || []);
+      showAppNotification.success('Teacher Removed', 'Class teacher assignment removed.');
       await reloadSections();
     } catch (err: any) {
-      alert(`Failed to remove class teacher: ${err.message}`);
+      showAppNotification.error('Removal Error', err.message || 'Failed to remove class teacher.');
+    } finally {
+      setClassTeacherLoading(false);
     }
   };
 
+  // Users Handlers
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (userFormData.password.length < 8) {
+      showAppNotification.error('Password Validation', 'Password must be at least 8 characters long.');
+      return;
+    }
     try {
+      setCreateUserLoading(true);
       await api.createUser(userFormData);
       setShowAddUserModal(false);
       setUserFormData({
@@ -283,15 +370,35 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
       });
       const res = await api.getUsers();
       setUsers(res.users || []);
-      alert('User account created successfully!');
+      showAppNotification.success('Account Created', 'Faculty user account created successfully.');
     } catch (err: any) {
-      alert(`Failed to create user: ${err.message}`);
+      showAppNotification.error('Account Creation Error', err.message || 'Failed to create user account.');
+    } finally {
+      setCreateUserLoading(false);
     }
   };
 
+  const handleToggleUserStatus = async (user: any) => {
+    const nextStatus = !user.is_active;
+    try {
+      await api.updateUser(user.id, { is_active: nextStatus });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, is_active: nextStatus ? 1 : 0 } : u))
+      );
+      showAppNotification.success(
+        'User Status Updated',
+        `User ${user.username} was ${nextStatus ? 'activated' : 'deactivated and logged out'}.`
+      );
+    } catch (err: any) {
+      showAppNotification.error('Status Update Failed', err.message || 'Unable to modify user status.');
+    }
+  };
+
+  // Assignments Handlers
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      setCreateAssignLoading(true);
       await api.createAssignment(assignFormData);
       setShowAssignModal(false);
       setAssignFormData({
@@ -302,24 +409,33 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
       });
       const res = await api.getAssignments();
       setAssignments(res.assignments || []);
-      alert('Teacher assignment saved successfully!');
+      showAppNotification.success('Assignment Saved', 'Teacher assignment saved successfully.');
     } catch (err: any) {
-      alert(`Assignment failed: ${err.message}`);
+      showAppNotification.error('Assignment Error', err.message || 'Failed to record assignment.');
+    } finally {
+      setCreateAssignLoading(false);
     }
   };
 
-  const handleDeleteAssignment = async (id: number) => {
-    if (!confirm('Are you sure you want to remove this teacher assignment?')) return;
+  const handleConfirmDeleteAssignment = async () => {
+    if (!deletingAssignmentId) return;
     try {
-      await api.deleteAssignment(id);
-      setAssignments((prev) => prev.filter((a) => a.id !== id));
+      setDeleteAssignLoading(true);
+      await api.deleteAssignment(deletingAssignmentId);
+      setAssignments((prev) => prev.filter((a) => a.id !== deletingAssignmentId));
+      showAppNotification.success('Assignment Removed', 'Teacher assignment removed.');
+      setDeletingAssignmentId(null);
     } catch (err: any) {
-      alert(`Failed to delete assignment: ${err.message}`);
+      showAppNotification.error('Deletion Failed', err.message || 'Failed to remove assignment.');
+    } finally {
+      setDeleteAssignLoading(false);
     }
   };
 
+  // Backup Export Handler
   const handleDownloadBackup = async () => {
     try {
+      setBackupExporting(true);
       setBackupStatus('Generating full database JSON backup...');
       const data = await api.getBackup();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -331,119 +447,77 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
       link.click();
       document.body.removeChild(link);
       setBackupStatus('Backup exported and downloaded successfully!');
+      showAppNotification.success('Backup Exported', 'Full institutional JSON backup file generated.');
       setTimeout(() => setBackupStatus(null), 4000);
     } catch (err: any) {
-      alert(`Backup failed: ${err.message}`);
+      showAppNotification.error('Backup Error', err.message || 'Failed to export database.');
       setBackupStatus(null);
-    }
-  };
-
-  const handleToggleUserStatus = async (user: any) => {
-    const nextStatus = !user.is_active;
-    const actionLabel = nextStatus ? 'activate' : 'deactivate';
-    if (!confirm(`Are you sure you want to ${actionLabel} user "${user.username}"? ${!nextStatus ? 'Their active sessions and tokens will be invalidated immediately.' : ''}`)) {
-      return;
-    }
-    try {
-      await api.updateUser(user.id, { is_active: nextStatus });
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, is_active: nextStatus ? 1 : 0 } : u))
-      );
-    } catch (err: any) {
-      alert(`Failed to update user status: ${err.message}`);
-    }
-  };
-
-  const handleRestoreBackup = async () => {
-    if (!restoreJson.trim()) return;
-    if (!confirm('WARNING: Restoring will overwrite existing data. Proceed?')) return;
-
-    try {
-      setRestoring(true);
-      const parsed = JSON.parse(restoreJson);
-      await api.restoreBackup(parsed);
-      alert('Database restored successfully from backup!');
-      setRestoreJson('');
-      loadAllAdminData();
-    } catch (err: any) {
-      alert(`Restore failed: ${err.message}`);
     } finally {
-      setRestoring(false);
-    }
-  };
-
-  const handleResetSeed = async () => {
-    if (!confirm('Re-seed will reset the school database to default pilot demo data (Grade 6–13 classes, demo students, Term 1 marks). Proceed?')) return;
-    try {
-      await api.resetSeed();
-      alert('Database re-seeded successfully to pilot state!');
-      loadAllAdminData();
-    } catch (err: any) {
-      alert(`Reset failed: ${err.message}`);
+      setBackupExporting(false);
     }
   };
 
   return (
-    <div>
-      {/* Top Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.5rem',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}
-      >
-        <div>
-          <h2>School Administration & Security</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            User credentials, role assignments, system backups, and database recovery.
-          </p>
-        </div>
+    <Stack gap="lg">
+      {/* 1. Page Header with Navigation Tabs */}
+      <Paper p="lg" radius="md" withBorder bg="white">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+          <Box>
+            <Group gap="xs" mb={4}>
+              <ShieldCheck size={22} style={{ color: 'var(--mantine-color-refinedBlue-6, #2563eb)' }} />
+              <Title order={3} fw={700} c="slate.8">
+                School Administration & Security
+              </Title>
+            </Group>
+            <Text size="sm" c="dimmed">
+              Configure school sections, homeroom divisions, faculty accounts, teaching assignments, and immutable database backups.
+            </Text>
+          </Box>
 
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => setActiveTab('teachers')}
-            className={`btn btn-sm ${activeTab === 'teachers' ? 'btn-primary' : 'btn-secondary'}`}
+          <Button
+            variant="default"
+            size="sm"
+            leftSection={<RefreshCw size={14} className={loading ? 'spin' : ''} />}
+            onClick={() => loadAllAdminData()}
+            disabled={loading}
           >
-            <GraduationCap size={14} /> Faculty & Teachers
-          </button>
-          <button
-            onClick={() => setActiveTab('sections')}
-            className={`btn btn-sm ${activeTab === 'sections' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            <Layers size={14} /> School Sections & Structure
-          </button>
-          <button
-            onClick={() => setActiveTab('classes')}
-            className={`btn btn-sm ${activeTab === 'classes' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            <School size={14} /> Class Management
-          </button>
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`btn btn-sm ${activeTab === 'users' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            <Users size={14} /> User Accounts
-          </button>
-          <button
-            onClick={() => setActiveTab('assignments')}
-            className={`btn btn-sm ${activeTab === 'assignments' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            <BookOpen size={14} /> Teacher Assignments
-          </button>
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`btn btn-sm ${activeTab === 'backup' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            <Database size={14} /> Backup & Restore
-          </button>
-        </div>
-      </div>
+            Refresh
+          </Button>
+        </Group>
 
-      {/* Tab: Faculty & Teachers Directory (Phase 3 Task 2) */}
+        {/* Tab Switcher */}
+        <Box mt="md">
+          <Tabs
+            value={activeTab}
+            onChange={(val) => setActiveTab(val || 'sections')}
+            variant="outline"
+            radius="md"
+          >
+            <Tabs.List>
+              <Tabs.Tab value="sections" leftSection={<Layers size={15} />}>
+                Sections & Structure
+              </Tabs.Tab>
+              <Tabs.Tab value="classes" leftSection={<School size={15} />}>
+                Class Management
+              </Tabs.Tab>
+              <Tabs.Tab value="teachers" leftSection={<GraduationCap size={15} />}>
+                Faculty & Teachers
+              </Tabs.Tab>
+              <Tabs.Tab value="users" leftSection={<Users size={15} />}>
+                User Accounts
+              </Tabs.Tab>
+              <Tabs.Tab value="assignments" leftSection={<BookOpen size={15} />}>
+                Teacher Assignments
+              </Tabs.Tab>
+              <Tabs.Tab value="backup" leftSection={<Database size={15} />}>
+                Backup & Security
+              </Tabs.Tab>
+            </Tabs.List>
+          </Tabs>
+        </Box>
+      </Paper>
+
+      {/* TAB 1: FACULTY & TEACHERS DIRECTORY (Phase 3 Task 2) */}
       {activeTab === 'teachers' && (
         <TeacherDirectory
           onAddUser={() => {
@@ -454,970 +528,990 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
         />
       )}
 
-      {/* Tab 0: School Sections & Structure (Phase 1) */}
+      {/* TAB 2: SCHOOL SECTIONS & STRUCTURE */}
       {activeTab === 'sections' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Header Card */}
-          <div className="card" style={{ padding: '1.25rem 1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Layers size={18} style={{ color: 'var(--kcc-primary, #075E3B)' }} />
-                  School Sections & Organizational Structure
-                </h3>
-                <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                  Define school sections (e.g. Junior Secondary, Senior Secondary, G.C.E. A/L), assign sectional heads, and link classroom units with multiple class teachers.
-                </p>
-              </div>
-              <button onClick={handleOpenAddSection} className="btn btn-primary btn-sm">
-                <Plus size={14} /> Add New Section
-              </button>
-            </div>
-          </div>
+        <Stack gap="md">
+          {/* Header Action Card */}
+          <Paper p="md" radius="md" withBorder bg="white">
+            <Group justify="space-between" wrap="wrap" gap="md">
+              <SectionHeader
+                title="School Sections & Leadership Structure"
+                description="Define divisional boundaries (Junior, Senior, A/L), assign sectional heads, and link classroom units."
+                badge={<Badge size="sm" variant="light" color="refinedBlue">{sections.length} Sections</Badge>}
+              />
+
+              <Button
+                color="refinedBlue"
+                leftSection={<Plus size={16} />}
+                onClick={handleOpenAddSection}
+              >
+                Add New Section
+              </Button>
+            </Group>
+          </Paper>
 
           {/* Unassigned Classes Notice */}
           {classes.filter((c) => !c.section_id).length > 0 && (
-            <div
-              style={{
-                padding: '0.85rem 1.25rem',
-                borderRadius: 'var(--radius-md, 8px)',
-                background: 'var(--late-bg, #fef3c7)',
-                border: '1px solid var(--late-border, #fde68a)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '0.75rem',
-                fontSize: '0.85rem'
-              }}
+            <Alert
+              icon={<AlertTriangle size={18} />}
+              title="Unassigned Classes Detected"
+              color="statusAmber"
+              radius="md"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <AlertTriangle size={16} style={{ color: 'var(--late, #d97706)', flexShrink: 0 }} />
-                <span>
-                  <strong>{classes.filter((c) => !c.section_id).length} classes</strong> are currently unassigned to any section. Link them to a section below for classroom monitoring and reporting.
-                </span>
-              </div>
-            </div>
+              <Text size="sm">
+                <strong>{classes.filter((c) => !c.section_id).length} classes</strong> are currently unassigned to any organizational section. Link them to a section below for accurate Section Head walkthrough monitoring.
+              </Text>
+            </Alert>
           )}
 
           {/* Sections List */}
           {sections.length === 0 ? (
-            <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
-              <School size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 0.75rem', opacity: 0.5 }} />
-              <h4>No School Sections Configured Yet</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: '0.5rem 0 1.25rem' }}>
-                Get started by creating your first school section (e.g. "Junior Secondary (Grades 6–9)").
-              </p>
-              <button onClick={handleOpenAddSection} className="btn btn-primary btn-sm">
-                <Plus size={14} /> Create First Section
-              </button>
-            </div>
+            <Paper p="xl" radius="md" withBorder bg="white">
+              <EmptyState
+                icon={<School size={36} />}
+                title="No School Sections Configured"
+                description="Get started by creating your primary school sections (e.g. 'Junior Secondary', 'Senior Secondary', 'A/L Collegiate')."
+                action={
+                  <Button color="refinedBlue" leftSection={<Plus size={16} />} onClick={handleOpenAddSection}>
+                    Create First Section
+                  </Button>
+                }
+              />
+            </Paper>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <Stack gap="md">
               {sections.map((sec) => (
-                <div key={sec.id} className="card" style={{ padding: '1.25rem 1.5rem' }}>
-                  {/* Section Top Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        <h4 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{sec.name}</h4>
-                        <span className="badge" style={{ background: 'var(--kcc-primary-soft, #e9f5ed)', color: 'var(--kcc-primary, #075E3B)', fontWeight: 600 }}>
+                <Paper key={sec.id} p="lg" radius="md" withBorder bg="white">
+                  {/* Section Title & Actions */}
+                  <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm" pb="sm" style={{ borderBottom: '1px solid var(--mantine-color-slate-2, #e2e8f0)' }}>
+                    <Box>
+                      <Group gap="xs">
+                        <Title order={4} fw={700} c="slate.8">
+                          {sec.name}
+                        </Title>
+                        <Badge color="refinedBlue" variant="filled" size="sm">
                           {sec.code}
-                        </span>
+                        </Badge>
                         {sec.academic_year_name && (
-                          <span className="badge" style={{ background: 'var(--bg-subtle, #f1f5f9)', color: 'var(--text-muted)' }}>
+                          <Badge color="slate" variant="light" size="sm">
                             {sec.academic_year_name}
-                          </span>
+                          </Badge>
                         )}
-                      </div>
+                      </Group>
                       {sec.description && (
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        <Text size="xs" c="dimmed" mt={4}>
                           {sec.description}
-                        </p>
+                        </Text>
                       )}
-                    </div>
+                    </Box>
 
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                      <button onClick={() => handleOpenAssignClasses(sec)} className="btn btn-secondary btn-sm" title="Link classes to this section">
-                        <BookOpen size={13} /> Link Classes
-                      </button>
-                      <button onClick={() => handleOpenAssignHead(sec)} className="btn btn-secondary btn-sm" title="Assign Section Head">
-                        <UserCheck size={13} /> Assign Head
-                      </button>
-                      <button onClick={() => handleOpenEditSection(sec)} className="btn btn-secondary btn-sm" title="Edit Section details">
-                        <Edit3 size={13} /> Edit
-                      </button>
-                      <button onClick={() => handleDeleteSection(sec)} className="btn btn-secondary btn-sm" style={{ color: '#ef4444' }} title="Delete Section">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
+                    <Group gap="xs">
+                      <Button
+                        variant="default"
+                        size="xs"
+                        leftSection={<BookOpen size={13} />}
+                        onClick={() => handleOpenAssignClasses(sec)}
+                      >
+                        Link Classes
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="xs"
+                        leftSection={<UserCheck size={13} />}
+                        onClick={() => handleOpenAssignHead(sec)}
+                      >
+                        Assign Head
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="xs"
+                        leftSection={<Edit3 size={13} />}
+                        onClick={() => handleOpenEditSection(sec)}
+                      >
+                        Edit
+                      </Button>
+                      <ActionIcon
+                        variant="subtle"
+                        color="statusRed"
+                        size="sm"
+                        onClick={() => setDeletingSection(sec)}
+                        title="Delete Section"
+                      >
+                        <Trash2 size={15} />
+                      </ActionIcon>
+                    </Group>
+                  </Group>
 
-                  {/* Sectional Heads Sub-Section */}
-                  <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
+                  {/* Sectional Heads Sub-Card */}
+                  <Paper p="sm" radius="sm" withBorder bg="slate.0" mt="md">
+                    <Group justify="space-between" mb={6}>
+                      <Text size="xs" fw={700} c="slate.7" tt="uppercase" style={{ letterSpacing: '0.04em' }}>
                         Sectional Heads ({sec.section_heads?.length || 0})
-                      </span>
-                      <button onClick={() => handleOpenAssignHead(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
+                      </Text>
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        color="refinedBlue"
+                        onClick={() => handleOpenAssignHead(sec)}
+                      >
                         + Add Head
-                      </button>
-                    </div>
+                      </Button>
+                    </Group>
 
                     {(!sec.section_heads || sec.section_heads.length === 0) ? (
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        No sectional heads assigned. Click "+ Add Head" to assign a supervisor.
-                      </span>
+                      <Text size="xs" c="dimmed" fs="italic">
+                        No sectional heads assigned. Click "+ Add Head" to assign a supervisor with live walkthrough access.
+                      </Text>
                     ) : (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <Group gap="xs" wrap="wrap">
                         {sec.section_heads.map((head: any) => (
-                          <span
+                          <Badge
                             key={head.id}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.4rem',
-                              padding: '0.25rem 0.6rem',
-                              borderRadius: '20px',
-                              background: '#ffffff',
-                              border: '1px solid var(--border-color)',
-                              fontSize: '0.8rem',
-                              fontWeight: 500
-                            }}
+                            size="md"
+                            variant="default"
+                            rightSection={
+                              <ActionIcon
+                                size={14}
+                                variant="transparent"
+                                c="dimmed"
+                                onClick={() => handleRemoveSectionHead(sec.id, head.id)}
+                                title="Remove section head"
+                              >
+                                <X size={10} />
+                              </ActionIcon>
+                            }
+                            leftSection={<UserCheck size={12} color="var(--mantine-color-refinedBlue-6, #2563eb)" />}
                           >
-                            <UserCheck size={12} style={{ color: 'var(--kcc-primary, #075E3B)' }} />
-                            <span>{head.full_name}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveSectionHead(sec.id, head.id)}
-                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px' }}
-                              title="Remove section head assignment"
-                            >
-                              <X size={12} />
-                            </button>
-                          </span>
+                            {head.full_name}
+                          </Badge>
                         ))}
-                      </div>
+                      </Group>
                     )}
-                  </div>
+                  </Paper>
 
-                  {/* Assigned Classes Table */}
-                  <div style={{ marginTop: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
-                        Linked Classes ({sec.classes?.length || 0})
-                      </span>
-                      <button onClick={() => handleOpenAssignClasses(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
+                  {/* Linked Classes Table */}
+                  <Box mt="md">
+                    <Group justify="space-between" mb={6}>
+                      <Text size="xs" fw={700} c="slate.7" tt="uppercase" style={{ letterSpacing: '0.04em' }}>
+                        Linked Classroom Divisions ({sec.classes?.length || 0})
+                      </Text>
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        color="refinedBlue"
+                        onClick={() => handleOpenAssignClasses(sec)}
+                      >
                         + Link More Classes
-                      </button>
-                    </div>
+                      </Button>
+                    </Group>
 
                     {(!sec.classes || sec.classes.length === 0) ? (
-                      <div style={{ padding: '1rem', textAlign: 'center', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        No classes linked to this section yet. Click "+ Link More Classes" to assign classes.
-                      </div>
+                      <Paper p="md" radius="sm" withBorder bg="slate.0" style={{ textAlign: 'center' }}>
+                        <Text size="xs" c="dimmed">
+                          No classes linked to this section yet. Click "+ Link More Classes" to assign classrooms.
+                        </Text>
+                      </Paper>
                     ) : (
-                      <div className="table-responsive">
-                        <table className="data-table" style={{ fontSize: '0.825rem' }}>
-                          <thead>
-                            <tr>
-                              <th style={{ width: '120px' }}>Class</th>
-                              <th style={{ width: '80px' }}>Grade</th>
-                              <th style={{ width: '90px' }}>Pupils</th>
-                              <th>Assigned Class Teacher(s)</th>
-                              <th style={{ textAlign: 'right', width: '190px' }}>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                      <Table.ScrollContainer minWidth={600}>
+                        <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="sm">
+                          <Table.Thead bg="slate.0">
+                            <Table.Tr>
+                              <Table.Th style={{ width: 140 }}>Class Division</Table.Th>
+                              <Table.Th style={{ width: 90 }}>Grade</Table.Th>
+                              <Table.Th style={{ width: 90 }}>Enrolled</Table.Th>
+                              <Table.Th>Assigned Homeroom Teacher(s)</Table.Th>
+                              <Table.Th style={{ textAlign: 'right', width: 170 }}>Actions</Table.Th>
+                            </Table.Tr>
+                          </Table.Thead>
+                          <Table.Tbody>
                             {sec.classes.map((cls: any) => (
-                              <tr key={cls.id}>
-                                <td>
-                                  <strong>{cls.name}</strong>
-                                </td>
-                                <td>Grade {cls.grade}</td>
-                                <td>{cls.student_count || 0}</td>
-                                <td>
+                              <Table.Tr key={cls.id}>
+                                <Table.Td>
+                                  <Text size="sm" fw={700} c="slate.8">
+                                    {cls.name}
+                                  </Text>
+                                </Table.Td>
+                                <Table.Td>
+                                  <Badge size="xs" variant="light" color="refinedBlue">
+                                    Grade {cls.grade}
+                                  </Badge>
+                                </Table.Td>
+                                <Table.Td>
+                                  <Text size="xs" c="slate.7">
+                                    {cls.student_count || 0} pupils
+                                  </Text>
+                                </Table.Td>
+                                <Table.Td>
                                   {(!cls.class_teachers || cls.class_teachers.length === 0) ? (
-                                    <span style={{ color: 'var(--late, #d97706)', fontStyle: 'italic', fontSize: '0.775rem' }}>
-                                      No Class Teacher assigned
-                                    </span>
+                                    <Text size="xs" c="statusAmber.8" fs="italic">
+                                      Unassigned
+                                    </Text>
                                   ) : (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                    <Group gap={6} wrap="wrap">
                                       {cls.class_teachers.map((t: any) => (
-                                        <span
-                                          key={t.id}
-                                          style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.3rem',
-                                            padding: '0.15rem 0.5rem',
-                                            borderRadius: '4px',
-                                            background: 'var(--kcc-primary-soft, #e9f5ed)',
-                                            color: 'var(--kcc-primary, #075E3B)',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 600
-                                          }}
-                                        >
+                                        <Badge key={t.id} size="xs" variant="light" color="statusGreen">
                                           {t.full_name}
-                                        </span>
+                                        </Badge>
                                       ))}
-                                    </div>
+                                    </Group>
                                   )}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <button
-                                    onClick={() => handleOpenClassTeachers(cls)}
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', marginRight: '0.4rem' }}
-                                    title="Manage teachers for this class"
-                                  >
-                                    Teachers ({cls.class_teachers?.length || 0})
-                                  </button>
-                                  <button
-                                    onClick={() => handleUnassignClassFromSection(sec.id, cls.id)}
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--text-muted)' }}
-                                    title="Unassign class from this section"
-                                  >
-                                    Unlink
-                                  </button>
-                                </td>
-                              </tr>
+                                </Table.Td>
+                                <Table.Td style={{ textAlign: 'right' }}>
+                                  <Group gap={6} justify="flex-end">
+                                    <Button
+                                      variant="default"
+                                      size="xs"
+                                      onClick={() => handleOpenClassTeachers(cls)}
+                                    >
+                                      Teachers ({cls.class_teachers?.length || 0})
+                                    </Button>
+                                    <Button
+                                      variant="subtle"
+                                      color="slate"
+                                      size="xs"
+                                      onClick={() => handleUnassignClassFromSection(sec.id, cls.id)}
+                                    >
+                                      Unlink
+                                    </Button>
+                                  </Group>
+                                </Table.Td>
+                              </Table.Tr>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          </Table.Tbody>
+                        </Table>
+                      </Table.ScrollContainer>
                     )}
-                  </div>
-                </div>
+                  </Box>
+                </Paper>
               ))}
-            </div>
+            </Stack>
           )}
-        </div>
+        </Stack>
       )}
 
-      {/* Tab: Class Management (Phase 2) */}
+      {/* TAB 3: CLASS MANAGEMENT (Phase 2 Component) */}
       {activeTab === 'classes' && (
         <ClassManagement onClassChanged={loadAllAdminData} />
       )}
 
-      {/* Tab 1: Users */}
+      {/* TAB 4: FACULTY & STAFF ACCOUNTS */}
       {activeTab === 'users' && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div
-            style={{
-              padding: '1.25rem 1.5rem',
-              borderBottom: '1px solid var(--border-color)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-          >
-            <div>
-              <h3 style={{ fontSize: '1.1rem' }}>Faculty & Staff Accounts</h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Role-based access control (Administrator, Class Teacher, Subject Teacher)
-              </p>
-            </div>
-            <button onClick={() => setShowAddUserModal(true)} className="btn btn-primary btn-sm">
-              <UserPlus size={14} /> Add User Account
-            </button>
-          </div>
+        <Card radius="md" withBorder p={0} bg="white">
+          <Box p="md" style={{ borderBottom: '1px solid var(--mantine-color-slate-2, #e2e8f0)' }}>
+            <Group justify="space-between" wrap="wrap" gap="md">
+              <SectionHeader
+                title="Faculty & Administrative Accounts"
+                description="Role-based credential management, session invalidation, and privileged access control."
+                badge={<Badge size="sm" variant="light" color="refinedBlue">{users.length} Users</Badge>}
+              />
 
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Full Name</th>
-                  <th>Username</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+              <Button
+                color="refinedBlue"
+                leftSection={<UserPlus size={16} />}
+                onClick={() => setShowAddUserModal(true)}
+              >
+                Add User Account
+              </Button>
+            </Group>
+          </Box>
+
+          <Table.ScrollContainer minWidth={700}>
+            <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
+              <Table.Thead bg="slate.0">
+                <Table.Tr>
+                  <Table.Th>Full Name</Table.Th>
+                  <Table.Th>Username</Table.Th>
+                  <Table.Th>Email Address</Table.Th>
+                  <Table.Th>System Role</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Created</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {users.map((u) => (
-                  <tr key={u.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        <div className="user-avatar" style={{ width: 32, height: 32, fontSize: '0.75rem' }}>
-                          {u.full_name?.charAt(0)}
-                        </div>
-                        <strong>{u.full_name}</strong>
-                      </div>
-                    </td>
-                    <td><code>{u.username}</code></td>
-                    <td style={{ color: 'var(--text-muted)' }}>{u.email}</td>
-                    <td>
-                      <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                  <Table.Tr key={u.id}>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <Box
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            background: 'var(--mantine-color-refinedBlue-1, #dbeafe)',
+                            color: 'var(--mantine-color-refinedBlue-8, #1e40af)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.8rem',
+                            fontWeight: 700
+                          }}
+                        >
+                          {u.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                        </Box>
+                        <Text size="sm" fw={600} c="slate.8">
+                          {u.full_name}
+                        </Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Code c="slate.7">{u.username}</Code>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {u.email}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="sm"
+                        variant="light"
+                        color={u.role === 'admin' ? 'indigo' : u.role === 'section_head' ? 'statusGreen' : 'refinedBlue'}
+                      >
                         {u.role.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${u.is_active ? 'badge-present' : 'badge-absent'}`}>
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="sm"
+                        variant="light"
+                        color={u.is_active ? 'statusGreen' : 'statusRed'}
+                      >
                         {u.is_active ? 'Active' : 'Deactivated'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.created_at?.slice(0, 10)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {u.created_at?.slice(0, 10)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Button
+                        variant={u.is_active ? 'default' : 'filled'}
+                        color={u.is_active ? undefined : 'refinedBlue'}
+                        size="xs"
                         onClick={() => handleToggleUserStatus(u)}
-                        className={`btn btn-sm ${u.is_active ? 'btn-secondary' : 'btn-primary'}`}
-                        style={{
-                          padding: '0.25rem 0.65rem',
-                          fontSize: '0.75rem',
-                          color: u.is_active ? 'var(--danger)' : undefined,
-                          borderColor: u.is_active ? 'var(--danger-light, rgba(239,68,68,0.2))' : undefined
-                        }}
-                        title={u.is_active ? 'Deactivate account and revoke all active tokens immediately' : 'Reactivate account'}
                       >
                         {u.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Card>
       )}
 
-      {/* Tab 2: Assignments */}
+      {/* TAB 5: TEACHER ASSIGNMENTS */}
       {activeTab === 'assignments' && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div
-            style={{
-              padding: '1.25rem 1.5rem',
-              borderBottom: '1px solid var(--border-color)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-          >
-            <div>
-              <h3 style={{ fontSize: '1.1rem' }}>Teacher Class & Subject Assignments</h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Designate class teachers and subject instructors across Grades 6 to 13
-              </p>
-            </div>
-            <button onClick={() => setShowAssignModal(true)} className="btn btn-primary btn-sm">
-              <Plus size={14} /> New Assignment
-            </button>
-          </div>
+        <Card radius="md" withBorder p={0} bg="white">
+          <Box p="md" style={{ borderBottom: '1px solid var(--mantine-color-slate-2, #e2e8f0)' }}>
+            <Group justify="space-between" wrap="wrap" gap="md">
+              <SectionHeader
+                title="Teacher Class & Subject Assignments"
+                description="Designate class teachers and subject instructors across Grades 6 to 13."
+                badge={<Badge size="sm" variant="light" color="refinedBlue">{assignments.length} Assignments</Badge>}
+              />
 
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Teacher Name</th>
-                  <th>Class</th>
-                  <th>Role / Assignment Type</th>
-                  <th>Assigned Subject</th>
-                  <th style={{ textAlign: 'right' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
+              <Button
+                color="refinedBlue"
+                leftSection={<Plus size={16} />}
+                onClick={() => setShowAssignModal(true)}
+              >
+                New Assignment
+              </Button>
+            </Group>
+          </Box>
+
+          <Table.ScrollContainer minWidth={700}>
+            <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
+              <Table.Thead bg="slate.0">
+                <Table.Tr>
+                  <Table.Th>Teacher Name</Table.Th>
+                  <Table.Th>Class Division</Table.Th>
+                  <Table.Th>Assignment Type</Table.Th>
+                  <Table.Th>Assigned Subject</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Action</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {assignments.map((a) => (
-                  <tr key={a.id}>
-                    <td><strong>{a.teacher_name}</strong></td>
-                    <td><span className="badge" style={{ background: 'var(--bg-subtle)' }}>{a.class_name}</span></td>
-                    <td>
-                      <span className="badge" style={{ background: a.assignment_type === 'class_teacher' ? '#dcfce7' : '#e0f2fe', color: a.assignment_type === 'class_teacher' ? '#15803d' : '#0369a1' }}>
+                  <Table.Tr key={a.id}>
+                    <Table.Td>
+                      <Text size="sm" fw={600} c="slate.8">
+                        {a.teacher_name}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge size="sm" variant="default">
+                        {a.class_name}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="sm"
+                        variant="light"
+                        color={a.assignment_type === 'class_teacher' ? 'statusGreen' : 'refinedBlue'}
+                      >
                         {a.assignment_type === 'class_teacher' ? 'Class Teacher' : 'Subject Teacher'}
-                      </span>
-                    </td>
-                    <td>{a.subject_name ? `${a.subject_name} (${a.subject_code})` : 'Whole Class Register'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        onClick={() => handleDeleteAssignment(a.id)}
-                        className="btn btn-secondary btn-sm"
-                        style={{ color: '#ef4444', padding: '0.3rem 0.5rem' }}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" c="slate.7">
+                        {a.subject_name ? `${a.subject_name} (${a.subject_code})` : 'Whole Class Register'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="statusRed"
+                        size="sm"
+                        onClick={() => setDeletingAssignmentId(a.id)}
                         title="Remove Assignment"
                       >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
+                        <Trash2 size={15} />
+                      </ActionIcon>
+                    </Table.Td>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Card>
       )}
 
-      {/* Tab 3: Backup & Recovery */}
+      {/* TAB 6: BACKUP & RECOVERY */}
       {activeTab === 'backup' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Security & Data Safety Notice Banner */}
-          <div
-            style={{
-              padding: '1rem 1.25rem',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--late-bg)',
-              border: '1px solid var(--late-border)',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '0.75rem'
-            }}
+        <Stack gap="md">
+          {/* Safety Notice Banner */}
+          <Alert
+            icon={<AlertTriangle size={18} />}
+            title="Emergency Data Protection Notice (PR-002 Safety Baseline)"
+            color="statusAmber"
+            radius="md"
           >
-            <AlertTriangle size={20} style={{ color: 'var(--late)', flexShrink: 0, marginTop: 2 }} />
-            <div>
-              <strong style={{ fontSize: '0.875rem', color: 'var(--late)' }}>
-                Emergency Data Protection Notice (PR-002 Safety Baseline)
-              </strong>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-main)', marginTop: '0.25rem' }}>
-                Destructive Database Restore and Demo Re-seed endpoints are <strong>disabled</strong> to prevent data corruption and accidental table wiping. Read-only backup JSON export is fully operational. Transactional, atomic database restoration is scheduled for PR-004.
-              </p>
-            </div>
-          </div>
+            <Text size="sm">
+              Destructive Database Restore and Demo Re-seed endpoints are <strong>disabled</strong> to prevent data corruption and accidental table wiping. Read-only backup JSON export is fully operational.
+            </Text>
+          </Alert>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem' }}>
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">System Database Backup</div>
-                  <div className="card-subtitle">Download an immutable JSON snapshot of all tables</div>
-                </div>
-              </div>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+            {/* Export Card */}
+            <Paper p="lg" radius="md" withBorder bg="white">
+              <Group gap="xs" mb="xs">
+                <Download size={20} style={{ color: 'var(--mantine-color-refinedBlue-6, #2563eb)' }} />
+                <Title order={4} fw={700} c="slate.8">
+                  System Database Backup
+                </Title>
+              </Group>
+              <Text size="sm" c="dimmed" mb="md">
+                Download an immutable JSON snapshot of all tables, including student registries, historical attendance logs, examination marks, and leadership authorisations.
+              </Text>
 
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-                Includes all students, attendance histories, marks, users, academic years, and audit logs. This file can be stored on external media or used to migrate the system.
-              </p>
-
-              <button onClick={handleDownloadBackup} className="btn btn-primary">
-                <Download size={16} /> Export & Download Backup
-              </button>
+              <Button
+                color="refinedBlue"
+                leftSection={<Download size={16} />}
+                onClick={handleDownloadBackup}
+                loading={backupExporting}
+              >
+                Export & Download Backup
+              </Button>
 
               {backupStatus && (
-                <p style={{ marginTop: '0.75rem', fontSize: '0.825rem', color: 'var(--present)' }}>
+                <Text size="xs" c="statusGreen.8" mt="xs" fw={600}>
                   {backupStatus}
-                </p>
+                </Text>
               )}
 
-              <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '2rem', paddingTop: '1.5rem' }}>
-                <div className="card-title" style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+              <Box mt="xl" pt="md" style={{ borderTop: '1px solid var(--mantine-color-slate-2, #e2e8f0)' }}>
+                <Text size="xs" fw={700} c="dimmed" tt="uppercase">
                   Pilot Demonstration Reset (Disabled)
-                </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.5rem 0 1rem' }}>
+                </Text>
+                <Text size="xs" c="dimmed" mt={4} mb="sm">
                   Reset endpoint is locked. Database reset operations must be run strictly via authenticated offline CLI scripts in staging environments.
-                </p>
-                <button disabled className="btn btn-secondary btn-sm" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
-                  <RotateCcw size={14} /> Re-seed Demo Database (Disabled)
-                </button>
-              </div>
-            </div>
-
-            <div className="card" style={{ opacity: 0.85 }}>
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Restore Database Snapshot (Locked)</div>
-                  <div className="card-subtitle">Disabled until transactional recovery (PR-004)</div>
-                </div>
-                <span className="badge badge-late">Safety Locked</span>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Paste Backup JSON Content</label>
-                <textarea
-                  className="form-textarea"
-                  rows={8}
+                </Text>
+                <Button
+                  variant="default"
+                  size="xs"
                   disabled
-                  placeholder="Restore operations are locked to prevent unrecoverable data loss..."
-                  style={{ fontFamily: 'monospace', fontSize: '0.75rem', opacity: 0.6, cursor: 'not-allowed' }}
-                />
-              </div>
+                  leftSection={<RotateCcw size={14} />}
+                >
+                  Re-seed Demo Database (Disabled)
+                </Button>
+              </Box>
+            </Paper>
 
-              <button
+            {/* Restore Card (Safety Locked) */}
+            <Paper p="lg" radius="md" withBorder bg="slate.0" style={{ opacity: 0.9 }}>
+              <Group justify="space-between" mb="xs">
+                <Group gap="xs">
+                  <Lock size={20} style={{ color: 'var(--mantine-color-statusAmber-7, #d97706)' }} />
+                  <Title order={4} fw={700} c="slate.8">
+                    Restore Snapshot (Locked)
+                  </Title>
+                </Group>
+                <Badge color="statusAmber" variant="filled" size="sm">
+                  Safety Locked
+                </Badge>
+              </Group>
+
+              <Text size="sm" c="dimmed" mb="md">
+                Restoration operations are locked to prevent unrecoverable data loss in production environments.
+              </Text>
+
+              <Textarea
+                rows={6}
                 disabled
-                className="btn btn-secondary"
-                style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                placeholder="Restore operations are locked to prevent unrecoverable data loss..."
+                style={{ fontFamily: 'monospace', fontSize: '0.75rem', opacity: 0.6 }}
+                mb="md"
+              />
+
+              <Button
+                variant="default"
+                disabled
+                leftSection={<Upload size={16} />}
               >
-                <Upload size={16} />
-                <span>Restore Endpoint Disabled (Safety Containment)</span>
-              </button>
-            </div>
-          </div>
-        </div>
+                Restore Endpoint Disabled (Safety Containment)
+              </Button>
+            </Paper>
+          </SimpleGrid>
+        </Stack>
       )}
 
-      {/* Add User Modal */}
-      {showAddUserModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>Create User Account</h3>
-              <button onClick={() => setShowAddUserModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateUser}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={userFormData.full_name}
-                    onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
-                    placeholder="e.g. Mrs. Sunethra Jayasinghe"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Username *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={userFormData.username}
-                    onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
-                    placeholder="e.g. teacher_sunethra"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Email Address *</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    value={userFormData.email}
-                    onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
-                    placeholder="teacher@skoolsys.edu"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Temporary Password *</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    value={userFormData.password}
-                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                    placeholder="••••••••"
-                    minLength={8}
-                    required
-                  />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                    Must be at least 8 characters long and contain both letters and numbers.
-                  </span>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">System Role *</label>
-                  <select
-                    className="form-select"
-                    value={userFormData.role}
-                    onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
-                  >
-                    <option value="class_teacher">Class Teacher</option>
-                    <option value="subject_teacher">Subject Teacher</option>
-                    <option value="admin">Administrator / Principal</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAddUserModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Create Account
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Add Assignment Modal */}
-      {showAssignModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>Assign Teacher to Class / Subject</h3>
-              <button onClick={() => setShowAssignModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateAssignment}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Select Teacher *</label>
-                  <select
-                    className="form-select"
-                    value={assignFormData.teacher_id}
-                    onChange={(e) => setAssignFormData({ ...assignFormData, teacher_id: e.target.value })}
-                    required
-                  >
-                    <option value="">Select Faculty Member</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.full_name} ({u.username})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Assignment Type *</label>
-                  <select
-                    className="form-select"
-                    value={assignFormData.assignment_type}
-                    onChange={(e) => setAssignFormData({ ...assignFormData, assignment_type: e.target.value })}
-                  >
-                    <option value="class_teacher">Class Teacher (Daily Attendance & Roster)</option>
-                    <option value="subject_teacher">Subject Teacher (Marks Entry)</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Class (Grade 6–13) *</label>
-                  <select
-                    className="form-select"
-                    value={assignFormData.class_id}
-                    onChange={(e) => setAssignFormData({ ...assignFormData, class_id: e.target.value })}
-                    required
-                  >
-                    <option value="">Select Class</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {assignFormData.assignment_type === 'subject_teacher' && (
-                  <div className="form-group">
-                    <label className="form-label">Subject *</label>
-                    <select
-                      className="form-select"
-                      value={assignFormData.subject_id}
-                      onChange={(e) => setAssignFormData({ ...assignFormData, subject_id: e.target.value })}
-                      required
-                    >
-                      <option value="">Select Subject</option>
-                      {subjects.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAssignModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Assignment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ----------------- MODALS ----------------- */}
 
       {/* 1. Add / Edit Section Modal */}
-      {showSectionModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>
-                {editingSection ? 'Edit Section' : 'Create New Section'}
-              </h3>
-              <button onClick={() => setShowSectionModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
+      <Modal
+        opened={showSectionModal}
+        onClose={() => setShowSectionModal(false)}
+        title={
+          <Text fw={700} size="md" c="slate.8">
+            {editingSection ? 'Edit School Section' : 'Create New School Section'}
+          </Text>
+        }
+        radius="md"
+      >
+        <form onSubmit={handleSaveSection}>
+          <Stack gap="sm">
+            <TextInput
+              label="Section Name"
+              placeholder="e.g. Junior Secondary (Grades 6–9)"
+              required
+              value={sectionFormData.name}
+              onChange={(e) => setSectionFormData({ ...sectionFormData, name: e.target.value })}
+            />
 
-            <form onSubmit={handleSaveSection}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Section Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={sectionFormData.name}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, name: e.target.value })}
-                    placeholder="e.g. Junior Secondary (Grades 6–9)"
-                    required
-                  />
-                </div>
+            <TextInput
+              label="Section Code"
+              placeholder="e.g. SEC-JUNIOR"
+              required
+              value={sectionFormData.code}
+              onChange={(e) => setSectionFormData({ ...sectionFormData, code: e.target.value.toUpperCase() })}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Section Code *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={sectionFormData.code}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, code: e.target.value.toUpperCase() })}
-                    placeholder="e.g. SEC-JUNIOR"
-                    required
-                  />
-                </div>
+            <Textarea
+              label="Description (Optional)"
+              placeholder="Administrative scope, building wings, or target grades..."
+              rows={3}
+              value={sectionFormData.description}
+              onChange={(e) => setSectionFormData({ ...sectionFormData, description: e.target.value })}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Description (Optional)</label>
-                  <textarea
-                    className="form-textarea"
-                    rows={3}
-                    value={sectionFormData.description}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, description: e.target.value })}
-                    placeholder="Optional description of grades, buildings, or administrative scope..."
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowSectionModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingSection ? 'Save Changes' : 'Create Section'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={() => setShowSectionModal(false)}>
+                Cancel
+              </Button>
+              <Button color="refinedBlue" type="submit" loading={sectionSaving}>
+                {editingSection ? 'Save Changes' : 'Create Section'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* 2. Assign Classes to Section Modal */}
-      {showAssignClassesModal && targetSectionForClasses && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '540px' }}>
-            <div className="modal-header">
-              <div>
-                <h3 style={{ fontSize: '1.15rem' }}>Link Classes to Section</h3>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Section: <strong>{targetSectionForClasses.name}</strong> ({targetSectionForClasses.code})
-                </p>
-              </div>
-              <button onClick={() => setShowAssignClassesModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
+      <Modal
+        opened={showAssignClassesModal && !!targetSectionForClasses}
+        onClose={() => setShowAssignClassesModal(false)}
+        title={
+          <Box>
+            <Text fw={700} size="md" c="slate.8">
+              Link Classes to Section
+            </Text>
+            <Text size="xs" c="dimmed">
+              Section: <strong>{targetSectionForClasses?.name}</strong> ({targetSectionForClasses?.code})
+            </Text>
+          </Box>
+        }
+        size="lg"
+        radius="md"
+      >
+        <form onSubmit={handleSaveAssignedClasses}>
+          <Stack gap="sm">
+            <Text size="xs" c="dimmed">
+              Select all class divisions belonging to this section:
+            </Text>
 
-            <form onSubmit={handleSaveAssignedClasses}>
-              <div className="modal-body">
-                <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                  Select the classes belonging to this section. Any class selected will be linked to this section:
-                </p>
-
-                <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.5rem' }}>
-                  {classes.map((cls) => {
-                    const isChecked = selectedClassIdsForSection.includes(cls.id);
-                    const isOtherSection = cls.section_id && cls.section_id !== targetSectionForClasses.id;
-                    return (
-                      <label
-                        key={cls.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '0.5rem 0.65rem',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          background: isChecked ? 'var(--kcc-primary-soft, #e9f5ed)' : 'transparent',
-                          marginBottom: '2px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                          <input
-                            type="checkbox"
+            <ScrollArea.Autosize mah={300} type="always">
+              <Stack gap={6} p={4}>
+                {classes.map((cls) => {
+                  const isChecked = selectedClassIdsForSection.includes(cls.id);
+                  const isOtherSection = cls.section_id && cls.section_id !== targetSectionForClasses?.id;
+                  return (
+                    <Paper
+                      key={cls.id}
+                      p="xs"
+                      radius="sm"
+                      withBorder
+                      bg={isChecked ? 'refinedBlue.0' : 'white'}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        if (isChecked) {
+                          setSelectedClassIdsForSection(selectedClassIdsForSection.filter((id) => id !== cls.id));
+                        } else {
+                          setSelectedClassIdsForSection([...selectedClassIdsForSection, cls.id]);
+                        }
+                      }}
+                    >
+                      <Group justify="space-between">
+                        <Group gap="xs">
+                          <Checkbox
                             checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedClassIdsForSection([...selectedClassIdsForSection, cls.id]);
-                              } else {
-                                setSelectedClassIdsForSection(selectedClassIdsForSection.filter((id) => id !== cls.id));
-                              }
-                            }}
+                            onChange={() => {}} // handled by paper onClick
                           />
-                          <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{cls.name}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Grade {cls.grade}</span>
-                        </div>
+                          <Text size="sm" fw={600} c="slate.8">{cls.name}</Text>
+                          <Badge size="xs" variant="light" color="slate">Grade {cls.grade}</Badge>
+                        </Group>
                         {isOtherSection && (
-                          <span className="badge" style={{ fontSize: '0.7rem', background: '#fee2e2', color: '#991b1b' }}>
-                            Currently in {cls.section_name || 'other section'}
-                          </span>
+                          <Badge size="xs" variant="light" color="statusAmber">
+                            Currently in {cls.section_name || 'another section'}
+                          </Badge>
                         )}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+                      </Group>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            </ScrollArea.Autosize>
 
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAssignClassesModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Linked Classes ({selectedClassIdsForSection.length})
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={() => setShowAssignClassesModal(false)}>
+                Cancel
+              </Button>
+              <Button color="refinedBlue" type="submit" loading={assignClassesLoading}>
+                Save Linked Classes ({selectedClassIdsForSection.length})
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* 3. Assign Section Head Modal */}
-      {showAssignHeadModal && targetSectionForHead && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <div>
-                <h3 style={{ fontSize: '1.15rem' }}>Assign Sectional Head</h3>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Section: <strong>{targetSectionForHead.name}</strong>
-                </p>
-              </div>
-              <button onClick={() => setShowAssignHeadModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
+      <Modal
+        opened={showAssignHeadModal && !!targetSectionForHead}
+        onClose={() => setShowAssignHeadModal(false)}
+        title={
+          <Box>
+            <Text fw={700} size="md" c="slate.8">
+              Assign Sectional Head
+            </Text>
+            <Text size="xs" c="dimmed">
+              Section: <strong>{targetSectionForHead?.name}</strong>
+            </Text>
+          </Box>
+        }
+        radius="md"
+      >
+        <form onSubmit={handleSaveSectionHead}>
+          <Stack gap="sm">
+            <Text size="xs" c="dimmed">
+              Select a faculty or staff member to assign supervisory inspection access for this section:
+            </Text>
 
-            <form onSubmit={handleSaveSectionHead}>
-              <div className="modal-body">
-                <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                  Select a faculty or staff member to assign as Sectional Head with supervisory monitoring access for this section:
-                </p>
+            <Select
+              label="Faculty Member"
+              placeholder="Select Supervisor..."
+              required
+              value={selectedHeadUserId}
+              onChange={(val) => setSelectedHeadUserId(val || '')}
+              data={users.map((u) => ({
+                value: String(u.id),
+                label: `${u.full_name} (${u.username} • ${u.role})`
+              }))}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Faculty Member *</label>
-                  <select
-                    className="form-select"
-                    value={selectedHeadUserId}
-                    onChange={(e) => setSelectedHeadUserId(e.target.value)}
-                    required
-                  >
-                    <option value="">Select Faculty Member</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.full_name} ({u.username} • {u.role})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAssignHeadModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Assign as Section Head
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={() => setShowAssignHeadModal(false)}>
+                Cancel
+              </Button>
+              <Button color="refinedBlue" type="submit" loading={assignHeadLoading}>
+                Assign as Section Head
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* 4. Manage Class Teachers Modal */}
-      {showClassTeachersModal && targetClassForTeachers && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '520px' }}>
-            <div className="modal-header">
-              <div>
-                <h3 style={{ fontSize: '1.15rem' }}>Manage Class Teachers</h3>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Class: <strong>{targetClassForTeachers.name}</strong> (Grade {targetClassForTeachers.grade})
-                </p>
-              </div>
-              <button onClick={() => setShowClassTeachersModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
+      <Modal
+        opened={showClassTeachersModal && !!targetClassForTeachers}
+        onClose={() => setShowClassTeachersModal(false)}
+        title={
+          <Box>
+            <Text fw={700} size="md" c="slate.8">
+              Manage Homeroom Class Teachers
+            </Text>
+            <Text size="xs" c="dimmed">
+              Class: <strong>{targetClassForTeachers?.name}</strong> (Grade {targetClassForTeachers?.grade})
+            </Text>
+          </Box>
+        }
+        radius="md"
+      >
+        <Stack gap="md">
+          <Box>
+            <Text size="xs" fw={700} c="slate.7" mb="xs" tt="uppercase">
+              Currently Assigned Teachers ({currentClassTeachers.length})
+            </Text>
 
-            <div className="modal-body">
-              {/* Current Teachers List */}
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label className="form-label" style={{ marginBottom: '0.5rem' }}>
-                  Currently Assigned Class Teachers ({currentClassTeachers.length})
-                </label>
-
-                {currentClassTeachers.length === 0 ? (
-                  <p style={{ fontSize: '0.825rem', color: 'var(--late, #d97706)', fontStyle: 'italic' }}>
-                    No class teacher assigned yet.
-                  </p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    {currentClassTeachers.map((t: any) => (
-                      <div
-                        key={t.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '0.5rem 0.75rem',
-                          background: 'var(--bg-subtle, #f8fafc)',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)'
-                        }}
+            {currentClassTeachers.length === 0 ? (
+              <Paper p="sm" radius="sm" withBorder bg="slate.0">
+                <Text size="xs" c="statusAmber.8" fs="italic">
+                  No class teachers currently assigned.
+                </Text>
+              </Paper>
+            ) : (
+              <Stack gap={6}>
+                {currentClassTeachers.map((t: any) => (
+                  <Paper key={t.id} p="xs" radius="sm" withBorder bg="slate.0">
+                    <Group justify="space-between">
+                      <Box>
+                        <Text size="sm" fw={600} c="slate.8">{t.full_name}</Text>
+                        <Text size="xs" c="dimmed">{t.email || t.username}</Text>
+                      </Box>
+                      <Button
+                        variant="subtle"
+                        color="statusRed"
+                        size="xs"
+                        onClick={() => handleRemoveClassTeacher(t.id)}
+                        loading={classTeacherLoading}
                       >
-                        <div>
-                          <strong style={{ fontSize: '0.85rem' }}>{t.full_name}</strong>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                            {t.email || t.username}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveClassTeacher(t.id)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ color: '#ef4444', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                          title="Remove class teacher assignment"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                        Remove
+                      </Button>
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            )}
+          </Box>
 
-              {/* Add Another Class Teacher Form */}
-              <form onSubmit={handleAddClassTeacher} style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                <label className="form-label" style={{ marginBottom: '0.4rem' }}>
-                  Assign Additional Class Teacher
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <select
-                    className="form-select"
-                    value={selectedTeacherIdForClass}
-                    onChange={(e) => setSelectedTeacherIdForClass(e.target.value)}
-                    required
-                  >
-                    <option value="">Select Teacher...</option>
-                    {users
-                      .filter((u) => !currentClassTeachers.some((ct: any) => ct.id === u.id))
-                      .map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.full_name} ({u.username})
-                        </option>
-                      ))}
-                  </select>
-                  <button type="submit" className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}>
-                    <Plus size={14} /> Assign
-                  </button>
-                </div>
-              </form>
-            </div>
+          <Box pt="sm" style={{ borderTop: '1px solid var(--mantine-color-slate-2, #e2e8f0)' }}>
+            <form onSubmit={handleAddClassTeacher}>
+              <Text size="xs" fw={700} c="slate.7" mb="xs" tt="uppercase">
+                Assign Additional Teacher
+              </Text>
+              <Group align="flex-end" gap="xs">
+                <Select
+                  placeholder="Select Faculty Member..."
+                  required
+                  value={selectedTeacherIdForClass}
+                  onChange={(val) => setSelectedTeacherIdForClass(val || '')}
+                  data={users
+                    .filter((u) => !currentClassTeachers.some((ct: any) => ct.id === u.id))
+                    .map((u) => ({
+                      value: String(u.id),
+                      label: `${u.full_name} (${u.username})`
+                    }))}
+                  style={{ flex: 1 }}
+                />
+                <Button color="refinedBlue" type="submit" loading={classTeacherLoading}>
+                  Assign
+                </Button>
+              </Group>
+            </form>
+          </Box>
 
-            <div className="modal-footer">
-              <button type="button" onClick={() => setShowClassTeachersModal(false)} className="btn btn-secondary">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+          <Group justify="flex-end" mt="xs">
+            <Button variant="default" onClick={() => setShowClassTeachersModal(false)}>
+              Done
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* 5. Add User Account Modal */}
+      <Modal
+        opened={showAddUserModal}
+        onClose={() => setShowAddUserModal(false)}
+        title={
+          <Text fw={700} size="md" c="slate.8">
+            Create Faculty User Account
+          </Text>
+        }
+        radius="md"
+      >
+        <form onSubmit={handleCreateUser}>
+          <Stack gap="sm">
+            <TextInput
+              label="Full Name"
+              placeholder="e.g. Mrs. Sunethra Jayasinghe"
+              required
+              value={userFormData.full_name}
+              onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
+            />
+
+            <TextInput
+              label="Username"
+              placeholder="e.g. teacher_sunethra"
+              required
+              value={userFormData.username}
+              onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
+            />
+
+            <TextInput
+              label="Email Address"
+              type="email"
+              placeholder="teacher@kcc.edu.lk"
+              required
+              value={userFormData.email}
+              onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
+            />
+
+            <PasswordInput
+              label="Temporary Password"
+              placeholder="••••••••"
+              required
+              minLength={8}
+              value={userFormData.password}
+              onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
+              description="Minimum 8 characters with letters and numbers."
+            />
+
+            <Select
+              label="System Role"
+              required
+              value={userFormData.role}
+              onChange={(val) => setUserFormData({ ...userFormData, role: val || 'class_teacher' })}
+              data={[
+                { value: 'class_teacher', label: 'Class Teacher' },
+                { value: 'subject_teacher', label: 'Subject Teacher' },
+                { value: 'admin', label: 'Administrator / Principal' }
+              ]}
+            />
+
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={() => setShowAddUserModal(false)}>
+                Cancel
+              </Button>
+              <Button color="refinedBlue" type="submit" loading={createUserLoading}>
+                Create Account
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      {/* 6. Add Assignment Modal */}
+      <Modal
+        opened={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        title={
+          <Text fw={700} size="md" c="slate.8">
+            Assign Teacher to Class / Subject
+          </Text>
+        }
+        radius="md"
+      >
+        <form onSubmit={handleCreateAssignment}>
+          <Stack gap="sm">
+            <Select
+              label="Select Faculty Member"
+              placeholder="Select Teacher..."
+              required
+              value={assignFormData.teacher_id}
+              onChange={(val) => setAssignFormData({ ...assignFormData, teacher_id: val || '' })}
+              data={users.map((u) => ({
+                value: String(u.id),
+                label: `${u.full_name} (${u.username})`
+              }))}
+            />
+
+            <Select
+              label="Assignment Type"
+              required
+              value={assignFormData.assignment_type}
+              onChange={(val) => setAssignFormData({ ...assignFormData, assignment_type: val || 'class_teacher' })}
+              data={[
+                { value: 'class_teacher', label: 'Class Teacher (Daily Attendance & Roster)' },
+                { value: 'subject_teacher', label: 'Subject Teacher (Marks Entry)' }
+              ]}
+            />
+
+            <Select
+              label="Class Division (Grade 6–13)"
+              placeholder="Select Class..."
+              required
+              value={assignFormData.class_id}
+              onChange={(val) => setAssignFormData({ ...assignFormData, class_id: val || '' })}
+              data={classes.map((c) => ({
+                value: String(c.id),
+                label: c.name
+              }))}
+            />
+
+            {assignFormData.assignment_type === 'subject_teacher' && (
+              <Select
+                label="Assigned Subject"
+                placeholder="Select Subject..."
+                required
+                value={assignFormData.subject_id}
+                onChange={(val) => setAssignFormData({ ...assignFormData, subject_id: val || '' })}
+                data={subjects.map((s) => ({
+                  value: String(s.id),
+                  label: `${s.name} (${s.code})`
+                }))}
+              />
+            )}
+
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={() => setShowAssignModal(false)}>
+                Cancel
+              </Button>
+              <Button color="refinedBlue" type="submit" loading={createAssignLoading}>
+                Save Assignment
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      {/* Confirm Delete Section Modal */}
+      <ConfirmModal
+        opened={!!deletingSection}
+        onClose={() => setDeletingSection(null)}
+        onConfirm={handleConfirmDeleteSection}
+        title="Delete School Section"
+        message={`Are you sure you want to delete section "${deletingSection?.name}"? Linked classroom units will be unassigned, but their student enrollments and records will remain completely intact.`}
+        confirmLabel="Delete Section"
+        confirmColor="statusRed"
+        loading={deleteSectionLoading}
+      />
+
+      {/* Confirm Delete Assignment Modal */}
+      <ConfirmModal
+        opened={!!deletingAssignmentId}
+        onClose={() => setDeletingAssignmentId(null)}
+        onConfirm={handleConfirmDeleteAssignment}
+        title="Remove Teacher Assignment"
+        message="Are you sure you want to remove this teacher assignment? Historical attendance and submitted marks will remain untouched."
+        confirmLabel="Remove"
+        confirmColor="statusRed"
+        loading={deleteAssignLoading}
+      />
+    </Stack>
   );
 };
+
+export default AdminSettings;

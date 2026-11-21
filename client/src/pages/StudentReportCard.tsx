@@ -5,12 +5,8 @@ import {
   X,
   Award,
   AlertTriangle,
-  CheckCircle,
-  Clock,
   ShieldAlert,
-  FileCheck,
-  TrendingUp,
-  UserCheck
+  FileCheck
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';

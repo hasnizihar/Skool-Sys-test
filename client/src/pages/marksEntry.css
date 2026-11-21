@@ -158,7 +158,7 @@
   background: var(--primary-light);
   border-color: var(--primary);
   color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(2, 101, 54, 0.15);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
 }
 
 .lifecycle-divider {
@@ -541,7 +541,7 @@
 .marks-score-input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(2, 101, 54, 0.2);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
   background: #fff;
 }
 
@@ -789,7 +789,7 @@
 .marks-stepper-score-input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 4px rgba(2, 101, 54, 0.2);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
 }
 
 .marks-stepper-grade-pill {
@@ -847,8 +847,8 @@
 
 /* Publication Ceremony & Integrity Watermark */
 .ceremony-card {
-  background: linear-gradient(135deg, rgba(2, 101, 54, 0.04) 0%, rgba(2, 101, 54, 0.01) 100%);
-  border: 1.5px solid var(--primary-light);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(37, 99, 235, 0.01) 100%);
+  border: 1.5px solid var(--mantine-color-refinedBlue-2, #bfdbfe);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   position: relative;

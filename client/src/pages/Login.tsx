@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
 import {
+  TextInput,
+  PasswordInput,
+  Button,
+  Alert,
+  Text,
+  Title,
+  Group,
+  Stack,
+  Box,
+  Badge
+} from '@mantine/core';
+import {
   Lock,
   User,
   AlertCircle,
@@ -9,7 +21,6 @@ import {
 } from 'lucide-react';
 import { api, setAuthSession } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
-import { Button, Input } from '../ui';
 import './login.css';
 
 interface LoginProps {
@@ -163,7 +174,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         {/* Clean Sign In Form */}
         <form onSubmit={handleSubmit} className="login-form">
-          <Input
+          <TextInput
             label="Username or Academic ID"
             name="username"
             type="text"
@@ -172,30 +183,34 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            leftIcon={<User size={16} />}
+            leftSection={<User size={16} />}
+            size="sm"
+            radius="md"
           />
 
-          <Input
+          <PasswordInput
             label="Password"
             name="password"
-            type="password"
             placeholder="••••••••"
             required
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            leftIcon={<Lock size={16} />}
-            showPasswordToggle
+            leftSection={<Lock size={16} />}
+            size="sm"
+            radius="md"
           />
 
           <Button
             type="submit"
-            variant="primary"
-            size="lg"
+            color="refinedBlue"
+            size="md"
             fullWidth
-            isLoading={loading}
+            loading={loading}
             className="login-submit-btn"
-            rightIcon={<ArrowRight size={16} />}
+            rightSection={<ArrowRight size={16} />}
+            mt="xs"
+            radius="md"
           >
             Sign In
           </Button>
@@ -245,3 +260,5 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     </div>
   );
 };
+
+export default Login;
