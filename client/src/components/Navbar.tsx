@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   CheckCircle2
 } from 'lucide-react';
+import { Tooltip } from '@mantine/core';
 import { api } from '../api/client';
 import { getUnsyncedWorkSummary, UnsyncedWorkSummary } from '../api/offlineQueue';
 import './navbar.css';
@@ -184,86 +185,95 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Grounded Truthful Sync Status Chip */}
         {hasConflicts ? (
-          <button
-            type="button"
-            className="sync-status-chip sync-status-chip--conflicted"
-            onClick={() => onNavigate?.('attendance')}
-            title="Concurrency conflict detected between local changes and server. Tap to review."
-            aria-label="Concurrency conflict detected. Tap to review attendance."
-          >
-            <AlertTriangle size={13} />
-            <span>Conflict Detected</span>
-          </button>
+          <Tooltip label="Concurrency conflict detected between local changes and server. Tap to review." withArrow>
+            <button
+              type="button"
+              className="sync-status-chip sync-status-chip--conflicted"
+              onClick={() => onNavigate?.('attendance')}
+              aria-label="Concurrency conflict detected. Tap to review attendance."
+            >
+              <AlertTriangle size={13} />
+              <span>Conflict Detected</span>
+            </button>
+          </Tooltip>
         ) : isSyncing ? (
-          <div
-            className="sync-status-chip sync-status-chip--syncing"
-            title="Uploading queued offline changes to school server..."
-            role="status"
-            aria-live="polite"
-          >
-            <RefreshCw size={13} className="sk-spin" />
-            <span>Syncing...</span>
-          </div>
+          <Tooltip label="Uploading queued offline changes to school server..." withArrow>
+            <div
+              className="sync-status-chip sync-status-chip--syncing"
+              role="status"
+              aria-live="polite"
+            >
+              <RefreshCw size={13} className="sk-spin" />
+              <span>Syncing...</span>
+            </div>
+          </Tooltip>
         ) : pendingCount > 0 ? (
-          <button
-            type="button"
-            className="sync-status-chip sync-status-chip--pending"
-            onClick={() => onNavigate?.('attendance')}
-            title={`${pendingCount} record(s) queued locally on device. Ready for synchronization.`}
-            aria-label={`${pendingCount} records queued offline. Tap to review.`}
-          >
-            <Clock size={13} />
-            <span>{pendingCount} Pending Sync</span>
-          </button>
+          <Tooltip label={`${pendingCount} record(s) queued locally on device. Tap to review.`} withArrow>
+            <button
+              type="button"
+              className="sync-status-chip sync-status-chip--pending"
+              onClick={() => onNavigate?.('attendance')}
+              aria-label={`${pendingCount} records queued offline. Tap to review.`}
+            >
+              <Clock size={13} />
+              <span>{pendingCount} Pending Sync</span>
+            </button>
+          </Tooltip>
         ) : !isOnline ? (
-          <div
-            className="sync-status-chip sync-status-chip--offline"
-            title="School server unreachable. Working in offline mode; local changes safely persisted in IndexedDB."
-            role="status"
-          >
-            <WifiOff size={13} />
-            <span>Offline (Local Mode)</span>
-          </div>
+          <Tooltip label="School server unreachable. Working in offline mode; local changes safely persisted in IndexedDB." withArrow>
+            <div
+              className="sync-status-chip sync-status-chip--offline"
+              role="status"
+            >
+              <WifiOff size={13} />
+              <span>Offline (Local Mode)</span>
+            </div>
+          </Tooltip>
         ) : (
-          <div
-            className="sync-status-chip sync-status-chip--synced"
-            title="Online and connected to school server. All local mutations synchronized."
-            role="status"
-          >
-            <span className="sync-chip-dot" />
-            <CheckCircle2 size={13} />
-            <span>Online • Synced</span>
-          </div>
+          <Tooltip label="Online and connected to school server. All local mutations synchronized." withArrow>
+            <div
+              className="sync-status-chip sync-status-chip--synced"
+              role="status"
+            >
+              <span className="sync-chip-dot" />
+              <CheckCircle2 size={13} />
+              <span>Online • Synced</span>
+            </div>
+          </Tooltip>
         )}
 
         {/* Administrator Role Pill */}
         {user?.role === 'admin' && (
-          <div
-            className="navbar-admin-pill badge"
-            title="Logged in with Administrator privileges"
-          >
-            <ShieldCheck size={13} />
-            <span>Administrator</span>
-          </div>
+          <Tooltip label="Logged in with Administrator privileges" withArrow>
+            <div
+              className="navbar-admin-pill badge"
+            >
+              <ShieldCheck size={13} />
+              <span>Administrator</span>
+            </div>
+          </Tooltip>
         )}
 
         {/* Theme Mode Toggle Button */}
         {toggleTheme && (
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="navbar-theme-toggle"
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-          >
-            {theme === 'dark' ? (
-              <Sun size={15} style={{ color: '#f59e0b' }} />
-            ) : (
-              <Moon size={15} style={{ color: 'var(--primary)' }} />
-            )}
-          </button>
+          <Tooltip label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} withArrow>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="navbar-theme-toggle"
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            >
+              {theme === 'dark' ? (
+                <Sun size={15} style={{ color: '#f59e0b' }} />
+              ) : (
+                <Moon size={15} style={{ color: 'var(--primary)' }} />
+              )}
+            </button>
+          </Tooltip>
         )}
       </div>
     </header>
   );
 };
+
+export default Navbar;

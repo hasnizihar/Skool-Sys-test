@@ -16,6 +16,8 @@ import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
 import { MobileSequentialAttendance } from './pages/MobileSequentialAttendance';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
+import { isUserSectionHead } from './utils/authUtils';
+import { ErrorState, PageContainer } from './ui/mantine';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 const VALID_TABS = [
@@ -72,6 +74,7 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-mantine-color-scheme', theme);
     localStorage.setItem('skoolsys_theme', theme);
   }, [theme]);
 
@@ -204,7 +207,18 @@ export function App() {
               <ClassroomStatusMonitoring user={user} onNavigate={setCurrentTab} />
             )}
             {currentTab === 'mobile-classroom-status' && (
-              <MobileClassroomStatus user={user} onNavigate={setCurrentTab} />
+              isUserSectionHead(user) ? (
+                <MobileClassroomStatus user={user} onNavigate={setCurrentTab} />
+              ) : (
+                <PageContainer>
+                  <ErrorState
+                    title="Section Head Access Restricted"
+                    message="You do not currently have assigned school sections. The Section Walkthrough tool is restricted to assigned Section Heads and the Principal."
+                    onRetry={() => setCurrentTab('dashboard')}
+                    retryLabel="Return to Dashboard"
+                  />
+                </PageContainer>
+              )
             )}
             {currentTab === 'admin' && user.role === 'admin' && (
               <AdminSettings />

@@ -7,12 +7,12 @@ import {
   RotateCw,
   Clock,
   X,
-  ChevronRight,
   ShieldAlert,
   ArrowRight
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from '../ui/Button';
+import { EmptyState } from '../ui/mantine';
 import { useToast } from '../ui/useToast';
 import './mobileClassroomStatus.css';
 
@@ -222,10 +222,11 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
           Loading assigned classrooms...
         </div>
       ) : classes.length === 0 ? (
-        <div className="p-6 text-center bg-white border rounded-lg text-slate-600">
-          <p className="font-semibold">No Classrooms Found</p>
-          <p className="text-sm mt-1">You do not have any assigned sections or classrooms to track.</p>
-        </div>
+        <EmptyState
+          icon={<ShieldAlert size={36} />}
+          title="No Classrooms In Assigned Section"
+          description="There are currently no classrooms assigned to this section, or you do not have permission to view them."
+        />
       ) : (
         <main className="mcs-grid" aria-label="Classroom Status Selection Grid">
           {classes.map((cls) => (

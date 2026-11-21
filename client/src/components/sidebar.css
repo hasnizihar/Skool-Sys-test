@@ -211,7 +211,7 @@
   background-color: var(--primary-light);
   color: var(--primary);
   font-weight: 600;
-  border-color: rgba(2, 101, 54, 0.22);
+  border-color: var(--primary-border);
 }
 
 .nav-item.active svg {
@@ -250,7 +250,7 @@
   width: 34px;
   height: 34px;
   border-radius: var(--radius-full, 9999px);
-  background: linear-gradient(135deg, var(--primary) 0%, #047857 100%);
+  background: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,7 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import '@mantine/core/styles.css'
+import '@mantine/notifications/styles.css'
 import './index.css'
 import App from './App.tsx'
+import { MantineProvider } from '@mantine/core'
+import { Notifications } from '@mantine/notifications'
+import { skoolSysTheme } from './theme'
 
 // Register PWA Service Worker
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
@@ -12,10 +17,11 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 }
 
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <MantineProvider theme={skoolSysTheme} defaultColorScheme="light">
+      <Notifications position="top-right" zIndex={2000} />
+      <App />
+    </MantineProvider>
   </StrictMode>,
 )
-

@@ -333,27 +333,349 @@ router.put('/examinations/:id', requireAuth, (req, res) => {
   }
 });
 
-// Create Class (Admin)
+// ============================================================================
+// Class Management (Phase 2)
+// ============================================================================
+
+// 1. Create Class (Admin only)
 router.post('/classes', requireAuth, requireRole(['admin']), (req, res) => {
-  const { grade, name, room_number, class_teacher_id } = req.body;
-  if (!grade || !name) {
-    res.status(400).json({ error: 'Grade and Name are required.' });
+  const { grade, name, room_number, class_teacher_id, section_id, academic_year_id } = req.body;
+
+  if (grade === undefined || grade === null || !name || !String(name).trim()) {
+    res.status(400).json({ error: 'Grade and Name are required.', code: 'VALIDATION_ERROR' });
     return;
   }
 
-  const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
+  const numGrade = Number(grade);
+  if (isNaN(numGrade) || numGrade < 6 || numGrade > 13) {
+    res.status(400).json({ error: 'Grade must be an integer between 6 and 13.', code: 'INVALID_GRADE' });
+    return;
+  }
 
-  const stmt = db.prepare(`
-    INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id)
-    VALUES (?, ?, ?, ?, ?)
-  `);
+  const cleanName = String(name).trim();
+  const cleanRoom = room_number ? String(room_number).trim() : null;
 
-  const result = stmt.run(Number(grade), name, room_number || null, currentYear?.id || null, class_teacher_id || null);
+  // Resolve target academic year
+  let targetYearId = academic_year_id ? Number(academic_year_id) : null;
+  if (!targetYearId) {
+    const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number } | undefined;
+    targetYearId = currentYear ? currentYear.id : null;
+  }
 
-  const classId = Number(result.lastInsertRowid);
-  logAudit(req.user!.id, req.user!.username, 'CLASS_CREATE', 'classes', classId, { grade, name }, req.ip);
+  // Check duplicate class name in same grade and academic year
+  const existingClass = db.prepare(`
+    SELECT id FROM classes 
+    WHERE grade = ? AND LOWER(name) = LOWER(?) AND (academic_year_id = ? OR (? IS NULL AND academic_year_id IS NULL))
+  `).get(numGrade, cleanName, targetYearId, targetYearId) as any;
 
-  res.status(201).json({ success: true, id: classId });
+  if (existingClass) {
+    res.status(400).json({
+      error: `A class named "${cleanName}" already exists for Grade ${numGrade}.`,
+      code: 'DUPLICATE_CLASS_NAME'
+    });
+    return;
+  }
+
+  // Validate section_id if provided
+  let targetSectionId: number | null = null;
+  if (section_id !== undefined && section_id !== null && section_id !== '') {
+    targetSectionId = Number(section_id);
+    if (isNaN(targetSectionId)) {
+      res.status(400).json({ error: 'Invalid section_id.', code: 'INVALID_SECTION_ID' });
+      return;
+    }
+    const secExists = db.prepare('SELECT id, name FROM sections WHERE id = ?').get(targetSectionId);
+    if (!secExists) {
+      res.status(400).json({ error: `Section with ID ${targetSectionId} does not exist.`, code: 'SECTION_NOT_FOUND' });
+      return;
+    }
+  }
+
+  // Validate class_teacher_id if provided
+  let targetTeacherId: number | null = null;
+  if (class_teacher_id !== undefined && class_teacher_id !== null && class_teacher_id !== '') {
+    targetTeacherId = Number(class_teacher_id);
+    if (isNaN(targetTeacherId)) {
+      res.status(400).json({ error: 'Invalid class_teacher_id.', code: 'INVALID_TEACHER_ID' });
+      return;
+    }
+    const teacherExists = db.prepare('SELECT id, full_name, is_active FROM users WHERE id = ?').get(targetTeacherId) as any;
+    if (!teacherExists || !teacherExists.is_active) {
+      res.status(400).json({ error: 'Assigned teacher not found or is deactivated.', code: 'TEACHER_NOT_ACTIVE' });
+      return;
+    }
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+
+    const stmt = db.prepare(`
+      INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id, section_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(numGrade, cleanName, cleanRoom, targetYearId, targetTeacherId, targetSectionId);
+    const classId = Number(result.lastInsertRowid);
+
+    // If a class teacher was assigned, ensure entry in teacher_assignments table
+    if (targetTeacherId) {
+      db.prepare(`
+        INSERT OR IGNORE INTO teacher_assignments (teacher_id, class_id, assignment_type, academic_year_id)
+        VALUES (?, ?, 'class_teacher', ?)
+      `).run(targetTeacherId, classId, targetYearId);
+    }
+
+    db.exec('COMMIT;');
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'CLASS_CREATE',
+      'classes',
+      String(classId),
+      { grade: numGrade, name: cleanName, room: cleanRoom, sectionId: targetSectionId, classTeacherId: targetTeacherId },
+      req.ip
+    );
+
+    const createdClass = db.prepare(`
+      SELECT c.*, sec.name as section_name, sec.code as section_code, u.full_name as class_teacher_name
+      FROM classes c
+      LEFT JOIN sections sec ON c.section_id = sec.id
+      LEFT JOIN users u ON c.class_teacher_id = u.id
+      WHERE c.id = ?
+    `).get(classId);
+
+    res.status(201).json({ success: true, id: classId, class: createdClass });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    res.status(500).json({ error: err.message || 'Failed to create class.' });
+  }
+});
+
+// 2. Update Class (Admin only)
+router.put('/classes/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const classId = Number(req.params.id);
+  if (!classId || isNaN(classId)) {
+    res.status(400).json({ error: 'Valid class ID is required.' });
+    return;
+  }
+
+  const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(classId) as any;
+  if (!cls) {
+    res.status(404).json({ error: 'Class not found.', code: 'CLASS_NOT_FOUND' });
+    return;
+  }
+
+  const { grade, name, room_number, class_teacher_id, section_id } = req.body;
+
+  const numGrade = grade !== undefined ? Number(grade) : cls.grade;
+  if (isNaN(numGrade) || numGrade < 6 || numGrade > 13) {
+    res.status(400).json({ error: 'Grade must be an integer between 6 and 13.', code: 'INVALID_GRADE' });
+    return;
+  }
+
+  const cleanName = name !== undefined ? String(name).trim() : cls.name;
+  if (!cleanName) {
+    res.status(400).json({ error: 'Class name cannot be empty.', code: 'VALIDATION_ERROR' });
+    return;
+  }
+
+  // Check duplicate class name if name or grade changed
+  if (cleanName.toLowerCase() !== cls.name.toLowerCase() || numGrade !== cls.grade) {
+    const existing = db.prepare(`
+      SELECT id FROM classes
+      WHERE grade = ? AND LOWER(name) = LOWER(?) AND academic_year_id = ? AND id != ?
+    `).get(numGrade, cleanName, cls.academic_year_id, classId);
+
+    if (existing) {
+      res.status(400).json({
+        error: `A class named "${cleanName}" already exists for Grade ${numGrade}.`,
+        code: 'DUPLICATE_CLASS_NAME'
+      });
+      return;
+    }
+  }
+
+  // Validate section_id
+  let targetSectionId: number | null = cls.section_id;
+  if (section_id !== undefined) {
+    if (section_id === null || section_id === '' || section_id === 0) {
+      targetSectionId = null;
+    } else {
+      targetSectionId = Number(section_id);
+      if (isNaN(targetSectionId)) {
+        res.status(400).json({ error: 'Invalid section_id.', code: 'INVALID_SECTION_ID' });
+        return;
+      }
+      const secExists = db.prepare('SELECT id FROM sections WHERE id = ?').get(targetSectionId);
+      if (!secExists) {
+        res.status(400).json({ error: `Section with ID ${targetSectionId} does not exist.`, code: 'SECTION_NOT_FOUND' });
+        return;
+      }
+    }
+  }
+
+  // Validate class_teacher_id
+  let targetTeacherId: number | null = cls.class_teacher_id;
+  if (class_teacher_id !== undefined) {
+    if (class_teacher_id === null || class_teacher_id === '' || class_teacher_id === 0) {
+      targetTeacherId = null;
+    } else {
+      targetTeacherId = Number(class_teacher_id);
+      if (isNaN(targetTeacherId)) {
+        res.status(400).json({ error: 'Invalid class_teacher_id.', code: 'INVALID_TEACHER_ID' });
+        return;
+      }
+      const teacherExists = db.prepare('SELECT id, full_name, is_active FROM users WHERE id = ?').get(targetTeacherId) as any;
+      if (!teacherExists || !teacherExists.is_active) {
+        res.status(400).json({ error: 'Assigned teacher not found or is deactivated.', code: 'TEACHER_NOT_ACTIVE' });
+        return;
+      }
+    }
+  }
+
+  const cleanRoom = room_number !== undefined ? (room_number ? String(room_number).trim() : null) : cls.room_number;
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+
+    db.prepare(`
+      UPDATE classes SET
+        grade = ?,
+        name = ?,
+        room_number = ?,
+        section_id = ?,
+        class_teacher_id = ?
+      WHERE id = ?
+    `).run(numGrade, cleanName, cleanRoom, targetSectionId, targetTeacherId, classId);
+
+    // If class_teacher_id was updated to a new teacher, ensure entry in teacher_assignments
+    if (targetTeacherId && targetTeacherId !== cls.class_teacher_id) {
+      db.prepare(`
+        INSERT OR IGNORE INTO teacher_assignments (teacher_id, class_id, assignment_type, academic_year_id)
+        VALUES (?, ?, 'class_teacher', ?)
+      `).run(targetTeacherId, classId, cls.academic_year_id);
+    }
+
+    db.exec('COMMIT;');
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'CLASS_UPDATE',
+      'classes',
+      String(classId),
+      {
+        previous: { grade: cls.grade, name: cls.name, room: cls.room_number, sectionId: cls.section_id, teacherId: cls.class_teacher_id },
+        updated: { grade: numGrade, name: cleanName, room: cleanRoom, sectionId: targetSectionId, teacherId: targetTeacherId }
+      },
+      req.ip
+    );
+
+    const updatedClass = db.prepare(`
+      SELECT c.*, sec.name as section_name, sec.code as section_code, u.full_name as class_teacher_name,
+        (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count
+      FROM classes c
+      LEFT JOIN sections sec ON c.section_id = sec.id
+      LEFT JOIN users u ON c.class_teacher_id = u.id
+      WHERE c.id = ?
+    `).get(classId);
+
+    res.json({ success: true, message: `Class "${cleanName}" updated successfully.`, class: updatedClass });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    res.status(500).json({ error: err.message || 'Failed to update class.' });
+  }
+});
+
+// 3. Delete Class (Admin only, with strict safe deletion rules)
+router.delete('/classes/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const classId = Number(req.params.id);
+  if (!classId || isNaN(classId)) {
+    res.status(400).json({ error: 'Valid class ID is required.' });
+    return;
+  }
+
+  const cls = db.prepare('SELECT id, name, grade, section_id FROM classes WHERE id = ?').get(classId) as any;
+  if (!cls) {
+    res.status(404).json({ error: 'Class not found.', code: 'CLASS_NOT_FOUND' });
+    return;
+  }
+
+  // Safe Deletion Rules: Check referential dependencies before permitting deletion
+  // 1. Enrolled Students
+  const enrollmentsCount = (db.prepare('SELECT COUNT(*) as count FROM enrollments WHERE class_id = ?').get(classId) as any)?.count || 0;
+  if (enrollmentsCount > 0) {
+    res.status(409).json({
+      error: `Cannot delete class "${cls.name}": It has ${enrollmentsCount} enrolled student(s). Reassign or transfer students before deleting this class.`,
+      code: 'CLASS_HAS_STUDENTS',
+      count: enrollmentsCount
+    });
+    return;
+  }
+
+  // 2. Historical Attendance Registers
+  const attendanceSessionsCount = (db.prepare('SELECT COUNT(*) as count FROM attendance_sessions WHERE class_id = ?').get(classId) as any)?.count || 0;
+  if (attendanceSessionsCount > 0) {
+    res.status(409).json({
+      error: `Cannot delete class "${cls.name}": It has ${attendanceSessionsCount} historical attendance register(s). Classes with historical attendance records cannot be deleted to preserve audit integrity.`,
+      code: 'CLASS_HAS_ATTENDANCE',
+      count: attendanceSessionsCount
+    });
+    return;
+  }
+
+  // 3. Classroom Period Status Records
+  const periodStatusesCount = (db.prepare('SELECT COUNT(*) as count FROM classroom_period_statuses WHERE class_id = ?').get(classId) as any)?.count || 0;
+  if (periodStatusesCount > 0) {
+    res.status(409).json({
+      error: `Cannot delete class "${cls.name}": It has ${periodStatusesCount} recorded period teaching status(es). Historical monitoring records cannot be deleted.`,
+      code: 'CLASS_HAS_PERIOD_STATUSES',
+      count: periodStatusesCount
+    });
+    return;
+  }
+
+  // 4. Marks Records
+  const marksCount = (db.prepare('SELECT COUNT(*) as count FROM marks WHERE class_id = ?').get(classId) as any)?.count || 0;
+  if (marksCount > 0) {
+    res.status(409).json({
+      error: `Cannot delete class "${cls.name}": It has ${marksCount} examination mark record(s).`,
+      code: 'CLASS_HAS_MARKS',
+      count: marksCount
+    });
+    return;
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+
+    // Safely remove teacher assignments for this empty class
+    db.prepare('DELETE FROM teacher_assignments WHERE class_id = ?').run(classId);
+
+    // Safely remove class_subjects mappings for this empty class
+    db.prepare('DELETE FROM class_subjects WHERE class_id = ?').run(classId);
+
+    // Delete the class
+    db.prepare('DELETE FROM classes WHERE id = ?').run(classId);
+
+    db.exec('COMMIT;');
+
+    logAudit(
+      req.user!.id,
+      req.user!.username,
+      'CLASS_DELETE',
+      'classes',
+      String(classId),
+      { className: cls.name, grade: cls.grade, sectionId: cls.section_id },
+      req.ip
+    );
+
+    res.json({ success: true, message: `Class "${cls.name}" deleted successfully.` });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    res.status(500).json({ error: err.message || 'Failed to delete class.' });
+  }
 });
 
 // Create Subject (Admin)

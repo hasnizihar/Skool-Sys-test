@@ -132,17 +132,20 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
       'marks_sheets',
       'examination_publications',
       'examination_schedules',
+      'classroom_period_statuses',
       'student_subject_enrollments',
       'attendance_records',
       'attendance_sessions',
       'enrollments',
       'teacher_assignments',
       'class_subjects',
+      'section_head_assignments',
       'academic_staff_authorizations',
       'examinations',
       'academic_terms',
       'assessment_policy_profiles',
       'classes',
+      'sections',
       'subjects',
       'students',
       'audit_logs',
@@ -228,30 +231,51 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     authStmt.run(sectionHeadSeniorUser.id, currentYear.id, 'section_head', 'ol_10_11', adminUser.id);
     authStmt.run(sectionHeadSeniorUser.id, currentYear.id, 'section_head', 'al_12_13', adminUser.id);
 
+    // 4b. School Sections & Section Head Assignments (Phase 1 / PR-007)
+    const secStmt = db.prepare(`
+      INSERT INTO sections (name, code, description, grade_range)
+      VALUES (?, ?, ?, ?)
+    `);
+    const secJuniorRes = secStmt.run('Junior Secondary (Grades 6–9)', 'JUNIOR_SEC', 'General secondary education covering Grades 6 to 9', '6-9');
+    const secSeniorRes = secStmt.run('Senior Secondary (Grades 10–11)', 'SENIOR_SEC', 'G.C.E. Ordinary Level preparation covering Grades 10 to 11', '10-11');
+    const secAlRes = secStmt.run('Collegiate / Advanced Level (Grades 12–13)', 'AL_SEC', 'G.C.E. Advanced Level streams (Science, Commerce, Arts)', '12-13');
+
+    const secJuniorId = Number(secJuniorRes.lastInsertRowid);
+    const secSeniorId = Number(secSeniorRes.lastInsertRowid);
+    const secAlId = Number(secAlRes.lastInsertRowid);
+
+    const shaStmt = db.prepare(`
+      INSERT INTO section_head_assignments (section_id, user_id)
+      VALUES (?, ?)
+    `);
+    shaStmt.run(secJuniorId, sectionHeadUser.id);
+    shaStmt.run(secSeniorId, sectionHeadSeniorUser.id);
+    shaStmt.run(secAlId, sectionHeadSeniorUser.id);
+
     // 5. Classes (Grades 6 to 13 — Kattankudy Central College Institutional Structure)
     const classStmt = db.prepare(`
-      INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id, section_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    classStmt.run(6, 'Grade 6-A', 'Block A - 101', currentYear.id, teacherFathima.id);
-    classStmt.run(6, 'Grade 6-B', 'Block A - 102', currentYear.id, teacherZareena.id);
-    classStmt.run(7, 'Grade 7-A', 'Block A - 201', currentYear.id, teacherZareena.id);
-    classStmt.run(7, 'Grade 7-B', 'Block A - 202', currentYear.id, teacherFathima.id);
-    classStmt.run(8, 'Grade 8-A', 'Block B - 101', currentYear.id, teacherNimali.id);
-    classStmt.run(8, 'Grade 8-B', 'Block B - 102', currentYear.id, teacherSamantha.id);
-    classStmt.run(9, 'Grade 9-A', 'Block B - 201', currentYear.id, teacherSamantha.id);
-    classStmt.run(9, 'Grade 9-B', 'Block B - 202', currentYear.id, teacherPriya.id);
-    classStmt.run(10, 'Grade 10-A', 'Block C - 101', currentYear.id, teacherZareena.id);
-    classStmt.run(10, 'Grade 10-B', 'Block C - 102', currentYear.id, teacherMansoor.id);
-    classStmt.run(11, 'Grade 11-A', 'Block C - 201', currentYear.id, teacherMansoor.id);
-    classStmt.run(11, 'Grade 11-B', 'Block C - 202', currentYear.id, teacherNimali.id);
-    classStmt.run(12, 'Grade 12-Science', 'Science Lab 1', currentYear.id, teacherKamal.id);
-    classStmt.run(12, 'Grade 12-Commerce', 'Block D - 101', currentYear.id, teacherMansoor.id);
-    classStmt.run(12, 'Grade 12-Arts', 'Block D - 201', currentYear.id, teacherPriya.id);
-    classStmt.run(13, 'Grade 13-Science', 'Science Lab 2', currentYear.id, teacherKamal.id);
-    classStmt.run(13, 'Grade 13-Commerce', 'Block D - 102', currentYear.id, teacherMansoor.id);
-    classStmt.run(13, 'Grade 13-Arts', 'Block D - 202', currentYear.id, teacherPriya.id);
+    classStmt.run(6, 'Grade 6-A', 'Block A - 101', currentYear.id, teacherFathima.id, secJuniorId);
+    classStmt.run(6, 'Grade 6-B', 'Block A - 102', currentYear.id, teacherZareena.id, secJuniorId);
+    classStmt.run(7, 'Grade 7-A', 'Block A - 201', currentYear.id, teacherZareena.id, secJuniorId);
+    classStmt.run(7, 'Grade 7-B', 'Block A - 202', currentYear.id, teacherFathima.id, secJuniorId);
+    classStmt.run(8, 'Grade 8-A', 'Block B - 101', currentYear.id, teacherNimali.id, secJuniorId);
+    classStmt.run(8, 'Grade 8-B', 'Block B - 102', currentYear.id, teacherSamantha.id, secJuniorId);
+    classStmt.run(9, 'Grade 9-A', 'Block B - 201', currentYear.id, teacherSamantha.id, secJuniorId);
+    classStmt.run(9, 'Grade 9-B', 'Block B - 202', currentYear.id, teacherPriya.id, secJuniorId);
+    classStmt.run(10, 'Grade 10-A', 'Block C - 101', currentYear.id, teacherZareena.id, secSeniorId);
+    classStmt.run(10, 'Grade 10-B', 'Block C - 102', currentYear.id, teacherMansoor.id, secSeniorId);
+    classStmt.run(11, 'Grade 11-A', 'Block C - 201', currentYear.id, teacherMansoor.id, secSeniorId);
+    classStmt.run(11, 'Grade 11-B', 'Block C - 202', currentYear.id, teacherNimali.id, secSeniorId);
+    classStmt.run(12, 'Grade 12-Science', 'Science Lab 1', currentYear.id, teacherKamal.id, secAlId);
+    classStmt.run(12, 'Grade 12-Commerce', 'Block D - 101', currentYear.id, teacherMansoor.id, secAlId);
+    classStmt.run(12, 'Grade 12-Arts', 'Block D - 201', currentYear.id, teacherPriya.id, secAlId);
+    classStmt.run(13, 'Grade 13-Science', 'Science Lab 2', currentYear.id, teacherKamal.id, secAlId);
+    classStmt.run(13, 'Grade 13-Commerce', 'Block D - 102', currentYear.id, teacherMansoor.id, secAlId);
+    classStmt.run(13, 'Grade 13-Arts', 'Block D - 202', currentYear.id, teacherPriya.id, secAlId);
 
     const grade6A = db.prepare("SELECT id FROM classes WHERE name = 'Grade 6-A'").get() as { id: number };
     const grade6B = db.prepare("SELECT id FROM classes WHERE name = 'Grade 6-B'").get() as { id: number };

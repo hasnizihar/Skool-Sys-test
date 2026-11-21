@@ -109,6 +109,10 @@ export const api = {
     apiFetch(`/api/academic/examinations/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   createClass: (payload: any) =>
     apiFetch('/api/academic/classes', { method: 'POST', body: JSON.stringify(payload) }),
+  updateClass: (id: number, payload: any) =>
+    apiFetch(`/api/academic/classes/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteClass: (id: number) =>
+    apiFetch(`/api/academic/classes/${id}`, { method: 'DELETE' }),
   createSubject: (payload: any) =>
     apiFetch('/api/academic/subjects', { method: 'POST', body: JSON.stringify(payload) }),
 

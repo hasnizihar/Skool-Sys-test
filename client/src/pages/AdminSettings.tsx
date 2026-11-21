@@ -21,9 +21,10 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { api } from '../api/client';
+import { ClassManagement } from './ClassManagement';
 
 export const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sections' | 'users' | 'assignments' | 'backup'>('sections');
+  const [activeTab, setActiveTab] = useState<'sections' | 'classes' | 'users' | 'assignments' | 'backup'>('sections');
 
   // Sections State (Phase 1)
   const [sections, setSections] = useState<any[]>([]);
@@ -398,6 +399,12 @@ export const AdminSettings: React.FC = () => {
             <Layers size={14} /> School Sections & Structure
           </button>
           <button
+            onClick={() => setActiveTab('classes')}
+            className={`btn btn-sm ${activeTab === 'classes' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <School size={14} /> Class Management
+          </button>
+          <button
             onClick={() => setActiveTab('users')}
             className={`btn btn-sm ${activeTab === 'users' ? 'btn-primary' : 'btn-secondary'}`}
           >
@@ -657,6 +664,11 @@ export const AdminSettings: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Tab: Class Management (Phase 2) */}
+      {activeTab === 'classes' && (
+        <ClassManagement onClassChanged={loadAllAdminData} />
       )}
 
       {/* Tab 1: Users */}

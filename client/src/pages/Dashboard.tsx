@@ -22,7 +22,8 @@ import {
   Wifi,
   WifiOff,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Activity
 } from 'lucide-react';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
@@ -82,6 +83,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [absentStudents, setAbsentStudents] = useState<any[]>([]);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [examinations, setExaminations] = useState<any[]>([]);
+  const [classroomOverview, setClassroomOverview] = useState<any | null>(null);
   const [syncSummary, setSyncSummary] = useState<UnsyncedWorkSummary | null>(null);
   const [pendingQueue, setPendingQueue] = useState<OfflineAttendanceMutation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,16 +99,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       setError(null);
       const today = getColomboCivilDate();
 
-      const [studentsRes, classesRes, dailyRes, examsRes] = await Promise.all([
+      const [studentsRes, classesRes, dailyRes, examsRes, classroomRes] = await Promise.all([
         api.getStudents().catch(() => ({ count: 0, students: [] })),
         api.getClasses().catch(() => ({ classes: [] })),
         api.getDailyAttendanceReport(today).catch(() => ({ classes: [], absentStudents: [] })),
-        api.getExaminations().catch(() => ({ examinations: [] }))
+        api.getExaminations().catch(() => ({ examinations: [] })),
+        api.getClassroomStatusOverview().catch(() => null)
       ]);
 
       const classes = classesRes.classes || [];
       setClassesList(classes);
       setExaminations(examsRes.examinations || []);
+      if (classroomRes) {
+        setClassroomOverview(classroomRes);
+      }
 
       let totalPresent = 0;
       let totalAbsent = 0;
@@ -556,6 +562,113 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
                 <span>Registers Submitted</span>
               </div>
             </div>
+          </div>
+
+          {/* Live Classroom Status Overview Widget (Executive Dashboard) */}
+          <div className="classroom-status-panel">
+            <div className="classroom-status-header">
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Activity size={18} style={{ color: 'var(--primary)' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Live Classroom Monitoring Overview
+                  </h3>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
+                  {classroomOverview?.context?.isSchoolHours
+                    ? `Period ${classroomOverview.context.periodNumber} (${classroomOverview.context.periodName || 'Active Session'}) • Real-time walkthrough monitoring`
+                    : 'Real-time instructional monitoring across school sections'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('classroom-status')}
+                  className="btn btn-secondary btn-sm"
+                  aria-label="View full live monitoring grid"
+                >
+                  <Activity size={13} />
+                  <span>Full Monitoring Grid</span>
+                  <ArrowRight size={13} />
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Status Metric Cards */}
+            <div className="classroom-status-grid">
+              <div className="classroom-status-metric-card status-teaching">
+                <CheckCircle size={20} style={{ color: 'var(--present)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--present)' }}>
+                    {classroomOverview?.summary?.teaching ?? 0}
+                  </div>
+                  <div className="classroom-status-label">In Instruction</div>
+                </div>
+              </div>
+
+              <div className="classroom-status-metric-card status-not-teaching">
+                <AlertTriangle size={20} style={{ color: 'var(--absent)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--absent)' }}>
+                    {classroomOverview?.summary?.notTeaching ?? 0}
+                  </div>
+                  <div className="classroom-status-label">Not Teaching</div>
+                </div>
+              </div>
+
+              <div className="classroom-status-metric-card status-other-activity">
+                <Clock size={20} style={{ color: 'var(--late)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--late)' }}>
+                    {classroomOverview?.summary?.otherActivity ?? 0}
+                  </div>
+                  <div className="classroom-status-label">Alternative Activity</div>
+                </div>
+              </div>
+
+              <div className="classroom-status-metric-card status-pending">
+                <School size={20} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <div>
+                  <div className="classroom-status-val" style={{ color: 'var(--text-muted)' }}>
+                    {classroomOverview?.summary?.pending ?? (stats.classesCount || 18)}
+                  </div>
+                  <div className="classroom-status-label">Awaiting Report</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Prominent Attention Notice if Any Class is Unattended */}
+            {(classroomOverview?.summary?.notTeaching || 0) > 0 && (
+              <div
+                style={{
+                  padding: '0.75rem 1rem',
+                  background: 'var(--absent-bg)',
+                  border: '1px solid var(--absent-border)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--absent)' }}>
+                  <AlertTriangle size={18} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                    {classroomOverview.summary.notTeaching} classroom(s) currently flagged as unattended. Immediate relief teacher deployment advised.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('classroom-status')}
+                  className="btn btn-sm"
+                  style={{ background: 'var(--absent)', color: 'white', border: 'none', cursor: 'pointer' }}
+                >
+                  Investigate Classrooms
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Primary Operations 2-Column Grid (Balanced 50% / 50%) */}

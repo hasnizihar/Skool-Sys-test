@@ -191,9 +191,9 @@
   gap: 0.4rem;
   padding: 0 0.8rem;
   font-weight: 600;
-  background-color: var(--status-present-bg, #ecfdf5);
+  background-color: var(--primary-light, #eff6ff);
   color: var(--primary);
-  border: 1px solid var(--status-present-border, #a7f3d0);
+  border: 1px solid var(--primary-border, #bfdbfe);
 }
 
 /* 5. Theme Toggle Button (Circular Pill Button) */

@@ -15,6 +15,8 @@ import {
   Smartphone,
   UserCheck
 } from 'lucide-react';
+import { Tooltip, Badge } from '@mantine/core';
+import { isUserSectionHead, isUserClassTeacher } from '../utils/authUtils';
 import './sidebar.css';
 
 interface SidebarProps {
@@ -30,6 +32,14 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
+interface NavItemDef {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number; 'aria-hidden'?: boolean }>;
+  visible: boolean;
+  badge?: string;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   setCurrentTab,
@@ -41,8 +51,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse
 }) => {
   const isAdmin = user?.role === 'admin';
-  const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
-  const isSectionHead = user?.role === 'section_head' || isAdmin;
+  const isClassTeacher = isUserClassTeacher(user);
+  const isSectionHead = isUserSectionHead(user);
 
   // Handle Escape key to close mobile drawer
   useEffect(() => {
@@ -58,12 +68,101 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleNav = (tab: string) => {
     setCurrentTab(tab);
-    if (window.innerWidth < 768) {
+    if (window.innerWidth < 1024) {
       onClose();
     }
   };
 
   const navClass = (tab: string) => `nav-item ${currentTab === tab ? 'active' : ''}`;
+
+  // Grouped Navigation Structure
+  const navigationSections: Array<{
+    title: string;
+    items: NavItemDef[];
+  }> = [
+    {
+      title: 'Overview',
+      items: [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: LayoutDashboard,
+          visible: true
+        }
+      ]
+    },
+    {
+      title: 'Students',
+      items: [
+        {
+          id: 'students',
+          label: 'Student Records',
+          icon: Users,
+          visible: true
+        }
+      ]
+    },
+    {
+      title: 'Academics',
+      items: [
+        {
+          id: 'attendance',
+          label: 'Take Attendance',
+          icon: CalendarCheck,
+          visible: isClassTeacher
+        },
+        {
+          id: 'attendance-reports',
+          label: 'Attendance Reports',
+          icon: FileSpreadsheet,
+          visible: true
+        },
+        {
+          id: 'marks',
+          label: 'Marks Management',
+          icon: GraduationCap,
+          visible: true
+        }
+      ]
+    },
+    {
+      title: 'Live Tracking',
+      items: [
+        {
+          id: 'classroom-status',
+          label: 'Classroom Status',
+          icon: Activity,
+          visible: true
+        },
+        {
+          id: 'mobile-classroom-status',
+          label: 'Section Walkthrough',
+          icon: Smartphone,
+          visible: isSectionHead
+        }
+      ]
+    },
+    {
+      title: 'Administration',
+      items: [
+        {
+          id: 'admin',
+          label: 'School Administration',
+          icon: ShieldCheck,
+          visible: isAdmin
+        },
+        {
+          id: 'audit',
+          label: 'Audit Trail',
+          icon: History,
+          visible: isAdmin
+        }
+      ]
+    }
+  ];
+
+  const userInitial = user?.full_name?.charAt(0)?.toUpperCase() || 'U';
+  const roleDisplay = user?.role ? user.role.replace('_', ' ') : 'Faculty';
 
   return (
     <>
@@ -80,6 +179,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''} ${isOpen ? 'open' : ''}`}
         aria-label="Main Navigation"
       >
+        {/* Brand Header */}
         <div className="sidebar-header">
           <div className="brand-wrapper" title="Kattankudy Central College">
             <div className="brand-logo-container">
@@ -91,23 +191,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div className="brand-info">
               <h2>Kattankudy Central College</h2>
-              <p>National School — Kattankudy</p>
+              <p>National School — Census 07166</p>
             </div>
           </div>
 
           {/* Desktop Collapse Toggle */}
           {onToggleCollapse && (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              className="sidebar-collapse-toggle"
-              aria-expanded={!isCollapsed}
-              aria-controls="app-sidebar"
-              aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
-              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            <Tooltip
+              label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              position="right"
+              withArrow
+              disabled={isOpen}
             >
-              {isCollapsed ? <ChevronRight size={16} strokeWidth={2.2} /> : <ChevronLeft size={16} strokeWidth={2.2} />}
-            </button>
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="sidebar-collapse-toggle"
+                aria-expanded={!isCollapsed}
+                aria-controls="app-sidebar"
+                aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
+              >
+                {isCollapsed ? (
+                  <ChevronRight size={16} strokeWidth={2.2} />
+                ) : (
+                  <ChevronLeft size={16} strokeWidth={2.2} />
+                )}
+              </button>
+            </Tooltip>
           )}
 
           {/* Mobile Close Button */}
@@ -123,6 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
+        {/* Primary Navigation Links */}
         <nav className="nav-links" aria-label="Primary Navigation">
           {/* SECTION 1: OVERVIEW */}
           <div className="nav-section-title">Overview</div>
@@ -158,31 +269,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="nav-section-title">Academics</div>
 
           {isClassTeacher && (
-            <>
-              <button
-                type="button"
-                className={navClass('attendance')}
-                onClick={() => handleNav('attendance')}
-                aria-current={currentTab === 'attendance' ? 'page' : undefined}
-                data-tooltip="Take Attendance"
-                title={isCollapsed ? 'Take Attendance' : undefined}
-              >
-                <CalendarCheck size={18} aria-hidden="true" />
-                <span className="nav-item-label">Take Attendance</span>
-              </button>
-
-              <button
-                type="button"
-                className={navClass('mobile-attendance')}
-                onClick={() => handleNav('mobile-attendance')}
-                aria-current={currentTab === 'mobile-attendance' ? 'page' : undefined}
-                data-tooltip="Mobile Roll-Call"
-                title={isCollapsed ? 'Mobile Roll-Call' : undefined}
-              >
-                <UserCheck size={18} aria-hidden="true" />
-                <span className="nav-item-label">Mobile Roll-Call</span>
-              </button>
-            </>
+            <button
+              type="button"
+              className={navClass('attendance')}
+              onClick={() => handleNav('attendance')}
+              aria-current={currentTab === 'attendance' ? 'page' : undefined}
+              data-tooltip="Take Attendance"
+              title={isCollapsed ? 'Take Attendance' : undefined}
+            >
+              <CalendarCheck size={18} aria-hidden="true" />
+              <span className="nav-item-label">Take Attendance</span>
+            </button>
           )}
 
           <button
@@ -270,39 +367,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </nav>
 
+        {/* User Profile & Sign Out Footer */}
         <div className="sidebar-footer">
           <div className="user-snippet">
-            <div
-              className="user-avatar"
-              title={`${user?.full_name || 'User'} (${user?.role?.replace('_', ' ') || 'Role'})`}
+            <Tooltip
+              label={`${user?.full_name || 'User'} (${roleDisplay})`}
+              position="right"
+              disabled={!isCollapsed}
+              withArrow
             >
-              {user?.full_name?.charAt(0) || 'U'}
-            </div>
+              <div
+                className="user-avatar"
+                title={`${user?.full_name || 'User'} (${roleDisplay})`}
+              >
+                {userInitial}
+              </div>
+            </Tooltip>
+
             <div className="user-details">
               <div className="user-name" title={user?.full_name}>
                 {user?.full_name}
               </div>
               <span className="user-role-badge">
-                {user?.role?.replace('_', ' ')}
+                {roleDisplay}
               </span>
             </div>
           </div>
 
           <div className="sidebar-actions-row">
-            <button
-              type="button"
-              onClick={onLogout}
-              className="btn btn-secondary btn-sm sidebar-logout-btn"
-              title="Sign Out"
-              aria-label="Sign Out"
-              data-tooltip="Sign Out"
+            <Tooltip
+              label="Sign Out"
+              position="right"
+              disabled={!isCollapsed}
+              withArrow
             >
-              <LogOut size={16} />
-              <span className="sidebar-logout-text">Sign Out</span>
-            </button>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="btn btn-secondary btn-sm sidebar-logout-btn"
+                title="Sign Out"
+                aria-label="Sign Out"
+                data-tooltip="Sign Out"
+              >
+                <LogOut size={16} />
+                <span className="sidebar-logout-text">Sign Out</span>
+              </button>
+            </Tooltip>
           </div>
         </div>
       </aside>
     </>
   );
 };
+
+export default Sidebar;
