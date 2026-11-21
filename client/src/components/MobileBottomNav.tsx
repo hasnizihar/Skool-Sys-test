@@ -23,8 +23,8 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 }) => {
   const isAdmin = user?.role === 'admin';
   const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
-  const attendanceTarget = isClassTeacher ? 'attendance' : 'attendance-reports';
-  const isAttendanceActive = currentTab === 'attendance' || currentTab === 'attendance-reports';
+  const attendanceTarget = isClassTeacher ? 'mobile-attendance' : 'attendance-reports';
+  const isAttendanceActive = currentTab === 'attendance' || currentTab === 'mobile-attendance' || currentTab === 'attendance-reports';
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">

@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
-  Smartphone
+  Smartphone,
+  UserCheck
 } from 'lucide-react';
 import './sidebar.css';
 
@@ -157,17 +158,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="nav-section-title">Academics</div>
 
           {isClassTeacher && (
-            <button
-              type="button"
-              className={navClass('attendance')}
-              onClick={() => handleNav('attendance')}
-              aria-current={currentTab === 'attendance' ? 'page' : undefined}
-              data-tooltip="Take Attendance"
-              title={isCollapsed ? 'Take Attendance' : undefined}
-            >
-              <CalendarCheck size={18} aria-hidden="true" />
-              <span className="nav-item-label">Take Attendance</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className={navClass('attendance')}
+                onClick={() => handleNav('attendance')}
+                aria-current={currentTab === 'attendance' ? 'page' : undefined}
+                data-tooltip="Take Attendance"
+                title={isCollapsed ? 'Take Attendance' : undefined}
+              >
+                <CalendarCheck size={18} aria-hidden="true" />
+                <span className="nav-item-label">Take Attendance</span>
+              </button>
+
+              <button
+                type="button"
+                className={navClass('mobile-attendance')}
+                onClick={() => handleNav('mobile-attendance')}
+                aria-current={currentTab === 'mobile-attendance' ? 'page' : undefined}
+                data-tooltip="Mobile Roll-Call"
+                title={isCollapsed ? 'Mobile Roll-Call' : undefined}
+              >
+                <UserCheck size={18} aria-hidden="true" />
+                <span className="nav-item-label">Mobile Roll-Call</span>
+              </button>
+            </>
           )}
 
           <button

@@ -13,11 +13,23 @@ import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
 import { ClassroomStatusMonitoring } from './pages/ClassroomStatusMonitoring';
 import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
+import { MobileSequentialAttendance } from './pages/MobileSequentialAttendance';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
-const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'classroom-status', 'mobile-classroom-status', 'admin', 'audit'];
+const VALID_TABS = [
+  'dashboard',
+  'students',
+  'attendance',
+  'mobile-attendance',
+  'attendance-reports',
+  'marks',
+  'classroom-status',
+  'mobile-classroom-status',
+  'admin',
+  'audit'
+];
 
 function getInitialTab(): string {
   const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
@@ -129,6 +141,7 @@ export function App() {
       case 'dashboard': return 'School Operations Dashboard';
       case 'students': return 'Student Information Records';
       case 'attendance': return 'Daily Attendance Register';
+      case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
       case 'attendance-reports': return 'Attendance Reports & Registry';
       case 'marks': return 'Examination Marks & Reports';
       case 'classroom-status': return 'Live Classroom Status Monitoring';
@@ -177,6 +190,9 @@ export function App() {
             )}
             {currentTab === 'attendance' && (
               <Attendance user={user} />
+            )}
+            {currentTab === 'mobile-attendance' && (
+              <MobileSequentialAttendance user={user} onNavigate={setCurrentTab} />
             )}
             {currentTab === 'attendance-reports' && (
               <AttendanceReports />

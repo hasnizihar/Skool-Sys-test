@@ -10,9 +10,12 @@ import {
   Download,
   Info,
   UserCheck,
-  X
+  X,
+  Sparkles,
+  LayoutList
 } from 'lucide-react';
 import { api, HttpError } from '../api/client';
+import { MobileSequentialAttendance } from './MobileSequentialAttendance';
 import {
   cacheClassRoster,
   getCachedClassRoster,
@@ -34,6 +37,10 @@ interface AttendanceProps {
 
 export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const toast = useToast();
+
+  const [displayMode, setDisplayMode] = useState<'card' | 'table'>(() => {
+    return window.innerWidth < 768 ? 'card' : 'table';
+  });
 
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
@@ -635,6 +642,17 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     }
   };
 
+  if (displayMode === 'card') {
+    return (
+      <MobileSequentialAttendance
+        user={user}
+        initialClassId={selectedClassId || undefined}
+        initialDate={selectedDate}
+        onSwitchToTableMode={() => setDisplayMode('table')}
+      />
+    );
+  }
+
   return (
     <div className="attendance-page">
       {/* Header with Title and Primary Submission CTAs */}
@@ -654,6 +672,17 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         </div>
 
         <div className="attendance-actions">
+          {/* Switch to Card Roll-Call Mode */}
+          <button
+            type="button"
+            onClick={() => setDisplayMode('card')}
+            className="btn btn-secondary"
+            title="Switch to Mobile Sequential Card Roll-Call"
+          >
+            <Sparkles size={16} />
+            <span>Card Mode</span>
+          </button>
+
           {/* Draft Button: Allows partial records */}
           <button
             type="button"

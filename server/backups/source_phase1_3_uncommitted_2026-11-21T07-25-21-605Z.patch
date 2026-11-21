@@ -1,0 +1,215 @@
+diff --git a/.env b/.env
+deleted file mode 100644
+index 95b2308..0000000
+--- a/.env
++++ /dev/null
+@@ -1,6 +0,0 @@
+-PORT=5000
+-NODE_ENV=development
+-DB_PATH=./server/skoolsys.db
+-JWT_SECRET=skoolsys_jwt_secret_pilot_2026_super_secure_key_grade6_13_dev_environment_32chars
+-JWT_EXPIRES_IN=7d
+-CLIENT_URL=http://localhost:5173
+diff --git a/client/.env b/client/.env
+deleted file mode 100644
+index 6d0192d..0000000
+--- a/client/.env
++++ /dev/null
+@@ -1 +0,0 @@
+-VITE_ENABLE_DEMO_LOGIN=true
+diff --git a/client/src/App.tsx b/client/src/App.tsx
+index 1507b53..7650cbb 100644
+--- a/client/src/App.tsx
++++ b/client/src/App.tsx
+@@ -13,11 +13,23 @@ import { AdminSettings } from './pages/AdminSettings';
+ import { AuditLogs } from './pages/AuditLogs';
+ import { ClassroomStatusMonitoring } from './pages/ClassroomStatusMonitoring';
+ import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
++import { MobileSequentialAttendance } from './pages/MobileSequentialAttendance';
+ import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
+ import { ToastProvider } from './ui';
+ import { MobileBottomNav } from './components/MobileBottomNav';
+ 
+-const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'classroom-status', 'mobile-classroom-status', 'admin', 'audit'];
++const VALID_TABS = [
++  'dashboard',
++  'students',
++  'attendance',
++  'mobile-attendance',
++  'attendance-reports',
++  'marks',
++  'classroom-status',
++  'mobile-classroom-status',
++  'admin',
++  'audit'
++];
+ 
+ function getInitialTab(): string {
+   const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
+@@ -129,6 +141,7 @@ export function App() {
+       case 'dashboard': return 'School Operations Dashboard';
+       case 'students': return 'Student Information Records';
+       case 'attendance': return 'Daily Attendance Register';
++      case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
+       case 'attendance-reports': return 'Attendance Reports & Registry';
+       case 'marks': return 'Examination Marks & Reports';
+       case 'classroom-status': return 'Live Classroom Status Monitoring';
+@@ -178,6 +191,9 @@ export function App() {
+             {currentTab === 'attendance' && (
+               <Attendance user={user} />
+             )}
++            {currentTab === 'mobile-attendance' && (
++              <MobileSequentialAttendance user={user} onNavigate={setCurrentTab} />
++            )}
+             {currentTab === 'attendance-reports' && (
+               <AttendanceReports />
+             )}
+diff --git a/client/src/components/MobileBottomNav.tsx b/client/src/components/MobileBottomNav.tsx
+index b236344..2b76f5f 100644
+--- a/client/src/components/MobileBottomNav.tsx
++++ b/client/src/components/MobileBottomNav.tsx
+@@ -23,8 +23,8 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
+ }) => {
+   const isAdmin = user?.role === 'admin';
+   const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
+-  const attendanceTarget = isClassTeacher ? 'attendance' : 'attendance-reports';
+-  const isAttendanceActive = currentTab === 'attendance' || currentTab === 'attendance-reports';
++  const attendanceTarget = isClassTeacher ? 'mobile-attendance' : 'attendance-reports';
++  const isAttendanceActive = currentTab === 'attendance' || currentTab === 'mobile-attendance' || currentTab === 'attendance-reports';
+ 
+   return (
+     <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
+diff --git a/client/src/components/Sidebar.tsx b/client/src/components/Sidebar.tsx
+index cb3c75c..fbdbf53 100644
+--- a/client/src/components/Sidebar.tsx
++++ b/client/src/components/Sidebar.tsx
+@@ -12,7 +12,8 @@ import {
+   ChevronLeft,
+   ChevronRight,
+   Activity,
+-  Smartphone
++  Smartphone,
++  UserCheck
+ } from 'lucide-react';
+ import './sidebar.css';
+ 
+@@ -157,17 +158,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
+           <div className="nav-section-title">Academics</div>
+ 
+           {isClassTeacher && (
+-            <button
+-              type="button"
+-              className={navClass('attendance')}
+-              onClick={() => handleNav('attendance')}
+-              aria-current={currentTab === 'attendance' ? 'page' : undefined}
+-              data-tooltip="Take Attendance"
+-              title={isCollapsed ? 'Take Attendance' : undefined}
+-            >
+-              <CalendarCheck size={18} aria-hidden="true" />
+-              <span className="nav-item-label">Take Attendance</span>
+-            </button>
++            <>
++              <button
++                type="button"
++                className={navClass('attendance')}
++                onClick={() => handleNav('attendance')}
++                aria-current={currentTab === 'attendance' ? 'page' : undefined}
++                data-tooltip="Take Attendance"
++                title={isCollapsed ? 'Take Attendance' : undefined}
++              >
++                <CalendarCheck size={18} aria-hidden="true" />
++                <span className="nav-item-label">Take Attendance</span>
++              </button>
++
++              <button
++                type="button"
++                className={navClass('mobile-attendance')}
++                onClick={() => handleNav('mobile-attendance')}
++                aria-current={currentTab === 'mobile-attendance' ? 'page' : undefined}
++                data-tooltip="Mobile Roll-Call"
++                title={isCollapsed ? 'Mobile Roll-Call' : undefined}
++              >
++                <UserCheck size={18} aria-hidden="true" />
++                <span className="nav-item-label">Mobile Roll-Call</span>
++              </button>
++            </>
+           )}
+ 
+           <button
+diff --git a/client/src/pages/Attendance.tsx b/client/src/pages/Attendance.tsx
+index 8b60221..94b90d9 100644
+--- a/client/src/pages/Attendance.tsx
++++ b/client/src/pages/Attendance.tsx
+@@ -10,9 +10,12 @@ import {
+   Download,
+   Info,
+   UserCheck,
+-  X
++  X,
++  Sparkles,
++  LayoutList
+ } from 'lucide-react';
+ import { api, HttpError } from '../api/client';
++import { MobileSequentialAttendance } from './MobileSequentialAttendance';
+ import {
+   cacheClassRoster,
+   getCachedClassRoster,
+@@ -35,6 +38,10 @@ interface AttendanceProps {
+ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
+   const toast = useToast();
+ 
++  const [displayMode, setDisplayMode] = useState<'card' | 'table'>(() => {
++    return window.innerWidth < 768 ? 'card' : 'table';
++  });
++
+   const [classes, setClasses] = useState<any[]>([]);
+   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+   const [selectedDate, setSelectedDate] = useState<string>(getColomboCivilDate());
+@@ -635,6 +642,17 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
+     }
+   };
+ 
++  if (displayMode === 'card') {
++    return (
++      <MobileSequentialAttendance
++        user={user}
++        initialClassId={selectedClassId || undefined}
++        initialDate={selectedDate}
++        onSwitchToTableMode={() => setDisplayMode('table')}
++      />
++    );
++  }
++
+   return (
+     <div className="attendance-page">
+       {/* Header with Title and Primary Submission CTAs */}
+@@ -654,6 +672,17 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
+         </div>
+ 
+         <div className="attendance-actions">
++          {/* Switch to Card Roll-Call Mode */}
++          <button
++            type="button"
++            onClick={() => setDisplayMode('card')}
++            className="btn btn-secondary"
++            title="Switch to Mobile Sequential Card Roll-Call"
++          >
++            <Sparkles size={16} />
++            <span>Card Mode</span>
++          </button>
++
+           {/* Draft Button: Allows partial records */}
+           <button
+             type="button"
+diff --git a/server/.env b/server/.env
+deleted file mode 100644
+index 5236618..0000000
+--- a/server/.env
++++ /dev/null
+@@ -1,6 +0,0 @@
+-PORT=5000
+-NODE_ENV=development
+-DB_PATH=./skoolsys.db
+-JWT_SECRET=skoolsys_jwt_secret_pilot_2026_super_secure_key_grade6_13_dev_environment_32chars
+-JWT_EXPIRES_IN=7d
+-CLIENT_URL=http://localhost:5173
