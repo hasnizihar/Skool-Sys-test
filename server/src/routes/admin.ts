@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { db } from '../db/database.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
@@ -15,6 +16,67 @@ const router = Router();
 
 // Require admin for all admin routes
 router.use(requireAuth, requireRole(['admin']));
+
+/**
+ * Institutional Formula Injection Defense
+ * Prepends single quote if field starts with formula trigger characters (=, +, -, @, \t, \r)
+ */
+export function sanitizeFormulaInjection(value: string | undefined | null): string {
+  if (!value) return '';
+  const str = String(value).trim();
+  if (/^[=+\-@\t\r]/.test(str)) {
+    return `'${str}`;
+  }
+  return str;
+}
+
+function parseCsvRows(csvText: string): Array<Record<string, string>> {
+  const lines = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (lines.length === 0) return [];
+  
+  const headerLine = lines[0].trim();
+  if (!headerLine) return [];
+  
+  const headers = splitCsvLine(headerLine).map(h => h.toLowerCase().trim().replace(/^['"]|['"]$/g, ''));
+  const rows: Array<Record<string, string>> = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const values = splitCsvLine(line);
+    const row: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      row[header] = (values[idx] || '').trim().replace(/^['"]|['"]$/g, '');
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function splitCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  return result;
+}
 
 // List Users
 router.get('/users', (req, res) => {
@@ -123,6 +185,474 @@ router.put('/users/:id', (req, res) => {
   logAudit(req.user!.id, req.user!.username, 'USER_UPDATE', 'users', targetId, { role, is_active, passwordReset: !!newPassword }, req.ip);
 
   res.json({ success: true, message: 'User updated successfully. Existing sessions invalidated.' });
+});
+
+// ==========================================
+// MODULE 1 & 2: TEACHER DATA MANAGEMENT & BULK IMPORT
+// ==========================================
+
+// List Teachers with Assignments
+router.get('/teachers', (req, res) => {
+  const { search, role, status } = req.query;
+
+  let query = `
+    SELECT id, username, email, full_name, role, is_active, token_version, created_at
+    FROM users
+    WHERE role IN ('class_teacher', 'subject_teacher', 'admin')
+  `;
+  const params: any[] = [];
+
+  if (role && typeof role === 'string' && role !== 'all') {
+    query += ' AND role = ?';
+    params.push(role);
+  }
+
+  if (status === 'active') {
+    query += ' AND is_active = 1';
+  } else if (status === 'inactive') {
+    query += ' AND is_active = 0';
+  }
+
+  if (search && typeof search === 'string' && search.trim()) {
+    const term = `%${search.trim().toLowerCase()}%`;
+    query += ' AND (LOWER(full_name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(email) LIKE ?)';
+    params.push(term, term, term);
+  }
+
+  query += ' ORDER BY full_name ASC';
+
+  const teachers = db.prepare(query).all(...params) as any[];
+
+  // Attach assignments to each teacher
+  for (const teacher of teachers) {
+    // 1. Class teacher assignments
+    const classAssignments = db.prepare(`
+      SELECT c.id, c.name, c.grade, sec.name as section_name
+      FROM classes c
+      LEFT JOIN sections sec ON c.section_id = sec.id
+      WHERE c.class_teacher_id = ?
+      UNION
+      SELECT c.id, c.name, c.grade, sec.name as section_name
+      FROM teacher_assignments ta
+      JOIN classes c ON ta.class_id = c.id
+      LEFT JOIN sections sec ON c.section_id = sec.id
+      WHERE ta.teacher_id = ? AND ta.assignment_type = 'class_teacher'
+    `).all(teacher.id, teacher.id) as any[];
+    teacher.assigned_classes = classAssignments;
+
+    // 2. Section Head assignments
+    const sectionAssignments = db.prepare(`
+      SELECT s.id, s.name, s.code, s.grade_range
+      FROM section_head_assignments sha
+      JOIN sections s ON sha.section_id = s.id
+      WHERE sha.user_id = ?
+    `).all(teacher.id) as any[];
+    teacher.assigned_sections = sectionAssignments;
+
+    // 3. Subject assignments
+    const subjectAssignments = db.prepare(`
+      SELECT ta.id as assignment_id, c.id as class_id, c.name as class_name, s.id as subject_id, s.name as subject_name
+      FROM teacher_assignments ta
+      JOIN classes c ON ta.class_id = c.id
+      JOIN subjects s ON ta.subject_id = s.id
+      WHERE ta.teacher_id = ? AND ta.assignment_type = 'subject_teacher'
+    `).all(teacher.id) as any[];
+    teacher.assigned_subjects = subjectAssignments;
+  }
+
+  res.json({ teachers });
+});
+
+// Teacher CSV Template Download
+router.get('/teachers/template', (req, res) => {
+  const csvContent = [
+    'full_name,staff_id,email,role',
+    '"M. I. Mohamed Rifas","T001","rifas@kcc.lk","class_teacher"',
+    '"A. L. Fathima Rizna","T002","rizna@kcc.lk","subject_teacher"',
+    '"S. H. Ahmad Farhan","T003","farhan@kcc.lk","class_teacher"'
+  ].join('\r\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="kcc_teachers_template.csv"');
+  res.status(200).send(csvContent);
+});
+
+// Bulk Import Teachers CSV (Preview & Commit)
+router.post('/teachers/import', (req, res) => {
+  const { csvData, mode = 'preview' } = req.body;
+
+  if (!csvData || typeof csvData !== 'string') {
+    res.status(400).json({ error: 'Valid csvData text is required.' });
+    return;
+  }
+
+  const rows = parseCsvRows(csvData);
+  if (rows.length === 0) {
+    res.status(400).json({ error: 'CSV file contains no data rows.' });
+    return;
+  }
+
+  const previewRows: any[] = [];
+  const seenEmails = new Set<string>();
+  const seenUsernames = new Set<string>();
+
+  let validCount = 0;
+  let duplicateCount = 0;
+  let invalidCount = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 1;
+    const fullNameRaw = row.full_name || row.name || '';
+    const emailRaw = row.email || '';
+    const staffIdRaw = row.staff_id || row.username || row.id || '';
+    const roleRaw = row.role || 'class_teacher';
+
+    const fullName = sanitizeFormulaInjection(fullNameRaw);
+    const email = sanitizeFormulaInjection(emailRaw).toLowerCase().trim();
+    let username = sanitizeFormulaInjection(staffIdRaw).toLowerCase().trim();
+
+    // If username is empty, derive from email prefix
+    if (!username && email) {
+      username = email.split('@')[0];
+    }
+
+    // Validation
+    if (!fullName) {
+      invalidCount++;
+      previewRows.push({
+        rowNumber: rowNum,
+        full_name: fullNameRaw,
+        username,
+        email,
+        role: roleRaw,
+        status: 'invalid',
+        error: 'Full name is required'
+      });
+      continue;
+    }
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      invalidCount++;
+      previewRows.push({
+        rowNumber: rowNum,
+        full_name: fullName,
+        username,
+        email: emailRaw,
+        role: roleRaw,
+        status: 'invalid',
+        error: 'Valid email address is required'
+      });
+      continue;
+    }
+
+    const validRoles = ['class_teacher', 'subject_teacher', 'admin'];
+    const role = validRoles.includes(roleRaw) ? roleRaw : 'class_teacher';
+
+    // Duplicate detection in file
+    if (seenEmails.has(email) || seenUsernames.has(username)) {
+      duplicateCount++;
+      previewRows.push({
+        rowNumber: rowNum,
+        full_name: fullName,
+        username,
+        email,
+        role,
+        status: 'duplicate',
+        error: 'Duplicate record in CSV file'
+      });
+      continue;
+    }
+
+    // Duplicate detection in DB
+    const existingDb = db.prepare('SELECT id, full_name, username, email FROM users WHERE LOWER(email) = ? OR LOWER(username) = ?').get(email, username) as any;
+    if (existingDb) {
+      duplicateCount++;
+      previewRows.push({
+        rowNumber: rowNum,
+        full_name: fullName,
+        username,
+        email,
+        role,
+        status: 'duplicate',
+        error: `Already exists in database (${existingDb.full_name})`
+      });
+      continue;
+    }
+
+    // Mark as seen
+    seenEmails.add(email);
+    seenUsernames.add(username);
+    validCount++;
+
+    previewRows.push({
+      rowNumber: rowNum,
+      full_name: fullName,
+      username,
+      email,
+      role,
+      status: 'valid'
+    });
+  }
+
+  if (mode === 'preview') {
+    res.json({
+      totalRows: rows.length,
+      validCount,
+      duplicateCount,
+      invalidCount,
+      preview: previewRows
+    });
+    return;
+  }
+
+  // Commit Mode
+  const eligibleRows = previewRows.filter(r => r.status === 'valid');
+  if (eligibleRows.length === 0) {
+    res.status(400).json({ error: 'No valid, non-duplicate rows found to import.' });
+    return;
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+
+    const insertStmt = db.prepare(`
+      INSERT INTO users (username, email, password_hash, full_name, role, is_active, token_version)
+      VALUES (?, ?, ?, ?, ?, 0, 1)
+    `);
+
+    let importedCount = 0;
+    for (const r of eligibleRows) {
+      const placeholderHash = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
+      insertStmt.run(r.username, r.email, placeholderHash, r.full_name, r.role);
+      importedCount++;
+    }
+
+    db.exec('COMMIT;');
+
+    logAudit(req.user!.id, req.user!.username, 'TEACHER_BULK_IMPORT', 'users', null, {
+      importedCount,
+      skippedDuplicates: duplicateCount,
+      invalidRows: invalidCount,
+      totalRows: rows.length
+    }, req.ip);
+
+    res.json({
+      success: true,
+      importedCount,
+      duplicateCount,
+      invalidCount,
+      message: `Successfully imported ${importedCount} teacher(s) as inactive accounts pending activation.`
+    });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    res.status(500).json({ error: err.message || 'Failed to complete teacher import transaction.' });
+  }
+});
+
+// Get Single Teacher by ID
+router.get('/teachers/:id', (req, res) => {
+  const teacherId = Number(req.params.id);
+  const teacher = db.prepare(`
+    SELECT id, username, email, full_name, role, is_active, token_version, created_at
+    FROM users
+    WHERE id = ? AND role IN ('class_teacher', 'subject_teacher', 'admin')
+  `).get(teacherId) as any;
+
+  if (!teacher) {
+    res.status(404).json({ error: 'Teacher not found.' });
+    return;
+  }
+
+  // Attached assignments
+  teacher.assigned_classes = db.prepare(`
+    SELECT c.id, c.name, c.grade, sec.name as section_name
+    FROM classes c
+    LEFT JOIN sections sec ON c.section_id = sec.id
+    WHERE c.class_teacher_id = ?
+    UNION
+    SELECT c.id, c.name, c.grade, sec.name as section_name
+    FROM teacher_assignments ta
+    JOIN classes c ON ta.class_id = c.id
+    LEFT JOIN sections sec ON c.section_id = sec.id
+    WHERE ta.teacher_id = ? AND ta.assignment_type = 'class_teacher'
+  `).all(teacher.id, teacher.id);
+
+  teacher.assigned_sections = db.prepare(`
+    SELECT s.id, s.name, s.code, s.grade_range
+    FROM section_head_assignments sha
+    JOIN sections s ON sha.section_id = s.id
+    WHERE sha.user_id = ?
+  `).all(teacher.id);
+
+  res.json({ teacher });
+});
+
+// Create Teacher
+router.post('/teachers', (req, res) => {
+  const { full_name, username, email, role = 'class_teacher', password, is_active } = req.body;
+
+  if (!full_name || !username || !email) {
+    res.status(400).json({ error: 'full_name, username, and email are required.' });
+    return;
+  }
+
+  const validRoles = ['class_teacher', 'subject_teacher', 'admin'];
+  if (!validRoles.includes(role)) {
+    res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
+    return;
+  }
+
+  const cleanFullName = sanitizeFormulaInjection(full_name);
+  const cleanUsername = sanitizeFormulaInjection(username).toLowerCase().trim();
+  const cleanEmail = sanitizeFormulaInjection(email).toLowerCase().trim();
+
+  // Check unique username and email
+  const existing = db.prepare('SELECT id FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?').get(cleanUsername, cleanEmail);
+  if (existing) {
+    res.status(400).json({ error: 'Teacher with this username or email already exists.' });
+    return;
+  }
+
+  let passHash: string;
+  let activeStatus = is_active !== undefined ? (is_active ? 1 : 0) : 1;
+
+  if (password) {
+    const passCheck = validatePasswordStrength(password);
+    if (!passCheck.valid) {
+      res.status(400).json({ error: passCheck.error });
+      return;
+    }
+    passHash = bcrypt.hashSync(password, 10);
+  } else {
+    // If no password provided, user is pending activation
+    activeStatus = 0;
+    passHash = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
+  }
+
+  const stmt = db.prepare(`
+    INSERT INTO users (username, email, password_hash, full_name, role, is_active, token_version)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+  `);
+
+  const result = stmt.run(cleanUsername, cleanEmail, passHash, cleanFullName, role, activeStatus);
+  const newTeacherId = Number(result.lastInsertRowid);
+
+  logAudit(req.user!.id, req.user!.username, 'TEACHER_CREATE', 'users', newTeacherId, {
+    username: cleanUsername,
+    full_name: cleanFullName,
+    role,
+    is_active: activeStatus
+  }, req.ip);
+
+  res.status(201).json({
+    success: true,
+    teacher: {
+      id: newTeacherId,
+      username: cleanUsername,
+      email: cleanEmail,
+      full_name: cleanFullName,
+      role,
+      is_active: activeStatus
+    }
+  });
+});
+
+// Update Teacher
+router.put('/teachers/:id', (req, res) => {
+  const teacherId = Number(req.params.id);
+  const { full_name, email, role, is_active, newPassword } = req.body;
+
+  const current = db.prepare(`
+    SELECT * FROM users
+    WHERE id = ? AND role IN ('class_teacher', 'subject_teacher', 'admin')
+  `).get(teacherId) as any;
+
+  if (!current) {
+    res.status(404).json({ error: 'Teacher not found.' });
+    return;
+  }
+
+  const updatedRole = role || current.role;
+  const validRoles = ['class_teacher', 'subject_teacher', 'admin'];
+  if (!validRoles.includes(updatedRole)) {
+    res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
+    return;
+  }
+
+  let passHash = current.password_hash;
+  if (newPassword) {
+    const passCheck = validatePasswordStrength(newPassword);
+    if (!passCheck.valid) {
+      res.status(400).json({ error: passCheck.error });
+      return;
+    }
+    passHash = bcrypt.hashSync(newPassword, 10);
+  }
+
+  const updatedActive = is_active !== undefined ? (is_active ? 1 : 0) : current.is_active;
+  const updatedFullName = full_name ? sanitizeFormulaInjection(full_name) : current.full_name;
+  const updatedEmail = email ? sanitizeFormulaInjection(email).toLowerCase().trim() : current.email;
+
+  // Check unique email if changed
+  if (updatedEmail !== current.email) {
+    const emailConflict = db.prepare('SELECT id FROM users WHERE LOWER(email) = ? AND id != ?').get(updatedEmail, teacherId);
+    if (emailConflict) {
+      res.status(400).json({ error: 'Email already in use by another user.' });
+      return;
+    }
+  }
+
+  // Invalidate tokens if role or status changed
+  const updateStmt = db.prepare(`
+    UPDATE users SET
+      full_name = ?, email = ?, role = ?, is_active = ?, password_hash = ?,
+      token_version = COALESCE(token_version, 1) + 1
+    WHERE id = ?
+  `);
+
+  updateStmt.run(updatedFullName, updatedEmail, updatedRole, updatedActive, passHash, teacherId);
+
+  logAudit(req.user!.id, req.user!.username, 'TEACHER_UPDATE', 'users', teacherId, {
+    role: updatedRole,
+    is_active: updatedActive,
+    passwordReset: !!newPassword
+  }, req.ip);
+
+  res.json({
+    success: true,
+    message: 'Teacher record updated successfully.',
+    teacher: {
+      id: teacherId,
+      full_name: updatedFullName,
+      email: updatedEmail,
+      role: updatedRole,
+      is_active: updatedActive
+    }
+  });
+});
+
+// Deactivate Teacher (Soft Delete)
+router.delete('/teachers/:id', (req, res) => {
+  const teacherId = Number(req.params.id);
+  const teacher = db.prepare('SELECT id, full_name, username, role FROM users WHERE id = ?').get(teacherId) as any;
+  if (!teacher) {
+    res.status(404).json({ error: 'Teacher not found.' });
+    return;
+  }
+
+  // Deactivate teacher and invalidate active sessions
+  db.prepare(`
+    UPDATE users SET is_active = 0, token_version = COALESCE(token_version, 1) + 1
+    WHERE id = ?
+  `).run(teacherId);
+
+  logAudit(req.user!.id, req.user!.username, 'TEACHER_DEACTIVATE', 'users', teacherId, {
+    teacherName: teacher.full_name,
+    username: teacher.username
+  }, req.ip);
+
+  res.json({ success: true, message: `Teacher "${teacher.full_name}" deactivated.` });
 });
 
 // Teacher Assignments List

@@ -4,8 +4,10 @@ import {
   Users,
   CalendarCheck,
   GraduationCap,
+  Activity,
   Menu
 } from 'lucide-react';
+import { MVP_CONFIG } from '../config/mvpConfig';
 import './mobileBottomNav.css';
 
 interface MobileBottomNavProps {
@@ -22,9 +24,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   user
 }) => {
   const isAdmin = user?.role === 'admin';
+  const isSectionHead = user?.role === 'section_head' || isAdmin;
   const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
   const attendanceTarget = isClassTeacher ? 'mobile-attendance' : 'attendance-reports';
   const isAttendanceActive = currentTab === 'attendance' || currentTab === 'mobile-attendance' || currentTab === 'attendance-reports';
+  const statusTarget = isSectionHead ? 'mobile-classroom-status' : 'classroom-status';
+  const isStatusActive = currentTab === 'classroom-status' || currentTab === 'mobile-classroom-status';
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
@@ -58,19 +63,31 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <span>Register</span>
       </button>
 
-      <button
-        type="button"
-        className={`mobile-nav-btn ${currentTab === 'marks' ? 'active' : ''}`}
-        onClick={() => onNavigate('marks')}
-        aria-current={currentTab === 'marks' ? 'page' : undefined}
-      >
-        <GraduationCap size={20} aria-hidden="true" />
-        <span>Marks</span>
-      </button>
+      {MVP_CONFIG.ENABLE_EXAM_MARKS_NAV ? (
+        <button
+          type="button"
+          className={`mobile-nav-btn ${currentTab === 'marks' ? 'active' : ''}`}
+          onClick={() => onNavigate('marks')}
+          aria-current={currentTab === 'marks' ? 'page' : undefined}
+        >
+          <GraduationCap size={20} aria-hidden="true" />
+          <span>Marks</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={`mobile-nav-btn ${isStatusActive ? 'active' : ''}`}
+          onClick={() => onNavigate(statusTarget)}
+          aria-current={isStatusActive ? 'page' : undefined}
+        >
+          <Activity size={20} aria-hidden="true" />
+          <span>Live Status</span>
+        </button>
+      )}
 
       <button
         type="button"
-        className={`mobile-nav-btn ${['admin', 'audit', 'classroom-status', 'mobile-classroom-status'].includes(currentTab) ? 'active' : ''}`}
+        className={`mobile-nav-btn ${['admin', 'audit', 'teachers', 'sections'].includes(currentTab) ? 'active' : ''}`}
         onClick={onOpenMore}
         aria-label="More navigation options"
       >

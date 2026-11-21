@@ -89,6 +89,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<any | null>(null);
 
   // Teacher selected class (Screen 03)
   const [teacherSelectedClassId, setTeacherSelectedClassId] = useState<number | null>(null);
@@ -99,20 +100,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       setError(null);
       const today = getColomboCivilDate();
 
-      const [studentsRes, classesRes, dailyRes, examsRes, classroomRes] = await Promise.all([
+      const [studentsRes, classesRes, dailyRes, examsRes] = await Promise.all([
         api.getStudents().catch(() => ({ count: 0, students: [] })),
         api.getClasses().catch(() => ({ classes: [] })),
         api.getDailyAttendanceReport(today).catch(() => ({ classes: [], absentStudents: [] })),
-        api.getExaminations().catch(() => ({ examinations: [] })),
-        api.getClassroomStatusOverview().catch(() => null)
+        api.getExaminations().catch(() => ({ examinations: [] }))
       ]);
 
       const classes = classesRes.classes || [];
       setClassesList(classes);
       setExaminations(examsRes.examinations || []);
-      if (classroomRes) {
-        setClassroomOverview(classroomRes);
-      }
 
       let totalPresent = 0;
       let totalAbsent = 0;
@@ -172,11 +169,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
       // Fetch audit logs for administrators
       if (user?.role === 'admin') {
-        try {
-          const logsRes = await api.getAuditLogs();
-          setRecentLogs((logsRes.logs || []).slice(0, 5));
-        } catch (logErr) {
-          console.warn('Could not fetch audit logs:', logErr);
+        if (summaryRes?.recentLogs && summaryRes.recentLogs.length > 0) {
+          setRecentLogs(summaryRes.recentLogs.slice(0, 5));
+        } else {
+          try {
+            const logsRes = await api.getAuditLogs();
+            setRecentLogs((logsRes.logs || []).slice(0, 5));
+          } catch (logErr) {
+            console.warn('Could not fetch audit logs:', logErr);
+          }
         }
       }
 
@@ -564,113 +565,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
           </div>
 
-          {/* Live Classroom Status Overview Widget (Executive Dashboard) */}
-          <div className="classroom-status-panel">
-            <div className="classroom-status-header">
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Activity size={18} style={{ color: 'var(--primary)' }} />
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
-                    Live Classroom Monitoring Overview
-                  </h3>
-                </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
-                  {classroomOverview?.context?.isSchoolHours
-                    ? `Period ${classroomOverview.context.periodNumber} (${classroomOverview.context.periodName || 'Active Session'}) • Real-time walkthrough monitoring`
-                    : 'Real-time instructional monitoring across school sections'}
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('classroom-status')}
-                  className="btn btn-secondary btn-sm"
-                  aria-label="View full live monitoring grid"
-                >
-                  <Activity size={13} />
-                  <span>Full Monitoring Grid</span>
-                  <ArrowRight size={13} />
-                </button>
-              </div>
-            </div>
-
-            {/* 4 Status Metric Cards */}
-            <div className="classroom-status-grid">
-              <div className="classroom-status-metric-card status-teaching">
-                <CheckCircle size={20} style={{ color: 'var(--present)', flexShrink: 0 }} />
-                <div>
-                  <div className="classroom-status-val" style={{ color: 'var(--present)' }}>
-                    {classroomOverview?.summary?.teaching ?? 0}
-                  </div>
-                  <div className="classroom-status-label">In Instruction</div>
-                </div>
-              </div>
-
-              <div className="classroom-status-metric-card status-not-teaching">
-                <AlertTriangle size={20} style={{ color: 'var(--absent)', flexShrink: 0 }} />
-                <div>
-                  <div className="classroom-status-val" style={{ color: 'var(--absent)' }}>
-                    {classroomOverview?.summary?.notTeaching ?? 0}
-                  </div>
-                  <div className="classroom-status-label">Not Teaching</div>
-                </div>
-              </div>
-
-              <div className="classroom-status-metric-card status-other-activity">
-                <Clock size={20} style={{ color: 'var(--late)', flexShrink: 0 }} />
-                <div>
-                  <div className="classroom-status-val" style={{ color: 'var(--late)' }}>
-                    {classroomOverview?.summary?.otherActivity ?? 0}
-                  </div>
-                  <div className="classroom-status-label">Alternative Activity</div>
-                </div>
-              </div>
-
-              <div className="classroom-status-metric-card status-pending">
-                <School size={20} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                <div>
-                  <div className="classroom-status-val" style={{ color: 'var(--text-muted)' }}>
-                    {classroomOverview?.summary?.pending ?? (stats.classesCount || 18)}
-                  </div>
-                  <div className="classroom-status-label">Awaiting Report</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Prominent Attention Notice if Any Class is Unattended */}
-            {(classroomOverview?.summary?.notTeaching || 0) > 0 && (
-              <div
-                style={{
-                  padding: '0.75rem 1rem',
-                  background: 'var(--absent-bg)',
-                  border: '1px solid var(--absent-border)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.75rem',
-                  flexWrap: 'wrap'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--absent)' }}>
-                  <AlertTriangle size={18} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                    {classroomOverview.summary.notTeaching} classroom(s) currently flagged as unattended. Immediate relief teacher deployment advised.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('classroom-status')}
-                  className="btn btn-sm"
-                  style={{ background: 'var(--absent)', color: 'white', border: 'none', cursor: 'pointer' }}
-                >
-                  Investigate Classrooms
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* Primary Operations 2-Column Grid (Balanced 50% / 50%) */}
           <div className="dashboard-grid-dual">
             {/* Left Column: Absentee Follow-Up Alert & Recent Audit Activity */}
@@ -975,10 +869,154 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       )}
 
       {/* ====================================================================
-          SCREEN 03: TEACHER DASHBOARD
+          SCREEN 03: TEACHER / SECTION HEAD DASHBOARD
           ==================================================================== */}
       {activeView === 'teacher' && (
         <>
+          {/* SECTION HEAD SUPERVISORY SCOPED DASHBOARD WIDGET */}
+          {dashboardSummary?.is_section_head && (
+            <div className="card" style={{ marginBottom: '1.25rem', borderLeft: '4px solid #8b5cf6' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed' }}>
+                    <Layers size={20} />
+                    <span>Section Head Supervisory Overview</span>
+                  </div>
+                  <div className="card-subtitle">
+                    Supervisory monitoring for your assigned school sections
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => onNavigate('mobile-classroom-status')}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Smartphone size={14} /> Section Walkthrough
+                  </button>
+                  <button
+                    onClick={() => onNavigate('classroom-status')}
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Activity size={14} /> Classroom Status
+                  </button>
+                </div>
+              </div>
+
+              {/* Scoped KPI row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', padding: '1rem', background: 'var(--bg-subtle, #f8fafc)', borderBottom: '1px solid var(--border-color)' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Section Students</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{dashboardSummary.stats?.totalStudents || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Present Today</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--present)' }}>{dashboardSummary.stats?.presentCount || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Absent Today</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--absent)' }}>{dashboardSummary.stats?.absentCount || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Attendance Rate</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#2563eb' }}>
+                    {dashboardSummary.stats?.attendanceRate !== null ? `${dashboardSummary.stats?.attendanceRate}%` : 'Pending'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Classes Submitted</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>
+                    {dashboardSummary.stats?.submittedClassesCount || 0} / {dashboardSummary.stats?.totalClasses || 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Assigned Sections List */}
+              <div style={{ padding: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  Assigned Sections ({dashboardSummary.sections?.length || 0}):
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {dashboardSummary.sections?.map((sec: any) => (
+                    <div
+                      key={sec.id}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main, #ffffff)',
+                        fontSize: '0.8125rem'
+                      }}
+                    >
+                      <strong>{sec.name}</strong> ({sec.grade_range}) — {sec.submitted_classes} / {sec.classes_count} classes submitted
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DUAL-ROLE HOMEROOM CLASS QUICK CARD */}
+          {dashboardSummary?.homeroom_classes && dashboardSummary.homeroom_classes.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.25rem', borderLeft: '4px solid #0284c7' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0284c7' }}>
+                    <School size={20} />
+                    <span>My Homeroom Class Attendance</span>
+                  </div>
+                  <div className="card-subtitle">
+                    Direct class teacher roll-call action for your assigned homeroom
+                  </div>
+                </div>
+                <button
+                  onClick={() => onNavigate('mobile-attendance')}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  <UserCheck size={14} /> Take Roll-Call
+                </button>
+              </div>
+
+              <div style={{ padding: '1rem', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                {dashboardSummary.homeroom_classes.map((hc: any) => (
+                  <div
+                    key={hc.id}
+                    style={{
+                      flex: '1 1 260px',
+                      padding: '1rem',
+                      borderRadius: 8,
+                      border: '1px solid var(--border-color)',
+                      background: hc.is_submitted ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '1rem' }}>Class {hc.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Grade {hc.grade} • {hc.student_count} Enrolled Students
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <span className={`status-badge ${hc.is_submitted ? 'active' : 'inactive'}`} style={{ fontSize: '0.725rem' }}>
+                          {hc.is_submitted ? 'Attendance Submitted' : 'Roll-Call Not Yet Submitted'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onNavigate('mobile-attendance')}
+                      className={`btn ${hc.is_submitted ? 'btn-secondary' : 'btn-primary'} btn-sm`}
+                    >
+                      {hc.is_submitted ? 'View Register' : 'Start Roll-Call'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Class Switcher for Teachers with multiple assignments */}
           {teacherAvailableClasses.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '-0.5rem' }}>

@@ -26,7 +26,7 @@ import { ClassManagement } from './ClassManagement';
 import { TeacherDirectory } from './TeacherDirectory';
 
 export const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup'>('teachers');
+  const [activeTab, setActiveTab] = useState<'sections' | 'users' | 'assignments' | 'backup'>('sections');
 
   // Sections State (Phase 1)
   const [sections, setSections] = useState<any[]>([]);

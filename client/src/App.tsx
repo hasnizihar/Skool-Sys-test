@@ -15,6 +15,7 @@ import { AuditLogs } from './pages/AuditLogs';
 import { ClassroomStatusMonitoring } from './pages/ClassroomStatusMonitoring';
 import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
 import { MobileSequentialAttendance } from './pages/MobileSequentialAttendance';
+import { Teachers } from './pages/Teachers';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
 import { isUserSectionHead } from './utils/authUtils';
@@ -24,7 +25,6 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 const VALID_TABS = [
   'dashboard',
   'students',
-  'teachers',
   'attendance',
   'mobile-attendance',
   'attendance-reports',
@@ -145,7 +145,6 @@ export function App() {
     switch (currentTab) {
       case 'dashboard': return 'School Operations Dashboard';
       case 'students': return 'Student Information Records';
-      case 'teachers': return 'Faculty & Teachers Directory';
       case 'attendance': return 'Daily Attendance Register';
       case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
       case 'attendance-reports': return 'Attendance Reports & Registry';
@@ -193,20 +192,6 @@ export function App() {
             )}
             {currentTab === 'students' && (
               <Students user={user} />
-            )}
-            {currentTab === 'teachers' && (
-              user.role === 'admin' ? (
-                <TeacherDirectory />
-              ) : (
-                <PageContainer>
-                  <ErrorState
-                    title="Administrative Access Required"
-                    message="The comprehensive Faculty and Teachers Directory is restricted to authorized school administrators."
-                    onRetry={() => setCurrentTab('dashboard')}
-                    retryLabel="Return to Dashboard"
-                  />
-                </PageContainer>
-              )
             )}
             {currentTab === 'attendance' && (
               <Attendance user={user} />

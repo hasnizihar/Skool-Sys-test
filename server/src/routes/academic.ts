@@ -5,7 +5,8 @@ import {
   requireRole,
   canAccessClass,
   canAccessStudent,
-  canAccessSection
+  canAccessSection,
+  getUserAssignments
 } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 import {
@@ -1304,6 +1305,263 @@ router.delete('/classes/:id/teachers/:teacherId', requireAuth, requireRole(['adm
     try { db.exec('ROLLBACK;'); } catch { }
     res.status(500).json({ error: err.message || 'Failed to remove class teacher.' });
   }
+});
+
+// ==========================================
+// MODULE 4: DASHBOARD INTEGRATION
+// Strict role-scoped summary for Principal & Section Heads
+// ==========================================
+
+router.get('/dashboard-summary', requireAuth, (req, res) => {
+  const user = req.user!;
+  const today = (typeof req.query.date === 'string' && req.query.date.trim()) || new Date().toISOString().slice(0, 10);
+
+  if (user.role === 'admin') {
+    // Principal (School-Wide View)
+    // 1. Total enrolled students
+    const totalStudentsRow = db.prepare(`
+      SELECT COUNT(*) as count FROM enrollments WHERE status = 'enrolled'
+    `).get() as { count: number };
+    const totalStudents = Number(totalStudentsRow?.count || 0);
+
+    // 2. Attendance stats today
+    const attStats = db.prepare(`
+      SELECT
+        COUNT(DISTINCT asess.id) as sessions_count,
+        SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) as present_count,
+        SUM(CASE WHEN ar.status = 'absent' THEN 1 ELSE 0 END) as absent_count,
+        SUM(CASE WHEN ar.status = 'late' THEN 1 ELSE 0 END) as late_count,
+        SUM(CASE WHEN ar.status = 'excused' THEN 1 ELSE 0 END) as excused_count
+      FROM attendance_sessions asess
+      JOIN attendance_records ar ON asess.id = ar.session_id
+      WHERE asess.date = ? AND asess.status = 'submitted'
+    `).get(today) as any;
+
+    const presentCount = Number(attStats?.present_count || 0);
+    const absentCount = Number(attStats?.absent_count || 0);
+    const lateCount = Number(attStats?.late_count || 0);
+    const excusedCount = Number(attStats?.excused_count || 0);
+    const totalMarked = presentCount + absentCount;
+    const attendanceRate = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : null;
+
+    // 3. Classes submission stats
+    const totalClassesRow = db.prepare('SELECT COUNT(*) as count FROM classes').get() as { count: number };
+    const totalClasses = Number(totalClassesRow?.count || 0);
+
+    const submittedClassesRow = db.prepare(`
+      SELECT COUNT(DISTINCT class_id) as count
+      FROM attendance_sessions
+      WHERE date = ? AND status = 'submitted'
+    `).get(today) as { count: number };
+    const submittedClassesCount = Number(submittedClassesRow?.count || 0);
+    const unsubmittedClassesCount = Math.max(0, totalClasses - submittedClassesCount);
+
+    // 4. Section-wise breakdown
+    const sections = db.prepare(`
+      SELECT s.id, s.name, s.code, s.grade_range, s.description
+      FROM sections s
+      ORDER BY s.name ASC
+    `).all() as any[];
+
+    for (const sec of sections) {
+      const secClasses = db.prepare(`
+        SELECT c.id, c.name, c.grade,
+          (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count,
+          (SELECT COUNT(*) FROM attendance_sessions asess WHERE asess.class_id = c.id AND asess.date = ? AND asess.status = 'submitted') as is_submitted
+        FROM classes c
+        WHERE c.section_id = ?
+        ORDER BY c.grade ASC, c.name ASC
+      `).all(today, sec.id) as any[];
+
+      sec.classes_count = secClasses.length;
+      sec.student_count = secClasses.reduce((sum, c) => sum + Number(c.student_count || 0), 0);
+      sec.submitted_classes = secClasses.filter(c => c.is_submitted > 0).length;
+      sec.unsubmitted_classes = sec.classes_count - sec.submitted_classes;
+
+      const secAtt = db.prepare(`
+        SELECT
+          SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) as present,
+          SUM(CASE WHEN ar.status = 'absent' THEN 1 ELSE 0 END) as absent
+        FROM attendance_sessions asess
+        JOIN attendance_records ar ON asess.id = ar.session_id
+        JOIN classes c ON asess.class_id = c.id
+        WHERE asess.date = ? AND asess.status = 'submitted' AND c.section_id = ?
+      `).get(today, sec.id) as any;
+
+      sec.present = Number(secAtt?.present || 0);
+      sec.absent = Number(secAtt?.absent || 0);
+      const secTotal = sec.present + sec.absent;
+      sec.attendance_rate = secTotal > 0 ? Math.round((sec.present / secTotal) * 100) : null;
+
+      const heads = db.prepare(`
+        SELECT u.id, u.full_name, u.email
+        FROM section_head_assignments sha
+        JOIN users u ON sha.user_id = u.id
+        WHERE sha.section_id = ?
+      `).all(sec.id);
+      sec.section_heads = heads;
+      sec.classes = secClasses;
+    }
+
+    // 5. Recent audit logs
+    const recentLogs = db.prepare(`
+      SELECT id, username, action, entity_type, entity_id, timestamp, details
+      FROM audit_logs
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `).all();
+
+    res.json({
+      role: 'admin',
+      is_section_head: false,
+      date: today,
+      stats: {
+        totalStudents,
+        totalClasses,
+        submittedClassesCount,
+        unsubmittedClassesCount,
+        presentCount,
+        absentCount,
+        lateCount,
+        excusedCount,
+        attendanceRate
+      },
+      sections,
+      recentLogs
+    });
+    return;
+  }
+
+  // Non-Admin: Strictly Scoped View
+  const assignments = getUserAssignments(user.id);
+  const sectionIds = assignments.sectionHeadSectionIds;
+  const isSectionHead = sectionIds.length > 0;
+
+  // Check homeroom classes (dual-role support)
+  const homeroomClassIds = assignments.classTeacherClassIds;
+  const homeroomClasses: any[] = [];
+  for (const cId of homeroomClassIds) {
+    const cls = db.prepare(`
+      SELECT c.id, c.name, c.grade, sec.name as section_name,
+        (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count,
+        (SELECT COUNT(*) FROM attendance_sessions asess WHERE asess.class_id = c.id AND asess.date = ? AND asess.status = 'submitted') as is_submitted
+      FROM classes c
+      LEFT JOIN sections sec ON c.section_id = sec.id
+      WHERE c.id = ?
+    `).get(today, cId) as any;
+    if (cls) {
+      homeroomClasses.push({
+        ...cls,
+        is_submitted: cls.is_submitted > 0
+      });
+    }
+  }
+
+  if (isSectionHead) {
+    // Scoped section head metrics
+    const placeholders = sectionIds.map(() => '?').join(',');
+    const sections = db.prepare(`
+      SELECT s.id, s.name, s.code, s.grade_range, s.description
+      FROM sections s
+      WHERE s.id IN (${placeholders})
+      ORDER BY s.name ASC
+    `).all(...sectionIds) as any[];
+
+    let scopedTotalStudents = 0;
+    let scopedTotalClasses = 0;
+    let scopedSubmittedClasses = 0;
+    let scopedPresent = 0;
+    let scopedAbsent = 0;
+    let scopedLate = 0;
+    let scopedExcused = 0;
+
+    for (const sec of sections) {
+      const secClasses = db.prepare(`
+        SELECT c.id, c.name, c.grade,
+          (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count,
+          (SELECT COUNT(*) FROM attendance_sessions asess WHERE asess.class_id = c.id AND asess.date = ? AND asess.status = 'submitted') as is_submitted
+        FROM classes c
+        WHERE c.section_id = ?
+        ORDER BY c.grade ASC, c.name ASC
+      `).all(today, sec.id) as any[];
+
+      sec.classes_count = secClasses.length;
+      sec.student_count = secClasses.reduce((sum, c) => sum + Number(c.student_count || 0), 0);
+      sec.submitted_classes = secClasses.filter(c => c.is_submitted > 0).length;
+      sec.unsubmitted_classes = sec.classes_count - sec.submitted_classes;
+
+      const secAtt = db.prepare(`
+        SELECT
+          SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) as present,
+          SUM(CASE WHEN ar.status = 'absent' THEN 1 ELSE 0 END) as absent,
+          SUM(CASE WHEN ar.status = 'late' THEN 1 ELSE 0 END) as late,
+          SUM(CASE WHEN ar.status = 'excused' THEN 1 ELSE 0 END) as excused
+        FROM attendance_sessions asess
+        JOIN attendance_records ar ON asess.id = ar.session_id
+        JOIN classes c ON asess.class_id = c.id
+        WHERE asess.date = ? AND asess.status = 'submitted' AND c.section_id = ?
+      `).get(today, sec.id) as any;
+
+      sec.present = Number(secAtt?.present || 0);
+      sec.absent = Number(secAtt?.absent || 0);
+      sec.late = Number(secAtt?.late || 0);
+      sec.excused = Number(secAtt?.excused || 0);
+      const secTotal = sec.present + sec.absent;
+      sec.attendance_rate = secTotal > 0 ? Math.round((sec.present / secTotal) * 100) : null;
+      sec.classes = secClasses;
+
+      scopedTotalStudents += sec.student_count;
+      scopedTotalClasses += sec.classes_count;
+      scopedSubmittedClasses += sec.submitted_classes;
+      scopedPresent += sec.present;
+      scopedAbsent += sec.absent;
+      scopedLate += sec.late;
+      scopedExcused += sec.excused;
+    }
+
+    const scopedTotalMarked = scopedPresent + scopedAbsent;
+    const scopedRate = scopedTotalMarked > 0 ? Math.round((scopedPresent / scopedTotalMarked) * 100) : null;
+
+    res.json({
+      role: user.role,
+      is_section_head: true,
+      date: today,
+      stats: {
+        totalStudents: scopedTotalStudents,
+        totalClasses: scopedTotalClasses,
+        submittedClassesCount: scopedSubmittedClasses,
+        unsubmittedClassesCount: Math.max(0, scopedTotalClasses - scopedSubmittedClasses),
+        presentCount: scopedPresent,
+        absentCount: scopedAbsent,
+        lateCount: scopedLate,
+        excusedCount: scopedExcused,
+        attendanceRate: scopedRate
+      },
+      sections,
+      homeroom_classes: homeroomClasses
+    });
+    return;
+  }
+
+  // Ordinary Teacher
+  res.json({
+    role: user.role,
+    is_section_head: false,
+    date: today,
+    stats: {
+      totalStudents: 0,
+      totalClasses: homeroomClasses.length,
+      submittedClassesCount: homeroomClasses.filter(c => c.is_submitted).length,
+      unsubmittedClassesCount: homeroomClasses.filter(c => !c.is_submitted).length,
+      presentCount: 0,
+      absentCount: 0,
+      lateCount: 0,
+      excusedCount: 0,
+      attendanceRate: null
+    },
+    sections: [],
+    homeroom_classes: homeroomClasses
+  });
 });
 
 export default router;

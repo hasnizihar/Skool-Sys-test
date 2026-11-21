@@ -13,10 +13,10 @@ import {
   ChevronRight,
   Activity,
   Smartphone,
-  UserCheck
+  UserCheck,
+  Layers,
+  School
 } from 'lucide-react';
-import { Tooltip, Badge } from '@mantine/core';
-import { isUserSectionHead, isUserClassTeacher } from '../utils/authUtils';
 import './sidebar.css';
 
 interface SidebarProps {
@@ -241,54 +241,150 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Primary Navigation Links */}
         <nav className="nav-links" aria-label="Primary Navigation">
-          {navigationSections.map((sec, secIdx) => {
-            const visibleItems = sec.items.filter((item) => item.visible);
-            if (visibleItems.length === 0) return null;
+          {/* SECTION 1: OVERVIEW */}
+          <div className="nav-section-title">Overview</div>
 
-            return (
-              <React.Fragment key={sec.title || secIdx}>
-                <div className="nav-section-title">{sec.title}</div>
-                {visibleItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = currentTab === item.id;
+          <button
+            type="button"
+            className={navClass('dashboard')}
+            onClick={() => handleNav('dashboard')}
+            aria-current={currentTab === 'dashboard' ? 'page' : undefined}
+            data-tooltip="Dashboard"
+            title={isCollapsed ? 'Dashboard' : undefined}
+          >
+            <LayoutDashboard size={18} aria-hidden="true" />
+            <span className="nav-item-label">Dashboard</span>
+          </button>
 
-                  const buttonElement = (
-                    <button
-                      type="button"
-                      className={navClass(item.id)}
-                      onClick={() => handleNav(item.id)}
-                      aria-current={isActive ? 'page' : undefined}
-                      data-tooltip={item.label}
-                    >
-                      <Icon size={18} aria-hidden={true} strokeWidth={isActive ? 2.2 : 1.9} />
-                      <span className="nav-item-label">{item.label}</span>
-                      {item.badge && (
-                        <Badge size="xs" variant="light" color="refinedBlue">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </button>
-                  );
+          {/* SECTION 2: STUDENTS */}
+          <div className="nav-section-title">Students</div>
 
-                  if (isCollapsed) {
-                    return (
-                      <Tooltip
-                        key={item.id}
-                        label={item.label}
-                        position="right"
-                        withArrow
-                        offset={12}
-                      >
-                        {buttonElement}
-                      </Tooltip>
-                    );
-                  }
+          <button
+            type="button"
+            className={navClass('students')}
+            onClick={() => handleNav('students')}
+            aria-current={currentTab === 'students' ? 'page' : undefined}
+            data-tooltip="Student Records"
+            title={isCollapsed ? 'Student Records' : undefined}
+          >
+            <Users size={18} aria-hidden="true" />
+            <span className="nav-item-label">Student Records</span>
+          </button>
 
-                  return <React.Fragment key={item.id}>{buttonElement}</React.Fragment>;
-                })}
-              </React.Fragment>
-            );
-          })}
+          {/* SECTION 3: ACADEMICS */}
+          <div className="nav-section-title">Academics</div>
+
+          {isClassTeacher && (
+            <>
+              <button
+                type="button"
+                className={navClass('attendance')}
+                onClick={() => handleNav('attendance')}
+                aria-current={currentTab === 'attendance' ? 'page' : undefined}
+                data-tooltip="Take Attendance"
+                title={isCollapsed ? 'Take Attendance' : undefined}
+              >
+                <CalendarCheck size={18} aria-hidden="true" />
+                <span className="nav-item-label">Take Attendance</span>
+              </button>
+
+              <button
+                type="button"
+                className={navClass('mobile-attendance')}
+                onClick={() => handleNav('mobile-attendance')}
+                aria-current={currentTab === 'mobile-attendance' ? 'page' : undefined}
+                data-tooltip="Mobile Roll-Call"
+                title={isCollapsed ? 'Mobile Roll-Call' : undefined}
+              >
+                <UserCheck size={18} aria-hidden="true" />
+                <span className="nav-item-label">Mobile Roll-Call</span>
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            className={navClass('attendance-reports')}
+            onClick={() => handleNav('attendance-reports')}
+            aria-current={currentTab === 'attendance-reports' ? 'page' : undefined}
+            data-tooltip="Attendance Reports"
+            title={isCollapsed ? 'Attendance Reports' : undefined}
+          >
+            <FileSpreadsheet size={18} aria-hidden="true" />
+            <span className="nav-item-label">Attendance Reports</span>
+          </button>
+
+          <button
+            type="button"
+            className={navClass('marks')}
+            onClick={() => handleNav('marks')}
+            aria-current={currentTab === 'marks' ? 'page' : undefined}
+            data-tooltip="Marks Management"
+            title={isCollapsed ? 'Marks Management' : undefined}
+          >
+            <GraduationCap size={18} aria-hidden="true" />
+            <span className="nav-item-label">Marks Management</span>
+          </button>
+
+          {/* SECTION 4: LIVE OPERATIONS (PHASE 2) */}
+          <div className="nav-section-title">Live Tracking</div>
+
+          <button
+            type="button"
+            className={navClass('classroom-status')}
+            onClick={() => handleNav('classroom-status')}
+            aria-current={currentTab === 'classroom-status' ? 'page' : undefined}
+            data-tooltip="Classroom Status"
+            title={isCollapsed ? 'Classroom Status' : undefined}
+          >
+            <Activity size={18} aria-hidden="true" />
+            <span className="nav-item-label">Classroom Status</span>
+          </button>
+
+          {isSectionHead && (
+            <button
+              type="button"
+              className={navClass('mobile-classroom-status')}
+              onClick={() => handleNav('mobile-classroom-status')}
+              aria-current={currentTab === 'mobile-classroom-status' ? 'page' : undefined}
+              data-tooltip="Section Walkthrough"
+              title={isCollapsed ? 'Section Walkthrough' : undefined}
+            >
+              <Smartphone size={18} aria-hidden="true" />
+              <span className="nav-item-label">Section Walkthrough</span>
+            </button>
+          )}
+
+          {/* SECTION 4: ADMINISTRATION (Admin Only) */}
+          {isAdmin && (
+            <>
+              <div className="nav-section-title">Administration</div>
+
+              <button
+                type="button"
+                className={navClass('admin')}
+                onClick={() => handleNav('admin')}
+                aria-current={currentTab === 'admin' ? 'page' : undefined}
+                data-tooltip="School Administration"
+                title={isCollapsed ? 'School Administration' : undefined}
+              >
+                <ShieldCheck size={18} aria-hidden="true" />
+                <span className="nav-item-label">School Administration</span>
+              </button>
+
+              <button
+                type="button"
+                className={navClass('audit')}
+                onClick={() => handleNav('audit')}
+                aria-current={currentTab === 'audit' ? 'page' : undefined}
+                data-tooltip="Audit Trail"
+                title={isCollapsed ? 'Audit Trail' : undefined}
+              >
+                <History size={18} aria-hidden="true" />
+                <span className="nav-item-label">Audit Trail</span>
+              </button>
+            </>
+          )}
         </nav>
 
         {/* User Profile & Sign Out Footer */}
