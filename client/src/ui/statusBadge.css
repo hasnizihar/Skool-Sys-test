@@ -123,6 +123,40 @@
   border-color: var(--border-color);
 }
 
+/* --- Classroom Status Variants --- */
+.sk-badge--teaching.sk-badge--subtle {
+  background-color: var(--status-present-bg);
+  color: var(--status-present);
+  border-color: var(--status-present-border);
+}
+.sk-badge--teaching.sk-badge--solid {
+  background-color: var(--status-present);
+  color: #ffffff;
+  border-color: var(--status-present);
+}
+
+.sk-badge--not_teaching.sk-badge--subtle {
+  background-color: var(--status-absent-bg);
+  color: var(--status-absent);
+  border-color: var(--status-absent-border);
+}
+.sk-badge--not_teaching.sk-badge--solid {
+  background-color: var(--status-absent);
+  color: #ffffff;
+  border-color: var(--status-absent);
+}
+
+.sk-badge--other_activity.sk-badge--subtle {
+  background-color: var(--status-late-bg);
+  color: var(--status-late);
+  border-color: var(--status-late-border);
+}
+.sk-badge--other_activity.sk-badge--solid {
+  background-color: var(--status-late);
+  color: #ffffff;
+  border-color: var(--status-late);
+}
+
 .sk-badge--pending {
   background-color: var(--status-late-bg);
   color: var(--status-late);

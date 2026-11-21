@@ -1,46 +1,49 @@
-/* Classroom Status Monitoring — KCC SkoolSys Design Tokens */
+/* Classroom Status Monitoring — SkoolSys Modern Mantine Design System */
 
 .csm-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem;
+  gap: 1.25rem;
+  padding: 0;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
 }
 
 /* Header & Controls */
-.csm-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color, #e2e8f0);
+.csm-header-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
 }
 
-.csm-title-area h1 {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary, #0f172a);
-  margin: 0;
+.csm-title-area {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  flex-direction: column;
+}
+
+.csm-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-main, #0f172a);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.csm-title-icon {
+  color: var(--primary, #2563eb);
 }
 
 .csm-subtitle {
   font-size: 0.875rem;
-  color: var(--text-secondary, #64748b);
-  margin-top: 0.25rem;
+  color: var(--text-muted, #64748b);
+  margin: 0;
 }
 
 .csm-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
@@ -78,56 +81,18 @@
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
-/* State Banners */
-.csm-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.925rem;
-  flex-wrap: wrap;
-}
-
-.csm-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.csm-banner.warning {
-  background-color: #fffbeb;
-  border: 1px solid #fde68a;
-  color: #92400e;
-}
-
-.csm-banner.info {
-  background-color: #eff6ff;
-  border: 1px solid #bfdbfe;
-  color: #1e40af;
-}
-
-.csm-banner.break {
-  background-color: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  color: #166534;
-}
-
 /* Period Navigation Bar */
 .csm-period-bar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  overflow-x: auto;
-  padding: 0.5rem 0;
-  scrollbar-width: thin;
+  padding: 0.25rem 0;
 }
 
 .csm-period-label {
   font-size: 0.825rem;
-  font-weight: 600;
-  color: var(--text-secondary, #64748b);
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
   white-space: nowrap;
   margin-right: 0.25rem;
 }
@@ -137,10 +102,10 @@
   flex-direction: column;
   align-items: center;
   padding: 0.45rem 0.85rem;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-color, #cbd5e1);
-  background: var(--card-bg, #ffffff);
-  color: var(--text-primary, #1e293b);
+  background: var(--bg-card, #ffffff);
+  color: var(--text-main, #1e293b);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
@@ -148,15 +113,15 @@
 }
 
 .csm-period-btn:hover {
-  border-color: #075e3b;
-  background-color: #f8fafc;
+  border-color: var(--primary, #2563eb);
+  background-color: var(--bg-subtle, #f8fafc);
 }
 
 .csm-period-btn.active {
-  background-color: #075e3b;
+  background-color: var(--primary, #2563eb);
   color: #ffffff;
-  border-color: #075e3b;
-  box-shadow: 0 2px 4px rgba(7, 94, 59, 0.25);
+  border-color: var(--primary, #2563eb);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
 }
 
 .csm-pbtn-name {
@@ -189,13 +154,19 @@
 
 .csm-kpi-card {
   padding: 1.15rem;
-  border-radius: 8px;
-  background: var(--card-bg, #ffffff);
+  border-radius: 10px;
+  background: var(--bg-card, #ffffff);
   border: 1px solid var(--border-color, #e2e8f0);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-xs, 0 1px 3px rgba(0, 0, 0, 0.05));
   display: flex;
   align-items: center;
   gap: 1rem;
+  transition: transform var(--transition-fast, 0.15s ease), box-shadow var(--transition-fast, 0.15s ease);
+}
+
+.csm-kpi-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm, 0 2px 4px rgba(0, 0, 0, 0.08));
 }
 
 .csm-kpi-icon {
@@ -210,23 +181,23 @@
 
 .csm-kpi-info h3 {
   font-size: 0.775rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   margin: 0;
 }
 
 .csm-kpi-value {
   font-size: 1.65rem;
   font-weight: 800;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   line-height: 1.2;
 }
 
 .csm-kpi-pct {
   font-size: 0.75rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   margin-left: 0.4rem;
 }
 
@@ -248,12 +219,8 @@
   display: flex;
   align-items: center;
   gap: 1.25rem;
-  padding: 0.65rem 1rem;
-  background-color: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 6px;
   font-size: 0.8rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   flex-wrap: wrap;
 }
 
@@ -279,15 +246,15 @@
 .csm-sections-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .csm-section-card {
-  background: var(--card-bg, #ffffff);
+  background: var(--bg-card, #ffffff);
   border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-xs, 0 1px 3px rgba(0, 0, 0, 0.05));
 }
 
 .csm-section-header {
@@ -295,7 +262,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  background-color: #f8fafc;
+  background-color: var(--bg-subtle, #f8fafc);
   border-bottom: 1px solid var(--border-color, #e2e8f0);
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -304,7 +271,7 @@
 .csm-section-title-group h2 {
   font-size: 1.15rem;
   font-weight: 700;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-main, #0f172a);
   margin: 0;
   display: flex;
   align-items: center;
@@ -322,7 +289,7 @@
 
 .csm-section-stats {
   font-size: 0.825rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-muted, #64748b);
   font-weight: 500;
 }
 
@@ -335,14 +302,14 @@
 }
 
 .csm-class-box {
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 1rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 120px;
+  min-height: 125px;
   border: 1.5px solid transparent;
-  transition: transform 0.1s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
   position: relative;
 }
 
@@ -481,7 +448,7 @@
   background-color: #eff6ff;
   border: 1px solid #bfdbfe;
   padding: 0.75rem;
-  border-radius: 6px;
+  border-radius: 8px;
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 0.75rem;

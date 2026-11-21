@@ -8,11 +8,26 @@ import {
   Clock,
   X,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  ChevronLeft,
+  Activity
 } from 'lucide-react';
+import {
+  Paper,
+  Badge,
+  Button,
+  Group,
+  Stack,
+  Text,
+  Title,
+  Progress,
+  Modal,
+  Box,
+  SimpleGrid,
+  Alert
+} from '@mantine/core';
 import { api } from '../api/client';
-import { Button } from '../ui/Button';
-import { EmptyState } from '../ui/mantine';
+import { EmptyState, LoadingState } from '../ui/mantine';
 import { useToast } from '../ui/useToast';
 import './mobileClassroomStatus.css';
 
@@ -159,18 +174,38 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
   };
 
   return (
-    <div className="mcs-container">
-      {/* 1. Mobile Header */}
-      <header className="mcs-header">
-        <div className="mcs-top-row">
-          <h1 className="mcs-title">
-            Walkthrough Status
-          </h1>
-          <div className={`mcs-period-badge ${context?.isBreak ? 'warning' : ''}`}>
-            <Clock size={13} aria-hidden="true" />
+    <div className="mcs-container" role="region" aria-label="Mobile Classroom Status Walkthrough">
+      {/* 1. Mobile Header Card */}
+      <Paper p="sm" radius="md" withBorder className="mcs-header" shadow="xs">
+        <Group justify="space-between" align="center" className="mcs-top-row">
+          <Group gap="xs" align="center">
+            {onNavigate && (
+              <Button
+                variant="subtle"
+                color="gray"
+                size="xs"
+                p={4}
+                onClick={() => onNavigate('classroom-status')}
+                title="Back to Classroom Status Overview"
+                aria-label="Back to Classroom Status Overview"
+              >
+                <ChevronLeft size={18} />
+              </Button>
+            )}
+            <Title order={3} className="mcs-title">
+              Walkthrough Status
+            </Title>
+          </Group>
+
+          <Badge
+            color={context?.isBreak ? 'yellow' : 'blue'}
+            variant="filled"
+            size="md"
+            leftSection={<Clock size={13} aria-hidden="true" />}
+          >
             {context?.periodNumber ? `Period ${context.periodNumber}` : (context?.periodName || 'No Active Period')}
-          </div>
-        </div>
+          </Badge>
+        </Group>
 
         {/* Section Selector */}
         {data?.sections?.length > 1 && (
@@ -193,34 +228,39 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
 
         {/* Walkthrough Progress */}
         <div className="mcs-progress-bar-wrap">
-          <div className="mcs-progress-track" aria-hidden="true">
-            <div className="mcs-progress-fill" style={{ width: `${progressPct}%` }} />
-          </div>
-          <span className="mcs-progress-text">
+          <Progress
+            value={progressPct}
+            color={progressPct === 100 ? 'green' : 'blue'}
+            size="sm"
+            radius="xl"
+            style={{ flex: 1 }}
+          />
+          <Text size="xs" fw={700} c="dimmed" className="mcs-progress-text">
             {completedCount} / {totalCount} Checked ({progressPct}%)
-          </span>
+          </Text>
         </div>
-      </header>
+      </Paper>
 
       {/* 2. Notice if unconfigured / break */}
       {context && !context.configured && (
-        <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
-          <strong>Timetable Notice:</strong> School period times have not been configured yet.
-        </div>
+        <Alert icon={<AlertTriangle size={18} />} color="yellow" radius="md">
+          <Text size="xs" fw={600}>
+            Timetable Notice: School period times have not been configured yet.
+          </Text>
+        </Alert>
       )}
 
       {context && context.isBreak && (
-        <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg text-sm">
-          <strong>Break in Progress:</strong> {context.message}.
-        </div>
+        <Alert icon={<Clock size={18} />} color="blue" radius="md">
+          <Text size="xs" fw={600}>
+            Break in Progress: {context.message}.
+          </Text>
+        </Alert>
       )}
 
       {/* 3. Classrooms Grid */}
       {loading ? (
-        <div className="p-8 text-center text-slate-500">
-          <RotateCw className="animate-spin inline-block mr-2" size={20} />
-          Loading assigned classrooms...
-        </div>
+        <LoadingState message="Loading assigned classrooms..." minHeight={200} />
       ) : classes.length === 0 ? (
         <EmptyState
           icon={<ShieldAlert size={36} />}
@@ -363,22 +403,24 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
             {/* Save Buttons */}
             <div className="mcs-save-row">
               <Button
-                variant="outline"
-                size="lg"
+                variant="default"
+                size="md"
                 onClick={() => handleSaveStatus(false)}
-                disabled={saving}
+                loading={saving}
+                style={{ height: 48 }}
               >
-                {saving ? 'Saving...' : 'Save'}
+                Save
               </Button>
 
               <Button
-                variant="primary"
-                size="lg"
+                color="blue"
+                size="md"
                 onClick={() => handleSaveStatus(true)}
-                disabled={saving}
-                rightIcon={<ArrowRight size={18} />}
+                loading={saving}
+                rightSection={<ArrowRight size={18} />}
+                style={{ height: 48 }}
               >
-                {saving ? 'Saving...' : 'Save & Next'}
+                Save & Next
               </Button>
             </div>
           </div>

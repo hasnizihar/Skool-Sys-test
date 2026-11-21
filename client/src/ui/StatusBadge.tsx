@@ -24,8 +24,9 @@ export type WorkflowStatus =
   | 'published'
   | 'conflicted'
   | 'rejected';
+export type ClassroomTeachingStatus = 'teaching' | 'not_teaching' | 'other_activity';
 
-export type StatusBadgeType = AttendanceStatus | AcademicGrade | WorkflowStatus | 'neutral';
+export type StatusBadgeType = AttendanceStatus | AcademicGrade | WorkflowStatus | ClassroomTeachingStatus | 'neutral';
 
 export interface StatusBadgeProps {
   status: StatusBadgeType;
@@ -103,6 +104,18 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     case 'conflicted':
       resolvedIcon = <AlertTriangle size={size === 'sm' ? 11 : 13} />;
       resolvedLabel = label || 'Conflict Detected';
+      break;
+    case 'teaching':
+      resolvedIcon = <CheckCircle2 size={size === 'sm' ? 11 : 13} />;
+      resolvedLabel = label || 'Teaching';
+      break;
+    case 'not_teaching':
+      resolvedIcon = <X size={size === 'sm' ? 11 : 13} />;
+      resolvedLabel = label || 'Not Teaching';
+      break;
+    case 'other_activity':
+      resolvedIcon = <AlertTriangle size={size === 'sm' ? 11 : 13} />;
+      resolvedLabel = label || 'Other Activity';
       break;
     default:
       resolvedLabel = label || status;
