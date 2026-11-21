@@ -22,7 +22,8 @@ import {
   Wifi,
   WifiOff,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Activity
 } from 'lucide-react';
 import { api } from '../api/client';
 import { getColomboCivilDate } from '../utils/dateUtils';
@@ -87,6 +88,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<any | null>(null);
 
   // Teacher selected class (Screen 03)
   const [teacherSelectedClassId, setTeacherSelectedClassId] = useState<number | null>(null);
@@ -97,16 +99,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       setError(null);
       const today = getColomboCivilDate();
 
-      const [studentsRes, classesRes, dailyRes, examsRes] = await Promise.all([
+      const [studentsRes, classesRes, dailyRes, examsRes, summaryRes] = await Promise.all([
         api.getStudents().catch(() => ({ count: 0, students: [] })),
         api.getClasses().catch(() => ({ classes: [] })),
         api.getDailyAttendanceReport(today).catch(() => ({ classes: [], absentStudents: [] })),
-        api.getExaminations().catch(() => ({ examinations: [] }))
+        api.getExaminations().catch(() => ({ examinations: [] })),
+        api.getDashboardSummary(today).catch(() => null)
       ]);
 
       const classes = classesRes.classes || [];
       setClassesList(classes);
       setExaminations(examsRes.examinations || []);
+      setDashboardSummary(summaryRes);
 
       let totalPresent = 0;
       let totalAbsent = 0;
@@ -166,11 +170,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
 
       // Fetch audit logs for administrators
       if (user?.role === 'admin') {
-        try {
-          const logsRes = await api.getAuditLogs();
-          setRecentLogs((logsRes.logs || []).slice(0, 5));
-        } catch (logErr) {
-          console.warn('Could not fetch audit logs:', logErr);
+        if (summaryRes?.recentLogs && summaryRes.recentLogs.length > 0) {
+          setRecentLogs(summaryRes.recentLogs.slice(0, 5));
+        } else {
+          try {
+            const logsRes = await api.getAuditLogs();
+            setRecentLogs((logsRes.logs || []).slice(0, 5));
+          } catch (logErr) {
+            console.warn('Could not fetch audit logs:', logErr);
+          }
         }
       }
 
@@ -558,6 +566,106 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
             </div>
           </div>
 
+          {/* Live Classroom Status Quick Nav Banner */}
+          <div className="card" style={{ padding: '0.875rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(90deg, rgba(30, 58, 138, 0.08) 0%, rgba(37, 99, 235, 0.04) 100%)', border: '1px solid rgba(37, 99, 235, 0.2)', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 8, background: '#1e3a8a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Activity size={20} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)' }}>
+                  Period-Based Live Classroom Status
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Monitor teacher presence, substitute coverage, and active teaching across all 9 periods in real time.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate('classroom-status')}
+              className="btn btn-primary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <span>Open Live Status Grid</span>
+              <ArrowRight size={14} />
+            </button>
+          </div>
+
+          {/* Section-Wise Attendance Breakdown */}
+          {dashboardSummary?.sections && dashboardSummary.sections.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.25rem' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Layers size={18} style={{ color: 'var(--primary)' }} />
+                    <span>Section-Wise Attendance Breakdown</span>
+                  </div>
+                  <div className="card-subtitle">
+                    Real-time attendance rates and register submission progress across school sections
+                  </div>
+                </div>
+                <button
+                  onClick={() => onNavigate('sections')}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Manage Sections <ArrowRight size={14} />
+                </button>
+              </div>
+
+              <div className="table-responsive">
+                <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Section</th>
+                      <th scope="col">Grade Band</th>
+                      <th scope="col">Section Heads</th>
+                      <th scope="col">Enrolled</th>
+                      <th scope="col">Present</th>
+                      <th scope="col">Absent</th>
+                      <th scope="col">Attendance Rate</th>
+                      <th scope="col">Registers Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardSummary.sections.map((sec: any) => {
+                      const headNames = sec.section_heads && sec.section_heads.length > 0
+                        ? sec.section_heads.map((h: any) => h.full_name).join(', ')
+                        : 'Unassigned';
+
+                      return (
+                        <tr key={sec.id}>
+                          <td>
+                            <strong>{sec.name}</strong>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sec.code}</div>
+                          </td>
+                          <td>{sec.grade_range || 'Grades 6–13'}</td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{headNames}</td>
+                          <td><strong>{sec.student_count}</strong></td>
+                          <td style={{ color: 'var(--present)', fontWeight: 600 }}>{sec.present}</td>
+                          <td style={{ color: 'var(--absent)', fontWeight: 600 }}>{sec.absent}</td>
+                          <td>
+                            {sec.attendance_rate !== null ? (
+                              <span style={{ fontWeight: 700, color: sec.attendance_rate >= 80 ? 'var(--present)' : 'var(--late)' }}>
+                                {sec.attendance_rate}%
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge ${sec.submitted_classes === sec.classes_count && sec.classes_count > 0 ? 'badge-present' : 'badge-secondary'}`}>
+                              {sec.submitted_classes} / {sec.classes_count} Classes
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Primary Operations 2-Column Grid (Balanced 50% / 50%) */}
           <div className="dashboard-grid-dual">
             {/* Left Column: Absentee Follow-Up Alert & Recent Audit Activity */}
@@ -862,10 +970,154 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
       )}
 
       {/* ====================================================================
-          SCREEN 03: TEACHER DASHBOARD
+          SCREEN 03: TEACHER / SECTION HEAD DASHBOARD
           ==================================================================== */}
       {activeView === 'teacher' && (
         <>
+          {/* SECTION HEAD SUPERVISORY SCOPED DASHBOARD WIDGET */}
+          {dashboardSummary?.is_section_head && (
+            <div className="card" style={{ marginBottom: '1.25rem', borderLeft: '4px solid #8b5cf6' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed' }}>
+                    <Layers size={20} />
+                    <span>Section Head Supervisory Overview</span>
+                  </div>
+                  <div className="card-subtitle">
+                    Supervisory monitoring for your assigned school sections
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => onNavigate('mobile-classroom-status')}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Smartphone size={14} /> Section Walkthrough
+                  </button>
+                  <button
+                    onClick={() => onNavigate('classroom-status')}
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Activity size={14} /> Classroom Status
+                  </button>
+                </div>
+              </div>
+
+              {/* Scoped KPI row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', padding: '1rem', background: 'var(--bg-subtle, #f8fafc)', borderBottom: '1px solid var(--border-color)' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Section Students</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{dashboardSummary.stats?.totalStudents || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Present Today</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--present)' }}>{dashboardSummary.stats?.presentCount || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Absent Today</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--absent)' }}>{dashboardSummary.stats?.absentCount || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Attendance Rate</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#2563eb' }}>
+                    {dashboardSummary.stats?.attendanceRate !== null ? `${dashboardSummary.stats?.attendanceRate}%` : 'Pending'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Classes Submitted</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>
+                    {dashboardSummary.stats?.submittedClassesCount || 0} / {dashboardSummary.stats?.totalClasses || 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Assigned Sections List */}
+              <div style={{ padding: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  Assigned Sections ({dashboardSummary.sections?.length || 0}):
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {dashboardSummary.sections?.map((sec: any) => (
+                    <div
+                      key={sec.id}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main, #ffffff)',
+                        fontSize: '0.8125rem'
+                      }}
+                    >
+                      <strong>{sec.name}</strong> ({sec.grade_range}) — {sec.submitted_classes} / {sec.classes_count} classes submitted
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DUAL-ROLE HOMEROOM CLASS QUICK CARD */}
+          {dashboardSummary?.homeroom_classes && dashboardSummary.homeroom_classes.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.25rem', borderLeft: '4px solid #0284c7' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0284c7' }}>
+                    <School size={20} />
+                    <span>My Homeroom Class Attendance</span>
+                  </div>
+                  <div className="card-subtitle">
+                    Direct class teacher roll-call action for your assigned homeroom
+                  </div>
+                </div>
+                <button
+                  onClick={() => onNavigate('mobile-attendance')}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  <UserCheck size={14} /> Take Roll-Call
+                </button>
+              </div>
+
+              <div style={{ padding: '1rem', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                {dashboardSummary.homeroom_classes.map((hc: any) => (
+                  <div
+                    key={hc.id}
+                    style={{
+                      flex: '1 1 260px',
+                      padding: '1rem',
+                      borderRadius: 8,
+                      border: '1px solid var(--border-color)',
+                      background: hc.is_submitted ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '1rem' }}>Class {hc.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Grade {hc.grade} • {hc.student_count} Enrolled Students
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <span className={`status-badge ${hc.is_submitted ? 'active' : 'inactive'}`} style={{ fontSize: '0.725rem' }}>
+                          {hc.is_submitted ? 'Attendance Submitted' : 'Roll-Call Not Yet Submitted'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onNavigate('mobile-attendance')}
+                      className={`btn ${hc.is_submitted ? 'btn-secondary' : 'btn-primary'} btn-sm`}
+                    >
+                      {hc.is_submitted ? 'View Register' : 'Start Roll-Call'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Class Switcher for Teachers with multiple assignments */}
           {teacherAvailableClasses.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '-0.5rem' }}>

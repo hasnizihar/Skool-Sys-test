@@ -355,5 +355,29 @@ export const api = {
     if (date) params.set('date', date);
     if (period) params.set('period', String(period));
     return apiFetch(`/api/classroom-status/history?${params.toString()}`);
-  }
+  },
+
+  // Teacher Management & Bulk Import (Phase 4)
+  getTeachers: (params: { search?: string; role?: string; status?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set('search', params.search);
+    if (params.role) query.set('role', params.role);
+    if (params.status) query.set('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiFetch(`/api/admin/teachers${qs}`);
+  },
+  getTeacher: (id: number) => apiFetch(`/api/admin/teachers/${id}`),
+  createTeacher: (payload: any) =>
+    apiFetch('/api/admin/teachers', { method: 'POST', body: JSON.stringify(payload) }),
+  updateTeacher: (id: number, payload: any) =>
+    apiFetch(`/api/admin/teachers/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteTeacher: (id: number) =>
+    apiFetch(`/api/admin/teachers/${id}`, { method: 'DELETE' }),
+  getTeacherTemplateUrl: () => '/api/admin/teachers/template',
+  importTeachersCsv: (payload: { csvData: string; mode?: 'preview' | 'commit' }) =>
+    apiFetch('/api/admin/teachers/import', { method: 'POST', body: JSON.stringify(payload) }),
+
+  // Dashboard Scoped Summary (Phase 4)
+  getDashboardSummary: (date?: string) =>
+    apiFetch(`/api/academic/dashboard-summary${date ? `?date=${date}` : ''}`)
 };

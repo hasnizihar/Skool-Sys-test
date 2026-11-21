@@ -22,8 +22,18 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 
-export const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sections' | 'users' | 'assignments' | 'backup'>('sections');
+interface AdminSettingsProps {
+  initialTab?: 'sections' | 'users' | 'assignments' | 'backup';
+}
+
+export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sections' }) => {
+  const [activeTab, setActiveTab] = useState<'sections' | 'users' | 'assignments' | 'backup'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Sections State (Phase 1)
   const [sections, setSections] = useState<any[]>([]);

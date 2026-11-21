@@ -13,8 +13,11 @@ import {
   ChevronRight,
   Activity,
   Smartphone,
-  UserCheck
+  UserCheck,
+  Layers,
+  School
 } from 'lucide-react';
+import { MVP_CONFIG } from '../config/mvpConfig';
 import './sidebar.css';
 
 interface SidebarProps {
@@ -139,23 +142,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="nav-item-label">Dashboard</span>
           </button>
 
-          {/* SECTION 2: STUDENTS */}
-          <div className="nav-section-title">Students</div>
-
           <button
             type="button"
-            className={navClass('students')}
-            onClick={() => handleNav('students')}
-            aria-current={currentTab === 'students' ? 'page' : undefined}
-            data-tooltip="Student Records"
-            title={isCollapsed ? 'Student Records' : undefined}
+            className={navClass('classroom-status')}
+            onClick={() => handleNav('classroom-status')}
+            aria-current={currentTab === 'classroom-status' ? 'page' : undefined}
+            data-tooltip="Classroom Status"
+            title={isCollapsed ? 'Classroom Status' : undefined}
           >
-            <Users size={18} aria-hidden="true" />
-            <span className="nav-item-label">Student Records</span>
+            <Activity size={18} aria-hidden="true" />
+            <span className="nav-item-label">Classroom Status</span>
           </button>
 
-          {/* SECTION 3: ACADEMICS */}
-          <div className="nav-section-title">Academics</div>
+          {isSectionHead && (
+            <button
+              type="button"
+              className={navClass('mobile-classroom-status')}
+              onClick={() => handleNav('mobile-classroom-status')}
+              aria-current={currentTab === 'mobile-classroom-status' ? 'page' : undefined}
+              data-tooltip="Section Walkthrough"
+              title={isCollapsed ? 'Section Walkthrough' : undefined}
+            >
+              <Smartphone size={18} aria-hidden="true" />
+              <span className="nav-item-label">Section Walkthrough</span>
+            </button>
+          )}
+
+          {/* SECTION 2: ATTENDANCE */}
+          <div className="nav-section-title">Attendance</div>
 
           {isClassTeacher && (
             <>
@@ -168,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title={isCollapsed ? 'Take Attendance' : undefined}
               >
                 <CalendarCheck size={18} aria-hidden="true" />
-                <span className="nav-item-label">Take Attendance</span>
+                <span className="nav-item-label">Student Attendance</span>
               </button>
 
               <button
@@ -197,44 +211,60 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="nav-item-label">Attendance Reports</span>
           </button>
 
-          <button
-            type="button"
-            className={navClass('marks')}
-            onClick={() => handleNav('marks')}
-            aria-current={currentTab === 'marks' ? 'page' : undefined}
-            data-tooltip="Marks Management"
-            title={isCollapsed ? 'Marks Management' : undefined}
-          >
-            <GraduationCap size={18} aria-hidden="true" />
-            <span className="nav-item-label">Marks Management</span>
-          </button>
-
-          {/* SECTION 4: LIVE OPERATIONS (PHASE 2) */}
-          <div className="nav-section-title">Live Tracking</div>
-
-          <button
-            type="button"
-            className={navClass('classroom-status')}
-            onClick={() => handleNav('classroom-status')}
-            aria-current={currentTab === 'classroom-status' ? 'page' : undefined}
-            data-tooltip="Classroom Status"
-            title={isCollapsed ? 'Classroom Status' : undefined}
-          >
-            <Activity size={18} aria-hidden="true" />
-            <span className="nav-item-label">Classroom Status</span>
-          </button>
-
-          {isSectionHead && (
+          {MVP_CONFIG.ENABLE_EXAM_MARKS_NAV && (
             <button
               type="button"
-              className={navClass('mobile-classroom-status')}
-              onClick={() => handleNav('mobile-classroom-status')}
-              aria-current={currentTab === 'mobile-classroom-status' ? 'page' : undefined}
-              data-tooltip="Section Walkthrough"
-              title={isCollapsed ? 'Section Walkthrough' : undefined}
+              className={navClass('marks')}
+              onClick={() => handleNav('marks')}
+              aria-current={currentTab === 'marks' ? 'page' : undefined}
+              data-tooltip="Marks Management"
+              title={isCollapsed ? 'Marks Management' : undefined}
             >
-              <Smartphone size={18} aria-hidden="true" />
-              <span className="nav-item-label">Section Walkthrough</span>
+              <GraduationCap size={18} aria-hidden="true" />
+              <span className="nav-item-label">Marks Management</span>
+            </button>
+          )}
+
+          {/* SECTION 3: PEOPLE & STRUCTURE */}
+          <div className="nav-section-title">People & Structure</div>
+
+          <button
+            type="button"
+            className={navClass('students')}
+            onClick={() => handleNav('students')}
+            aria-current={currentTab === 'students' ? 'page' : undefined}
+            data-tooltip="Student Records"
+            title={isCollapsed ? 'Student Records' : undefined}
+          >
+            <Users size={18} aria-hidden="true" />
+            <span className="nav-item-label">Students</span>
+          </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              className={navClass('teachers')}
+              onClick={() => handleNav('teachers')}
+              aria-current={currentTab === 'teachers' ? 'page' : undefined}
+              data-tooltip="Teaching Faculty"
+              title={isCollapsed ? 'Teaching Faculty' : undefined}
+            >
+              <School size={18} aria-hidden="true" />
+              <span className="nav-item-label">Teachers</span>
+            </button>
+          )}
+
+          {(isAdmin || isSectionHead) && (
+            <button
+              type="button"
+              className={navClass('sections')}
+              onClick={() => handleNav('sections')}
+              aria-current={currentTab === 'sections' ? 'page' : undefined}
+              data-tooltip="Sections & Classes"
+              title={isCollapsed ? 'Sections & Classes' : undefined}
+            >
+              <Layers size={18} aria-hidden="true" />
+              <span className="nav-item-label">Sections & Classes</span>
             </button>
           )}
 
@@ -248,11 +278,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={navClass('admin')}
                 onClick={() => handleNav('admin')}
                 aria-current={currentTab === 'admin' ? 'page' : undefined}
-                data-tooltip="School Administration"
-                title={isCollapsed ? 'School Administration' : undefined}
+                data-tooltip="User & Role Management"
+                title={isCollapsed ? 'User & Role Management' : undefined}
               >
                 <ShieldCheck size={18} aria-hidden="true" />
-                <span className="nav-item-label">School Administration</span>
+                <span className="nav-item-label">User / Role Management</span>
               </button>
 
               <button
@@ -260,11 +290,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={navClass('audit')}
                 onClick={() => handleNav('audit')}
                 aria-current={currentTab === 'audit' ? 'page' : undefined}
-                data-tooltip="Audit Trail"
-                title={isCollapsed ? 'Audit Trail' : undefined}
+                data-tooltip="Activity Logs"
+                title={isCollapsed ? 'Activity Logs' : undefined}
               >
                 <History size={18} aria-hidden="true" />
-                <span className="nav-item-label">Audit Trail</span>
+                <span className="nav-item-label">Activity Logs</span>
               </button>
             </>
           )}

@@ -14,6 +14,7 @@ import { AuditLogs } from './pages/AuditLogs';
 import { ClassroomStatusMonitoring } from './pages/ClassroomStatusMonitoring';
 import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
 import { MobileSequentialAttendance } from './pages/MobileSequentialAttendance';
+import { Teachers } from './pages/Teachers';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
 import { MobileBottomNav } from './components/MobileBottomNav';
@@ -21,6 +22,8 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 const VALID_TABS = [
   'dashboard',
   'students',
+  'teachers',
+  'sections',
   'attendance',
   'mobile-attendance',
   'attendance-reports',
@@ -140,6 +143,8 @@ export function App() {
     switch (currentTab) {
       case 'dashboard': return 'School Operations Dashboard';
       case 'students': return 'Student Information Records';
+      case 'teachers': return 'Teacher Personnel & Directory';
+      case 'sections': return 'School Sections & Classroom Assignments';
       case 'attendance': return 'Daily Attendance Register';
       case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
       case 'attendance-reports': return 'Attendance Reports & Registry';
@@ -187,6 +192,12 @@ export function App() {
             )}
             {currentTab === 'students' && (
               <Students user={user} />
+            )}
+            {currentTab === 'teachers' && user.role === 'admin' && (
+              <Teachers user={user} onNavigate={setCurrentTab} />
+            )}
+            {currentTab === 'sections' && (
+              <AdminSettings initialTab="sections" />
             )}
             {currentTab === 'attendance' && (
               <Attendance user={user} />
