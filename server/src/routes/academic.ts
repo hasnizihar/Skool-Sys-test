@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { db } from '../db/database.js';
-import { requireAuth, requireRole, canAccessClass, canAccessStudent } from '../middleware/auth.js';
+import {
+  requireAuth,
+  requireRole,
+  canAccessClass,
+  canAccessStudent,
+  canAccessSection
+} from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
 import {
   getStudentSubjectEnrollments,
@@ -46,24 +52,50 @@ router.get('/grades', requireAuth, (req, res) => {
 
 // Classes list
 router.get('/classes', requireAuth, (req, res) => {
-  const { grade } = req.query;
+  const { grade, section_id } = req.query;
 
   let query = `
-    SELECT c.*, u.full_name as class_teacher_name,
+    SELECT c.*, sec.name as section_name, sec.code as section_code,
+      u.full_name as class_teacher_name,
       (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count
     FROM classes c
+    LEFT JOIN sections sec ON c.section_id = sec.id
     LEFT JOIN users u ON c.class_teacher_id = u.id
+    WHERE 1=1
   `;
   const params: any[] = [];
 
   if (grade) {
-    query += ' WHERE c.grade = ?';
+    query += ' AND c.grade = ?';
     params.push(Number(grade));
+  }
+
+  if (section_id) {
+    query += ' AND c.section_id = ?';
+    params.push(Number(section_id));
   }
 
   query += ' ORDER BY c.grade ASC, c.name ASC';
 
-  const classes = db.prepare(query).all(...params);
+  const classes = db.prepare(query).all(...params) as any[];
+
+  // Also attach all assigned class teachers per class
+  for (const cls of classes) {
+    const teachers = db.prepare(`
+      SELECT DISTINCT u.id, u.full_name, u.email
+      FROM teacher_assignments ta
+      JOIN users u ON ta.teacher_id = u.id
+      WHERE ta.class_id = ? AND ta.assignment_type = 'class_teacher'
+    `).all(cls.id) as any[];
+
+    // Include primary class_teacher_id if not in list
+    if (cls.class_teacher_id && !teachers.some((t: any) => t.id === cls.class_teacher_id)) {
+      const primaryTeacher = db.prepare('SELECT id, full_name, email FROM users WHERE id = ?').get(cls.class_teacher_id) as any;
+      if (primaryTeacher) teachers.unshift(primaryTeacher);
+    }
+    cls.class_teachers = teachers;
+  }
+
   res.json({ classes });
 });
 
@@ -468,6 +500,487 @@ router.patch('/enrollments/:id/drop', requireAuth, (req, res) => {
   } catch (err: any) {
     const status = err.statusCode || (err.message?.includes('Access denied') ? 403 : 400);
     res.status(status).json({ error: err.message || 'Failed to drop enrollment.' });
+  }
+});
+
+// ============================================================================
+// School Sections & Organizational Management (Phase 1)
+// ============================================================================
+
+// List Sections (Principal sees all; Section Head sees assigned sections)
+router.get('/sections', requireAuth, (req, res) => {
+  const user = req.user!;
+  try {
+    const sectionsSql = `
+      SELECT s.*
+      FROM sections s
+      ORDER BY s.name ASC
+    `;
+    const allSections = db.prepare(sectionsSql).all() as any[];
+
+    // Scoping: non-admin can only see sections they are assigned to
+    const visibleSections = user.role === 'admin'
+      ? allSections
+      : allSections.filter((s: any) => canAccessSection(user, s.id));
+
+    // Enrich each section with assigned classes and section heads
+    for (const sec of visibleSections) {
+      // Assigned classes
+      const secClasses = db.prepare(`
+        SELECT c.*, u.full_name as class_teacher_name,
+          (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count
+        FROM classes c
+        LEFT JOIN users u ON c.class_teacher_id = u.id
+        WHERE c.section_id = ?
+        ORDER BY c.grade ASC, c.name ASC
+      `).all(sec.id) as any[];
+
+      for (const cls of secClasses) {
+        const teachers = db.prepare(`
+          SELECT DISTINCT u.id, u.full_name, u.email
+          FROM teacher_assignments ta
+          JOIN users u ON ta.teacher_id = u.id
+          WHERE ta.class_id = ? AND ta.assignment_type = 'class_teacher'
+        `).all(cls.id) as any[];
+        if (cls.class_teacher_id && !teachers.some((t: any) => t.id === cls.class_teacher_id)) {
+          const pt = db.prepare('SELECT id, full_name, email FROM users WHERE id = ?').get(cls.class_teacher_id) as any;
+          if (pt) teachers.unshift(pt);
+        }
+        cls.class_teachers = teachers;
+      }
+      sec.classes = secClasses;
+
+      // Assigned section heads
+      sec.section_heads = db.prepare(`
+        SELECT sha.id as assignment_id, u.id, u.full_name, u.email, u.username, sha.assigned_at
+        FROM section_head_assignments sha
+        JOIN users u ON sha.user_id = u.id
+        WHERE sha.section_id = ?
+        ORDER BY u.full_name ASC
+      `).all(sec.id);
+    }
+
+    res.json({ sections: visibleSections });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list sections.' });
+  }
+});
+
+// Get Single Section Details
+router.get('/sections/:id', requireAuth, (req, res) => {
+  const sectionId = Number(req.params.id);
+  if (!sectionId || isNaN(sectionId)) {
+    res.status(400).json({ error: 'Valid section ID is required.' });
+    return;
+  }
+
+  if (!canAccessSection(req.user!, sectionId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to this section.', code: 'FORBIDDEN_SECTION' });
+    return;
+  }
+
+  const section = db.prepare(`
+    SELECT s.*
+    FROM sections s
+    WHERE s.id = ?
+  `).get(sectionId) as any;
+
+  if (!section) {
+    res.status(404).json({ error: 'Section not found.' });
+    return;
+  }
+
+  const secClasses = db.prepare(`
+    SELECT c.*, u.full_name as class_teacher_name,
+      (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count
+    FROM classes c
+    LEFT JOIN users u ON c.class_teacher_id = u.id
+    WHERE c.section_id = ?
+    ORDER BY c.grade ASC, c.name ASC
+  `).all(sectionId) as any[];
+
+  for (const cls of secClasses) {
+    const teachers = db.prepare(`
+      SELECT DISTINCT u.id, u.full_name, u.email
+      FROM teacher_assignments ta
+      JOIN users u ON ta.teacher_id = u.id
+      WHERE ta.class_id = ? AND ta.assignment_type = 'class_teacher'
+    `).all(cls.id) as any[];
+    if (cls.class_teacher_id && !teachers.some((t: any) => t.id === cls.class_teacher_id)) {
+      const pt = db.prepare('SELECT id, full_name, email FROM users WHERE id = ?').get(cls.class_teacher_id) as any;
+      if (pt) teachers.unshift(pt);
+    }
+    cls.class_teachers = teachers;
+  }
+  section.classes = secClasses;
+
+  section.section_heads = db.prepare(`
+    SELECT sha.id as assignment_id, u.id, u.full_name, u.email, u.username, sha.assigned_at
+    FROM section_head_assignments sha
+    JOIN users u ON sha.user_id = u.id
+    WHERE sha.section_id = ?
+    ORDER BY u.full_name ASC
+  `).all(sectionId);
+
+  res.json({ section });
+});
+
+// Create Section (Admin only)
+router.post('/sections', requireAuth, requireRole(['admin']), (req, res) => {
+  const { name, code, description, grade_range } = req.body;
+
+  if (!name || !String(name).trim() || !code || !String(code).trim()) {
+    res.status(400).json({ error: 'Section name and code are required.', code: 'VALIDATION_ERROR' });
+    return;
+  }
+
+  const existing = db.prepare('SELECT id FROM sections WHERE code = ?').get(String(code).trim());
+  if (existing) {
+    res.status(409).json({ error: `A section with code "${String(code).trim()}" already exists.`, code: 'SECTION_CODE_EXISTS' });
+    return;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO sections (name, code, description, grade_range)
+      VALUES (?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      String(name).trim(),
+      String(code).trim(),
+      description ? String(description).trim() : null,
+      grade_range ? String(grade_range).trim() : null
+    );
+    const sectionId = Number(result.lastInsertRowid);
+    const section = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId);
+
+    logAudit(req.user!.id, req.user!.username, 'SECTION_CREATE', 'sections', String(sectionId), { name, code, grade_range }, req.ip);
+
+    res.status(201).json({ success: true, section, sectionId, message: 'Section created successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create section.' });
+  }
+});
+
+// Update Section (Admin only)
+router.put('/sections/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const sectionId = Number(req.params.id);
+  const { name, code, description, grade_range } = req.body;
+
+  const current = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId) as any;
+  if (!current) {
+    res.status(404).json({ error: 'Section not found.' });
+    return;
+  }
+
+  try {
+    const newName = name !== undefined ? String(name).trim() : current.name;
+    const newCode = code !== undefined ? String(code).trim() : current.code;
+    const newDesc = description !== undefined ? (description ? String(description).trim() : null) : current.description;
+    const newRange = grade_range !== undefined ? (grade_range ? String(grade_range).trim() : null) : current.grade_range;
+
+    if (newCode !== current.code) {
+      const existing = db.prepare('SELECT id FROM sections WHERE code = ? AND id != ?').get(newCode, sectionId);
+      if (existing) {
+        res.status(409).json({ error: `A section with code "${newCode}" already exists.`, code: 'SECTION_CODE_EXISTS' });
+        return;
+      }
+    }
+
+    db.prepare(`
+      UPDATE sections SET
+        name = ?, code = ?, description = ?, grade_range = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(newName, newCode, newDesc, newRange, sectionId);
+
+    const updated = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId);
+
+    logAudit(req.user!.id, req.user!.username, 'SECTION_UPDATE', 'sections', String(sectionId), { previous: current, updated: { name: newName, code: newCode, grade_range: newRange } }, req.ip);
+
+    res.json({ success: true, section: updated, message: 'Section updated successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update section.' });
+  }
+});
+
+// Delete Section (Admin only)
+router.delete('/sections/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const sectionId = Number(req.params.id);
+
+  const current = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId) as any;
+  if (!current) {
+    res.status(404).json({ error: 'Section not found.' });
+    return;
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+    // 1. Unassign classes
+    db.prepare('UPDATE classes SET section_id = NULL WHERE section_id = ?').run(sectionId);
+    // 2. Remove section head assignments
+    db.prepare('DELETE FROM section_head_assignments WHERE section_id = ?').run(sectionId);
+    // 3. Delete section
+    db.prepare('DELETE FROM sections WHERE id = ?').run(sectionId);
+    db.exec('COMMIT;');
+
+    logAudit(req.user!.id, req.user!.username, 'SECTION_DELETE', 'sections', String(sectionId), { name: current.name, code: current.code }, req.ip);
+
+    res.json({ success: true, message: 'Section deleted successfully.' });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch { }
+    res.status(500).json({ error: err.message || 'Failed to delete section.' });
+  }
+});
+
+// Assign Classes to Section (Admin only)
+router.post('/sections/:id/classes', requireAuth, requireRole(['admin']), (req, res) => {
+  const sectionId = Number(req.params.id);
+  const rawIds = req.body.classIds || req.body.class_ids;
+
+  const section = db.prepare('SELECT id, name FROM sections WHERE id = ?').get(sectionId) as any;
+  if (!section) {
+    res.status(404).json({ error: 'Section not found.' });
+    return;
+  }
+
+  if (!Array.isArray(rawIds)) {
+    res.status(400).json({ error: 'classIds array is required.' });
+    return;
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+    const updateStmt = db.prepare('UPDATE classes SET section_id = ? WHERE id = ?');
+    for (const cId of rawIds) {
+      updateStmt.run(sectionId, Number(cId));
+    }
+    db.exec('COMMIT;');
+
+    logAudit(req.user!.id, req.user!.username, 'CLASS_SECTION_ASSIGN', 'sections', String(sectionId), { classIds: rawIds }, req.ip);
+
+    res.json({ success: true, message: `${rawIds.length} class(es) assigned to section "${section.name}".` });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch { }
+    res.status(500).json({ error: err.message || 'Failed to assign classes to section.' });
+  }
+});
+
+// Unassign Class from Section (Admin only)
+router.delete('/sections/:id/classes/:classId', requireAuth, requireRole(['admin']), (req, res) => {
+  const sectionId = Number(req.params.id);
+  const classId = Number(req.params.classId);
+
+  const cls = db.prepare('SELECT id, name, section_id FROM classes WHERE id = ?').get(classId) as any;
+  if (!cls) {
+    res.status(404).json({ error: 'Class not found.' });
+    return;
+  }
+
+  try {
+    db.prepare('UPDATE classes SET section_id = NULL WHERE id = ? AND section_id = ?').run(classId, sectionId);
+
+    logAudit(req.user!.id, req.user!.username, 'CLASS_SECTION_UNASSIGN', 'sections', String(sectionId), { classId, className: cls.name }, req.ip);
+
+    res.json({ success: true, message: `Class "${cls.name}" unassigned from section.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to unassign class from section.' });
+  }
+});
+
+// Assign Section Head (Admin only)
+router.post('/sections/:id/heads', requireAuth, requireRole(['admin']), (req, res) => {
+  const sectionId = Number(req.params.id);
+  const targetUserId = req.body.userId || req.body.user_id;
+
+  if (!targetUserId || isNaN(Number(targetUserId))) {
+    res.status(400).json({ error: 'Valid userId is required.' });
+    return;
+  }
+
+  const section = db.prepare('SELECT id, name FROM sections WHERE id = ?').get(sectionId) as any;
+  if (!section) {
+    res.status(404).json({ error: 'Section not found.' });
+    return;
+  }
+
+  const targetUser = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(Number(targetUserId)) as any;
+  if (!targetUser) {
+    res.status(404).json({ error: 'User not found.' });
+    return;
+  }
+
+  try {
+    // Idempotent assignment using INSERT OR IGNORE
+    db.prepare(`
+      INSERT OR IGNORE INTO section_head_assignments (section_id, user_id)
+      VALUES (?, ?)
+    `).run(sectionId, Number(targetUserId));
+
+    logAudit(req.user!.id, req.user!.username, 'SECTION_HEAD_ASSIGN', 'section_head_assignments', String(sectionId), { userId: targetUserId, userName: targetUser.full_name, sectionName: section.name }, req.ip);
+
+    res.status(200).json({ success: true, message: `"${targetUser.full_name}" assigned as Section Head for "${section.name}".` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to assign section head.' });
+  }
+});
+
+// Remove Section Head (Admin only)
+router.delete('/sections/:id/heads/:userId', requireAuth, requireRole(['admin']), (req, res) => {
+  const sectionId = Number(req.params.id);
+  const userId = Number(req.params.userId);
+
+  try {
+    const result = db.prepare(`
+      DELETE FROM section_head_assignments
+      WHERE section_id = ? AND user_id = ?
+    `).run(sectionId, userId);
+
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'Section head assignment not found.' });
+      return;
+    }
+
+    logAudit(req.user!.id, req.user!.username, 'SECTION_HEAD_REMOVE', 'section_head_assignments', String(sectionId), { userId }, req.ip);
+
+    res.json({ success: true, message: 'Section head assignment removed.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to remove section head.' });
+  }
+});
+
+// List Class Teachers for a Class
+router.get('/classes/:id/teachers', requireAuth, (req, res) => {
+  const classId = Number(req.params.id);
+  if (!classId || isNaN(classId)) {
+    res.status(400).json({ error: 'Valid class ID is required.' });
+    return;
+  }
+
+  if (!canAccessClass(req.user!, classId)) {
+    res.status(403).json({ error: 'Access denied. You are not assigned to this class.' });
+    return;
+  }
+
+  const cls = db.prepare('SELECT id, name, class_teacher_id FROM classes WHERE id = ?').get(classId) as any;
+  if (!cls) {
+    res.status(404).json({ error: 'Class not found.' });
+    return;
+  }
+
+  const teachers = db.prepare(`
+    SELECT DISTINCT u.id, u.full_name, u.email, u.username, ta.id as assignment_id
+    FROM teacher_assignments ta
+    JOIN users u ON ta.teacher_id = u.id
+    WHERE ta.class_id = ? AND ta.assignment_type = 'class_teacher'
+    ORDER BY u.full_name ASC
+  `).all(classId) as any[];
+
+  // Also include primary class_teacher_id if set and not in list
+  if (cls.class_teacher_id && !teachers.some((t: any) => t.id === cls.class_teacher_id)) {
+    const pt = db.prepare('SELECT id, full_name, email, username FROM users WHERE id = ?').get(cls.class_teacher_id) as any;
+    if (pt) {
+      pt.assignment_id = null;
+      teachers.unshift(pt);
+    }
+  }
+
+  res.json({ teachers });
+});
+
+// Assign Class Teacher to Class (Admin only)
+router.post('/classes/:id/teachers', requireAuth, requireRole(['admin']), (req, res) => {
+  const classId = Number(req.params.id);
+  const targetTeacherId = req.body.teacherId || req.body.teacher_id;
+
+  if (!targetTeacherId || isNaN(Number(targetTeacherId))) {
+    res.status(400).json({ error: 'Valid teacherId is required.' });
+    return;
+  }
+
+  const cls = db.prepare('SELECT id, name, academic_year_id, class_teacher_id FROM classes WHERE id = ?').get(classId) as any;
+  if (!cls) {
+    res.status(404).json({ error: 'Class not found.' });
+    return;
+  }
+
+  const teacher = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(Number(targetTeacherId)) as any;
+  if (!teacher) {
+    res.status(404).json({ error: 'Teacher not found.' });
+    return;
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+
+    // 1. Check if already assigned in teacher_assignments
+    const existing = db.prepare(`
+      SELECT id FROM teacher_assignments
+      WHERE teacher_id = ? AND class_id = ? AND assignment_type = 'class_teacher'
+    `).get(Number(targetTeacherId), classId);
+
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO teacher_assignments (teacher_id, class_id, assignment_type, academic_year_id)
+        VALUES (?, ?, 'class_teacher', ?)
+      `).run(Number(targetTeacherId), classId, cls.academic_year_id);
+    }
+
+    // 2. If classes.class_teacher_id is null, set for legacy compatibility
+    if (!cls.class_teacher_id) {
+      db.prepare('UPDATE classes SET class_teacher_id = ? WHERE id = ?').run(Number(targetTeacherId), classId);
+    }
+
+    db.exec('COMMIT;');
+
+    logAudit(req.user!.id, req.user!.username, 'CLASS_TEACHER_ASSIGN', 'classes', String(classId), { teacherId: targetTeacherId, teacherName: teacher.full_name, className: cls.name }, req.ip);
+
+    res.status(200).json({ success: true, message: `"${teacher.full_name}" assigned as Class Teacher for "${cls.name}".` });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch { }
+    res.status(500).json({ error: err.message || 'Failed to assign class teacher.' });
+  }
+});
+
+// Remove Class Teacher from Class (Admin only)
+router.delete('/classes/:id/teachers/:teacherId', requireAuth, requireRole(['admin']), (req, res) => {
+  const classId = Number(req.params.id);
+  const teacherId = Number(req.params.teacherId);
+
+  const cls = db.prepare('SELECT id, name, class_teacher_id FROM classes WHERE id = ?').get(classId) as any;
+  if (!cls) {
+    res.status(404).json({ error: 'Class not found.' });
+    return;
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+
+    // 1. Remove from teacher_assignments
+    db.prepare(`
+      DELETE FROM teacher_assignments
+      WHERE class_id = ? AND teacher_id = ? AND assignment_type = 'class_teacher'
+    `).run(classId, teacherId);
+
+    // 2. If this was classes.class_teacher_id, update to another assigned teacher or null
+    if (cls.class_teacher_id === teacherId) {
+      const remaining = db.prepare(`
+        SELECT teacher_id FROM teacher_assignments
+        WHERE class_id = ? AND assignment_type = 'class_teacher'
+        LIMIT 1
+      `).get(classId) as any;
+
+      const fallbackId = remaining ? remaining.teacher_id : null;
+      db.prepare('UPDATE classes SET class_teacher_id = ? WHERE id = ?').run(fallbackId, classId);
+    }
+
+    db.exec('COMMIT;');
+
+    logAudit(req.user!.id, req.user!.username, 'CLASS_TEACHER_REMOVE', 'classes', String(classId), { teacherId, className: cls.name }, req.ip);
+
+    res.json({ success: true, message: 'Class teacher unassigned successfully.' });
+  } catch (err: any) {
+    try { db.exec('ROLLBACK;'); } catch { }
+    res.status(500).json({ error: err.message || 'Failed to remove class teacher.' });
   }
 });
 

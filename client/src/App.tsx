@@ -11,11 +11,13 @@ import { AttendanceReports } from './pages/AttendanceReports';
 import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { AuditLogs } from './pages/AuditLogs';
+import { ClassroomStatusMonitoring } from './pages/ClassroomStatusMonitoring';
+import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
 import { getUnsyncedWorkSummary, clearCachedRostersForUser } from './api/offlineQueue';
 import { ToastProvider } from './ui';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
-const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'admin', 'audit'];
+const VALID_TABS = ['dashboard', 'students', 'attendance', 'attendance-reports', 'marks', 'classroom-status', 'mobile-classroom-status', 'admin', 'audit'];
 
 function getInitialTab(): string {
   const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
@@ -129,6 +131,8 @@ export function App() {
       case 'attendance': return 'Daily Attendance Register';
       case 'attendance-reports': return 'Attendance Reports & Registry';
       case 'marks': return 'Examination Marks & Reports';
+      case 'classroom-status': return 'Live Classroom Status Monitoring';
+      case 'mobile-classroom-status': return 'Section Head Walkthrough';
       case 'admin': return 'School Administration & Security';
       case 'audit': return 'System Audit Trail';
       default: return 'SkoolSys Management Portal';
@@ -179,6 +183,12 @@ export function App() {
             )}
             {currentTab === 'marks' && (
               <MarksEntry user={user} />
+            )}
+            {currentTab === 'classroom-status' && (
+              <ClassroomStatusMonitoring user={user} onNavigate={setCurrentTab} />
+            )}
+            {currentTab === 'mobile-classroom-status' && (
+              <MobileClassroomStatus user={user} onNavigate={setCurrentTab} />
             )}
             {currentTab === 'admin' && user.role === 'admin' && (
               <AdminSettings />

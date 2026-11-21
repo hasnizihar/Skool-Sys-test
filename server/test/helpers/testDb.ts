@@ -52,13 +52,33 @@ export function setupIsolatedTestDb(): TestFixtureData {
       is_current INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS sections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      grade_range TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS section_head_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT DEFAULT (datetime('now')),
+      assigned_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(section_id, user_id)
+    );
+
     CREATE TABLE classes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       grade INTEGER NOT NULL CHECK(grade >= 6 AND grade <= 13),
       name TEXT NOT NULL,
       room_number TEXT,
       academic_year_id INTEGER REFERENCES academic_years(id),
-      class_teacher_id INTEGER REFERENCES users(id)
+      class_teacher_id INTEGER REFERENCES users(id),
+      section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL
     );
 
     CREATE TABLE subjects (
@@ -175,6 +195,39 @@ export function setupIsolatedTestDb(): TestFixtureData {
       details TEXT,
       ip_address TEXT,
       timestamp TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS school_periods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_number INTEGER NOT NULL UNIQUE CHECK(period_number >= 1 AND period_number <= 9),
+      name TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1 CHECK(is_active IN (0, 1)),
+      sort_order INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS timetable_settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS classroom_period_statuses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      school_date TEXT NOT NULL,
+      period_number INTEGER NOT NULL CHECK(period_number >= 1 AND period_number <= 9),
+      status TEXT NOT NULL CHECK(status IN ('teaching', 'not_teaching', 'other_activity')),
+      substitute_teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      activity_note TEXT,
+      recorded_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      revision INTEGER DEFAULT 1 CHECK(revision >= 1),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(class_id, school_date, period_number)
     );
   `);
 

@@ -7,6 +7,7 @@ import studentRoutes from './routes/students.js';
 import attendanceRoutes from './routes/attendance.js';
 import marksRoutes from './routes/marks.js';
 import adminRoutes from './routes/admin.js';
+import classroomStatusRoutes from './routes/classroomStatus.js';
 
 export function createApp(): express.Application {
   const app = express();
@@ -38,6 +39,7 @@ export function createApp(): express.Application {
   app.use('/api/attendance', attendanceRoutes);
   app.use('/api/marks', marksRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/classroom-status', classroomStatusRoutes);
 
   // Global Error Handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

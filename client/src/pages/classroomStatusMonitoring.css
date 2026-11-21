@@ -1,0 +1,514 @@
+/* Classroom Status Monitoring — KCC SkoolSys Design Tokens */
+
+.csm-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Header & Controls */
+.csm-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.csm-title-area h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.csm-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #64748b);
+  margin-top: 0.25rem;
+}
+
+.csm-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.csm-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.csm-live-indicator.error {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.csm-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+  animation: csm-pulse 2s infinite;
+}
+
+@keyframes csm-pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* State Banners */
+.csm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.925rem;
+  flex-wrap: wrap;
+}
+
+.csm-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.csm-banner.warning {
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.csm-banner.info {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
+.csm-banner.break {
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+/* Period Navigation Bar */
+.csm-period-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+  scrollbar-width: thin;
+}
+
+.csm-period-label {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  white-space: nowrap;
+  margin-right: 0.25rem;
+}
+
+.csm-period-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #cbd5e1);
+  background: var(--card-bg, #ffffff);
+  color: var(--text-primary, #1e293b);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  min-width: 90px;
+}
+
+.csm-period-btn:hover {
+  border-color: #075e3b;
+  background-color: #f8fafc;
+}
+
+.csm-period-btn.active {
+  background-color: #075e3b;
+  color: #ffffff;
+  border-color: #075e3b;
+  box-shadow: 0 2px 4px rgba(7, 94, 59, 0.25);
+}
+
+.csm-pbtn-name {
+  font-size: 0.825rem;
+  font-weight: 700;
+}
+
+.csm-pbtn-time {
+  font-size: 0.675rem;
+  opacity: 0.85;
+}
+
+.csm-pbtn-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: #d97706;
+  color: #ffffff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-top: 2px;
+}
+
+/* KPI Summary Cards */
+.csm-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+}
+
+.csm-kpi-card {
+  padding: 1.15rem;
+  border-radius: 8px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.csm-kpi-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.csm-kpi-info h3 {
+  font-size: 0.775rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #64748b);
+  margin: 0;
+}
+
+.csm-kpi-value {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--text-primary, #0f172a);
+  line-height: 1.2;
+}
+
+.csm-kpi-pct {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #64748b);
+  margin-left: 0.4rem;
+}
+
+/* KPI Variants */
+.csm-kpi-green .csm-kpi-icon { background-color: #dcfce7; color: #15803d; }
+.csm-kpi-green { border-left: 4px solid #16a34a; }
+
+.csm-kpi-red .csm-kpi-icon { background-color: #fee2e2; color: #b91c1c; }
+.csm-kpi-red { border-left: 4px solid #dc2626; }
+
+.csm-kpi-yellow .csm-kpi-icon { background-color: #fef3c7; color: #b45309; }
+.csm-kpi-yellow { border-left: 4px solid #d97706; }
+
+.csm-kpi-white .csm-kpi-icon { background-color: #f1f5f9; color: #475569; }
+.csm-kpi-white { border-left: 4px solid #94a3b8; }
+
+/* Status Color Legend */
+.csm-legend {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.65rem 1rem;
+  background-color: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #64748b);
+  flex-wrap: wrap;
+}
+
+.csm-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.csm-legend-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.csm-chip-green { background-color: #22c55e; }
+.csm-chip-red { background-color: #ef4444; }
+.csm-chip-yellow { background-color: #f59e0b; }
+.csm-chip-white { background-color: #ffffff; border-color: #94a3b8; }
+
+/* Section Containers */
+.csm-sections-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.csm-section-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.csm-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background-color: #f8fafc;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.csm-section-title-group h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.csm-sec-badge {
+  font-size: 0.725rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background-color: #e2e8f0;
+  color: #334155;
+}
+
+.csm-section-stats {
+  font-size: 0.825rem;
+  color: var(--text-secondary, #64748b);
+  font-weight: 500;
+}
+
+/* Classroom Grid */
+.csm-classroom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.csm-class-box {
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 120px;
+  border: 1.5px solid transparent;
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+  position: relative;
+}
+
+.csm-class-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+}
+
+/* Status Appearance (WCAG AA Compliant High Contrast) */
+.csm-class-box.teaching {
+  background-color: #f0fdf4;
+  border-color: #86efac;
+}
+
+.csm-class-box.not_teaching {
+  background-color: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.csm-class-box.other_activity {
+  background-color: #fffbeb;
+  border-color: #fde68a;
+}
+
+.csm-class-box.pending {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.csm-box-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.csm-box-classname {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.csm-box-room {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.csm-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.725rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.csm-class-box.teaching .csm-status-pill {
+  background-color: #15803d;
+  color: #ffffff;
+}
+
+.csm-class-box.not_teaching .csm-status-pill {
+  background-color: #b91c1c;
+  color: #ffffff;
+}
+
+.csm-class-box.other_activity .csm-status-pill {
+  background-color: #b45309;
+  color: #ffffff;
+}
+
+.csm-class-box.pending .csm-status-pill {
+  background-color: #e2e8f0;
+  color: #475569;
+}
+
+.csm-box-middle {
+  margin: 0.5rem 0;
+}
+
+.csm-box-teacher {
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 500;
+}
+
+.csm-box-note {
+  font-size: 0.725rem;
+  color: #92400e;
+  background-color: rgba(217, 119, 6, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  margin-top: 0.35rem;
+  line-height: 1.3;
+}
+
+.csm-box-footer {
+  font-size: 0.675rem;
+  color: #64748b;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+  padding-top: 0.4rem;
+  margin-top: auto;
+}
+
+/* Unassigned Classes Section */
+.csm-unassigned-section {
+  border: 1px dashed #f59e0b;
+  background-color: #fffdfa;
+}
+
+.csm-unassigned-header {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+/* Timetable Modal Form */
+.csm-tt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.csm-tt-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.csm-tt-break {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 0.75rem;
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* Dark Theme Adjustments */
+[data-theme="dark"] .csm-section-header {
+  background-color: #1e293b;
+}
+
+[data-theme="dark"] .csm-class-box.pending {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .csm-class-box.teaching {
+  background-color: rgba(22, 163, 74, 0.12);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+[data-theme="dark"] .csm-class-box.not_teaching {
+  background-color: rgba(220, 38, 38, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+[data-theme="dark"] .csm-class-box.other_activity {
+  background-color: rgba(217, 119, 6, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+}

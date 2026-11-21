@@ -269,6 +269,30 @@ export const api = {
   getMonthlyAttendanceReport: (classId: number, year: number, month: number) =>
     apiFetch(`/api/attendance/reports/monthly?classId=${classId}&year=${year}&month=${month}`),
 
+  // Sections & School Structure (Phase 1)
+  getSections: () => apiFetch('/api/academic/sections'),
+  getSection: (id: number) => apiFetch(`/api/academic/sections/${id}`),
+  createSection: (payload: any) =>
+    apiFetch('/api/academic/sections', { method: 'POST', body: JSON.stringify(payload) }),
+  updateSection: (id: number, payload: any) =>
+    apiFetch(`/api/academic/sections/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteSection: (id: number) =>
+    apiFetch(`/api/academic/sections/${id}`, { method: 'DELETE' }),
+  assignSectionClasses: (id: number, classIds: number[]) =>
+    apiFetch(`/api/academic/sections/${id}/classes`, { method: 'POST', body: JSON.stringify({ classIds }) }),
+  unassignSectionClass: (id: number, classId: number) =>
+    apiFetch(`/api/academic/sections/${id}/classes/${classId}`, { method: 'DELETE' }),
+  assignSectionHead: (id: number, userId: number, academicYearId?: number) =>
+    apiFetch(`/api/academic/sections/${id}/heads`, { method: 'POST', body: JSON.stringify({ userId, academicYearId }) }),
+  removeSectionHead: (id: number, userId: number) =>
+    apiFetch(`/api/academic/sections/${id}/heads/${userId}`, { method: 'DELETE' }),
+  getClassTeachers: (classId: number) =>
+    apiFetch(`/api/academic/classes/${classId}/teachers`),
+  assignClassTeacher: (classId: number, teacherId: number) =>
+    apiFetch(`/api/academic/classes/${classId}/teachers`, { method: 'POST', body: JSON.stringify({ teacherId }) }),
+  removeClassTeacher: (classId: number, teacherId: number) =>
+    apiFetch(`/api/academic/classes/${classId}/teachers/${teacherId}`, { method: 'DELETE' }),
+
   // Admin
   getUsers: () => apiFetch('/api/admin/users'),
   createUser: (payload: any) =>
@@ -286,5 +310,50 @@ export const api = {
   restoreBackup: (backupData: any) =>
     apiFetch('/api/admin/restore', { method: 'POST', body: JSON.stringify({ backupData }) }),
   resetSeed: () =>
-    apiFetch('/api/admin/reset-seed', { method: 'POST' })
+    apiFetch('/api/admin/reset-seed', { method: 'POST' }),
+
+  // Classroom Status Tracking (Phase 2)
+  getClassroomStatusContext: (date?: string, period?: number) => {
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    if (period) params.set('period', String(period));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return apiFetch(`/api/classroom-status/context${qs}`);
+  },
+  getClassroomStatusOverview: (date?: string, period?: number) => {
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    if (period) params.set('period', String(period));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return apiFetch(`/api/classroom-status/overview${qs}`);
+  },
+  recordClassroomStatus: (payload: {
+    classId: number;
+    status: 'teaching' | 'not_teaching' | 'other_activity';
+    periodNumber?: number;
+    schoolDate?: string;
+    activityNote?: string;
+    expectedRevision?: number;
+  }) => apiFetch('/api/classroom-status/record', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+  getTimetableConfig: () => apiFetch('/api/classroom-status/timetable'),
+  updateTimetableConfig: (payload: {
+    periods: Array<{ periodNumber: number; name?: string; startTime: string; endTime: string }>;
+    breakAfterPeriod?: number;
+    breakStartTime?: string;
+    breakEndTime?: string;
+    breakName?: string;
+    schoolDays?: number[];
+  }) => apiFetch('/api/classroom-status/timetable', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }),
+  getClassroomStatusHistory: (classId: number, date?: string, period?: number) => {
+    const params = new URLSearchParams({ classId: String(classId) });
+    if (date) params.set('date', date);
+    if (period) params.set('period', String(period));
+    return apiFetch(`/api/classroom-status/history?${params.toString()}`);
+  }
 };

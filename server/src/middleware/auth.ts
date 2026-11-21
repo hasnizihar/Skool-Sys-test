@@ -71,22 +71,64 @@ export function getUserAssignments(userId: number) {
     WHERE asa.user_id = ? AND asa.revoked_at IS NULL
   `).all(userId) as any[];
 
+  // Explicit section head assignments (Phase 1 / Migration 007)
+  let sectionHeadSectionIds: number[] = [];
+  try {
+    const sHeads = db.prepare(`
+      SELECT section_id FROM section_head_assignments
+      WHERE user_id = ?
+    `).all(userId) as any[];
+    sectionHeadSectionIds = sHeads.map((s: any) => Number(s.section_id));
+
+    if (sectionHeadSectionIds.length > 0) {
+      const placeholders = sectionHeadSectionIds.map(() => '?').join(',');
+      const sectionClasses = db.prepare(`
+        SELECT id FROM classes
+        WHERE section_id IN (${placeholders})
+      `).all(...sectionHeadSectionIds) as any[];
+      sectionClasses.forEach((c: any) => {
+        assignedClassIds.add(Number(c.id));
+      });
+    }
+  } catch {
+    // Graceful fallback if table is in flux
+  }
+
   return {
     assignments: classAssignments,
     assignedClassIds: Array.from(assignedClassIds),
     classTeacherClassIds: Array.from(classTeacherClassIds),
     isClassTeacherFor: Array.from(classTeacherClassIds),
+    sectionHeadSectionIds,
     authorizations
   };
 }
 
 /**
- * Record-Level Authorization Policy Checks (PR-003)
+ * Record-Level Authorization Policy Checks (PR-003 & Phase 1)
  */
+export function canAccessSection(user: AuthUser, sectionId: number): boolean {
+  if (user.role === 'admin') return true;
+  const assignments = getUserAssignments(user.id);
+  return assignments.sectionHeadSectionIds.includes(Number(sectionId));
+}
+
+export function canManageSection(user: AuthUser): boolean {
+  return user.role === 'admin';
+}
+
 export function canAccessClass(user: AuthUser, classId: number): boolean {
   if (user.role === 'admin') return true;
   const assignments = getUserAssignments(user.id);
   if (assignments.assignedClassIds.includes(Number(classId))) return true;
+
+  // Check explicit section head assignment for the class's section
+  try {
+    const classSectionRow = db.prepare('SELECT section_id FROM classes WHERE id = ?').get(classId) as { section_id?: number } | undefined;
+    if (classSectionRow?.section_id && assignments.sectionHeadSectionIds.includes(Number(classSectionRow.section_id))) {
+      return true;
+    }
+  } catch {}
 
   // Also check academic staff leadership appointments
   const classRow = db.prepare('SELECT academic_year_id, grade FROM classes WHERE id = ?').get(classId) as { academic_year_id: number; grade: number } | undefined;

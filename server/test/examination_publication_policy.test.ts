@@ -1281,10 +1281,10 @@ describe('PR-005 Gate 4: Assessment Policies, Controlled Publication & Audited P
   });
 
   test('G4R-08b: Migration 006 idempotent execution and synthetic failure-injection rollback safety', () => {
-    // 1. Idempotency test: Run migration 006 against current database (already at schema v6)
+    // 1. Idempotency test: Run migration 006 against current database (already at schema v6 or higher)
     const repeatResult = runMigration006(db);
     assert.equal(repeatResult.applied, false, 'Repeat execution must return applied: false');
-    assert.equal(repeatResult.version, 6, 'Schema version remains 6');
+    assert.ok(repeatResult.version >= 6, 'Schema version remains >= 6');
 
     // 2. Synthetic failure injection test:
     // Create an isolated in-memory SQLite database

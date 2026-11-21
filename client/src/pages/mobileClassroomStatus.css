@@ -1,0 +1,425 @@
+/* Mobile Classroom Status Walkthrough — KCC SkoolSys */
+
+.mcs-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--page-bg, #f8fafc);
+  padding: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+  gap: 1rem;
+}
+
+/* Sticky Mobile Header */
+.mcs-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--card-bg, #ffffff);
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.mcs-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mcs-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-primary, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.mcs-period-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  background-color: #075e3b;
+  color: #ffffff;
+  border-radius: 9999px;
+  font-size: 0.775rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mcs-period-badge.warning {
+  background-color: #d97706;
+}
+
+/* Section Selector & Progress */
+.mcs-section-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mcs-section-selector label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mcs-select {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-color, #cbd5e1);
+  background-color: var(--card-bg, #ffffff);
+  color: var(--text-primary, #0f172a);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.mcs-progress-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.mcs-progress-track {
+  flex: 1;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.mcs-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #059669);
+  transition: width 0.3s ease;
+}
+
+.mcs-progress-text {
+  font-size: 0.775rem;
+  font-weight: 700;
+  color: var(--text-secondary, #64748b);
+  white-space: nowrap;
+}
+
+/* Classroom Cards Grid */
+.mcs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+}
+
+@media (min-width: 480px) {
+  .mcs-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.mcs-class-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem 0.85rem;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  min-height: 110px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  touch-action: manipulation;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.mcs-class-card:active {
+  transform: scale(0.96);
+}
+
+/* Status Colors & Contrast */
+.mcs-class-card.teaching {
+  background-color: #f0fdf4;
+  border-color: #22c55e;
+}
+
+.mcs-class-card.not_teaching {
+  background-color: #fef2f2;
+  border-color: #ef4444;
+}
+
+.mcs-class-card.other_activity {
+  background-color: #fffbeb;
+  border-color: #f59e0b;
+}
+
+.mcs-class-card.pending {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.mcs-card-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.mcs-card-room {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.mcs-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.725rem;
+  font-weight: 700;
+  margin-top: 0.5rem;
+  width: fit-content;
+}
+
+.mcs-class-card.teaching .mcs-card-badge {
+  background-color: #15803d;
+  color: #ffffff;
+}
+
+.mcs-class-card.not_teaching .mcs-card-badge {
+  background-color: #b91c1c;
+  color: #ffffff;
+}
+
+.mcs-class-card.other_activity .mcs-card-badge {
+  background-color: #b45309;
+  color: #ffffff;
+}
+
+.mcs-class-card.pending .mcs-card-badge {
+  background-color: #e2e8f0;
+  color: #475569;
+}
+
+/* Action Sheet Modal */
+.mcs-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 999;
+  backdrop-filter: blur(2px);
+  animation: mcs-fade-in 0.15s ease-out;
+}
+
+.mcs-sheet-content {
+  background: var(--card-bg, #ffffff);
+  width: 100%;
+  max-width: 550px;
+  border-radius: 18px 18px 0 0;
+  padding: 1.5rem 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  animation: mcs-slide-up 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+@keyframes mcs-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes mcs-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mcs-sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  padding-bottom: 0.75rem;
+}
+
+.mcs-sheet-title h2 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin: 0;
+  color: var(--text-primary, #0f172a);
+}
+
+.mcs-sheet-title p {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #64748b);
+  margin: 0.15rem 0 0;
+}
+
+.mcs-sheet-close {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #64748b;
+}
+
+/* 3 Large Action Buttons (Touch min 56px) */
+.mcs-button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.mcs-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 60px;
+}
+
+.mcs-action-btn:active {
+  transform: scale(0.98);
+}
+
+.mcs-action-btn.btn-green {
+  background-color: #f0fdf4;
+  border-color: #22c55e;
+  color: #15803d;
+}
+
+.mcs-action-btn.btn-green.selected,
+.mcs-action-btn.btn-green:hover {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.mcs-action-btn.btn-red {
+  background-color: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
+
+.mcs-action-btn.btn-red.selected,
+.mcs-action-btn.btn-red:hover {
+  background-color: #dc2626;
+  color: #ffffff;
+}
+
+.mcs-action-btn.btn-yellow {
+  background-color: #fffbeb;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+.mcs-action-btn.btn-yellow.selected,
+.mcs-action-btn.btn-yellow:hover {
+  background-color: #d97706;
+  color: #ffffff;
+}
+
+/* Note Input Box */
+.mcs-note-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mcs-note-box label {
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+}
+
+.mcs-note-input {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #cbd5e1);
+  font-size: 0.875rem;
+  background-color: var(--card-bg, #ffffff);
+  color: var(--text-primary, #0f172a);
+}
+
+/* Quick Tags */
+.mcs-quick-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.mcs-tag-btn {
+  font-size: 0.725rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+}
+
+.mcs-tag-btn:hover {
+  background-color: #e2e8f0;
+}
+
+/* Save & Navigation Row */
+.mcs-save-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* Conflict Banner */
+.mcs-conflict-banner {
+  background-color: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.825rem;
+  color: #92400e;
+}
+
+/* Dark Theme Adjustments */
+[data-theme="dark"] .mcs-class-card.pending {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .mcs-class-card.teaching {
+  background-color: rgba(22, 163, 74, 0.15);
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+[data-theme="dark"] .mcs-class-card.not_teaching {
+  background-color: rgba(220, 38, 38, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+[data-theme="dark"] .mcs-class-card.other_activity {
+  background-color: rgba(217, 119, 6, 0.15);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+[data-theme="dark"] .mcs-sheet-content {
+  background-color: #1e293b;
+}

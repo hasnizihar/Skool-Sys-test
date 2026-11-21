@@ -10,7 +10,9 @@ import {
   LogOut,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Activity,
+  Smartphone
 } from 'lucide-react';
 import './sidebar.css';
 
@@ -39,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const isAdmin = user?.role === 'admin';
   const isClassTeacher = user?.role === 'class_teacher' || isAdmin;
+  const isSectionHead = user?.role === 'section_head' || isAdmin;
 
   // Handle Escape key to close mobile drawer
   useEffect(() => {
@@ -190,6 +193,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <GraduationCap size={18} aria-hidden="true" />
             <span className="nav-item-label">Marks Management</span>
           </button>
+
+          {/* SECTION 4: LIVE OPERATIONS (PHASE 2) */}
+          <div className="nav-section-title">Live Tracking</div>
+
+          <button
+            type="button"
+            className={navClass('classroom-status')}
+            onClick={() => handleNav('classroom-status')}
+            aria-current={currentTab === 'classroom-status' ? 'page' : undefined}
+            data-tooltip="Classroom Status"
+            title={isCollapsed ? 'Classroom Status' : undefined}
+          >
+            <Activity size={18} aria-hidden="true" />
+            <span className="nav-item-label">Classroom Status</span>
+          </button>
+
+          {isSectionHead && (
+            <button
+              type="button"
+              className={navClass('mobile-classroom-status')}
+              onClick={() => handleNav('mobile-classroom-status')}
+              aria-current={currentTab === 'mobile-classroom-status' ? 'page' : undefined}
+              data-tooltip="Section Walkthrough"
+              title={isCollapsed ? 'Section Walkthrough' : undefined}
+            >
+              <Smartphone size={18} aria-hidden="true" />
+              <span className="nav-item-label">Section Walkthrough</span>
+            </button>
+          )}
 
           {/* SECTION 4: ADMINISTRATION (Admin Only) */}
           {isAdmin && (

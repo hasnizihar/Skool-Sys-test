@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import { runMigration004 } from './migrations/004_attendance_integrity.js';
 import { runMigration005 } from './migrations/005_examination_integrity.js';
 import { runMigration006 } from './migrations/006_examination_publication_policy.js';
+import { runMigration007 } from './migrations/007_school_sections_and_assignments.js';
+import { runMigration008 } from './migrations/008_classroom_status_tracking.js';
 import { createSafeDatabaseBackup, generateTimestampedBackupPath } from './backupUtils.js';
 
 export function getDbPath(): string {
@@ -109,7 +111,7 @@ export function hasDisposableMarker(targetDb: DatabaseSync = db): boolean {
 export function getPopulatedApplicationTables(targetDb: DatabaseSync = db): string[] {
   try {
     const tables = targetDb.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_skoolsys_disposable_marker'"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('_skoolsys_disposable_marker', 'timetable_settings')"
     ).all() as Array<{ name: string }>;
 
     const populated: string[] = [];
@@ -157,13 +159,33 @@ export function initDatabase() {
       is_current INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS sections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      code TEXT UNIQUE NOT NULL,
+      description TEXT,
+      grade_range TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS classes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       grade INTEGER NOT NULL CHECK(grade >= 6 AND grade <= 13),
       name TEXT NOT NULL,
       room_number TEXT,
       academic_year_id INTEGER REFERENCES academic_years(id),
-      class_teacher_id INTEGER REFERENCES users(id)
+      class_teacher_id INTEGER REFERENCES users(id),
+      section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS section_head_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT DEFAULT (datetime('now')),
+      assigned_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(section_id, user_id)
     );
 
     CREATE TABLE IF NOT EXISTS subjects (
@@ -330,6 +352,43 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_marks_exam_subject ON marks(examination_id, subject_id, class_id);
     CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_exam_schedules ON examination_schedules(examination_id, class_id);
+
+    CREATE TABLE IF NOT EXISTS school_periods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_number INTEGER NOT NULL UNIQUE CHECK(period_number >= 1 AND period_number <= 9),
+      name TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1 CHECK(is_active IN (0, 1)),
+      sort_order INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS timetable_settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS classroom_period_statuses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      school_date TEXT NOT NULL,
+      period_number INTEGER NOT NULL CHECK(period_number >= 1 AND period_number <= 9),
+      status TEXT NOT NULL CHECK(status IN ('teaching', 'not_teaching', 'other_activity')),
+      substitute_teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      activity_note TEXT,
+      recorded_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      revision INTEGER DEFAULT 1 CHECK(revision >= 1),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(class_id, school_date, period_number)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_classroom_period_lookup ON classroom_period_statuses(school_date, period_number, class_id);
+    CREATE INDEX IF NOT EXISTS idx_classroom_period_class ON classroom_period_statuses(class_id, school_date);
+    CREATE INDEX IF NOT EXISTS idx_classroom_period_recorded_by ON classroom_period_statuses(recorded_by_user_id);
   `;
 
   db.exec(schema);
@@ -344,31 +403,36 @@ export function initDatabase() {
   // Safe column migrations for examination_schedules in existing databases
   try {
     db.exec("ALTER TABLE examination_schedules ADD COLUMN status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('draft', 'approved'));");
-  } catch {}
+  } catch { }
   try {
     db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_by_user_id INTEGER REFERENCES users(id);');
-  } catch {}
+  } catch { }
   try {
     db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_at TEXT;');
-  } catch {}
+  } catch { }
   try {
     db.exec('ALTER TABLE examination_schedules ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
-  } catch {}
+  } catch { }
 
   // Safe column migrations for examinations in existing databases
   try {
     db.exec('ALTER TABLE examinations ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
-  } catch {}
+  } catch { }
 
   // Safe column migrations for marks_sheets in existing databases
   try {
     db.exec('ALTER TABLE marks_sheets ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
-  } catch {}
+  } catch { }
 
   // Safe column migrations for marks in existing databases
   try {
     db.exec("ALTER TABLE marks ADD COLUMN status TEXT DEFAULT 'submitted' CHECK(status IN ('draft', 'submitted', 'published'));");
-  } catch {}
+  } catch { }
+
+  // Safe column migration for classes in existing databases
+  try {
+    db.exec('ALTER TABLE classes ADD COLUMN section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL;');
+  } catch { }
 
   // Safe migration 004: Attendance integrity, revisions & receipts
   // Inspect whether migration 004 is needed
@@ -506,6 +570,106 @@ export function initDatabase() {
         console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
       }
       throw new Error(`Migration 006 failed: ${migErr.message}. Server startup halted.`);
+    }
+  }
+
+  // Safe migration 007: School Sections & Multi-Head / Multi-Teacher Assignments
+  const vRow7 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
+  const ver7 = Number(vRow7?.user_version || 0);
+
+  const sectionsTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'sections';"
+  ).get() as { cnt: number };
+  const hasSectionsTable = Number(sectionsTableCheck?.cnt || 0) > 0;
+
+  const sectionHeadsTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'section_head_assignments';"
+  ).get() as { cnt: number };
+  const hasSectionHeadsTable = Number(sectionHeadsTableCheck?.cnt || 0) > 0;
+
+  const classCols = db.prepare("SELECT name FROM pragma_table_info('classes')").all() as { name: string }[];
+  const hasClassesSectionId = classCols.some((c) => c.name === 'section_id');
+
+  const needsMigration007 = ver7 < 7 || !hasSectionsTable || !hasSectionHeadsTable || !hasClassesSectionId;
+
+  if (needsMigration007) {
+    let backupPath: string | null = null;
+    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
+      try {
+        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
+        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
+        createSafeDatabaseBackup(db, backupPath);
+        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 007!');
+        console.error(backupErr.message);
+        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
+      }
+    }
+
+    try {
+      const result = runMigration007(db);
+      if (result.applied) {
+        console.log(`[Database Migration] Migration 007 applied successfully (Schema V${result.version}).`);
+      }
+    } catch (migErr: any) {
+      console.error('\n❌ FATAL: Migration 007 failed during server startup!');
+      console.error(migErr.message);
+      if (backupPath) {
+        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
+      }
+      throw new Error(`Migration 007 failed: ${migErr.message}. Server startup halted.`);
+    }
+  }
+
+  // Safe migration 008: Period-Based Live Classroom Status Tracking
+  const vRow8 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
+  const ver8 = Number(vRow8?.user_version || 0);
+
+  const periodsTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'school_periods';"
+  ).get() as { cnt: number };
+  const hasPeriodsTable = Number(periodsTableCheck?.cnt || 0) > 0;
+
+  const statusTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'classroom_period_statuses';"
+  ).get() as { cnt: number };
+  const hasStatusTable = Number(statusTableCheck?.cnt || 0) > 0;
+
+  const settingsTableCheck = db.prepare(
+    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'timetable_settings';"
+  ).get() as { cnt: number };
+  const hasSettingsTable = Number(settingsTableCheck?.cnt || 0) > 0;
+
+  const needsMigration008 = ver8 < 8 || !hasPeriodsTable || !hasStatusTable || !hasSettingsTable;
+
+  if (needsMigration008) {
+    let backupPath: string | null = null;
+    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
+      try {
+        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
+        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
+        createSafeDatabaseBackup(db, backupPath);
+        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 008!');
+        console.error(backupErr.message);
+        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
+      }
+    }
+
+    try {
+      const result = runMigration008(db);
+      if (result.applied) {
+        console.log(`[Database Migration] Migration 008 applied successfully (Schema V${result.version}).`);
+      }
+    } catch (migErr: any) {
+      console.error('\n❌ FATAL: Migration 008 failed during server startup!');
+      console.error(migErr.message);
+      if (backupPath) {
+        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
+      }
+      throw new Error(`Migration 008 failed: ${migErr.message}. Server startup halted.`);
     }
   }
 }
