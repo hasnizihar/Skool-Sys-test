@@ -144,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Primary Navigation Links */}
         <nav className="nav-links" aria-label="Primary Navigation">
-          {/* SECTION 1: OVERVIEW */}
+          {/* SECTION 1: OVERVIEW & LIVE TRACKING */}
           <div className="nav-section-title">Overview</div>
 
           <button
@@ -158,6 +158,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <LayoutDashboard size={18} aria-hidden="true" />
             <span className="nav-item-label">Dashboard</span>
           </button>
+
+          <button
+            type="button"
+            className={navClass('classroom-status')}
+            onClick={() => handleNav('classroom-status')}
+            aria-current={currentTab === 'classroom-status' ? 'page' : undefined}
+            data-tooltip="Live Tracking"
+            title={isCollapsed ? 'Live Tracking' : undefined}
+          >
+            <Activity size={18} aria-hidden="true" />
+            <span className="nav-item-label">Live Tracking</span>
+          </button>
+
+          {isSectionHead && (
+            <button
+              type="button"
+              className={navClass('mobile-classroom-status')}
+              onClick={() => handleNav('mobile-classroom-status')}
+              aria-current={currentTab === 'mobile-classroom-status' ? 'page' : undefined}
+              data-tooltip="Section Walkthrough"
+              title={isCollapsed ? 'Section Walkthrough' : undefined}
+            >
+              <Smartphone size={18} aria-hidden="true" />
+              <span className="nav-item-label">Section Walkthrough</span>
+            </button>
+          )}
 
           {/* SECTION 2: PEOPLE & STRUCTURE */}
           <div className="nav-section-title">People & Structure</div>
@@ -256,35 +282,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <GraduationCap size={18} aria-hidden="true" />
               <span className="nav-item-label">Marks Management</span>
-            </button>
-          )}
-
-          {/* SECTION 4: LIVE OPERATIONS (PHASE 2) */}
-          <div className="nav-section-title">Live Tracking</div>
-
-          <button
-            type="button"
-            className={navClass('classroom-status')}
-            onClick={() => handleNav('classroom-status')}
-            aria-current={currentTab === 'classroom-status' ? 'page' : undefined}
-            data-tooltip="Classroom Status"
-            title={isCollapsed ? 'Classroom Status' : undefined}
-          >
-            <Activity size={18} aria-hidden="true" />
-            <span className="nav-item-label">Classroom Status</span>
-          </button>
-
-          {isSectionHead && (
-            <button
-              type="button"
-              className={navClass('mobile-classroom-status')}
-              onClick={() => handleNav('mobile-classroom-status')}
-              aria-current={currentTab === 'mobile-classroom-status' ? 'page' : undefined}
-              data-tooltip="Section Walkthrough"
-              title={isCollapsed ? 'Section Walkthrough' : undefined}
-            >
-              <Smartphone size={18} aria-hidden="true" />
-              <span className="nav-item-label">Section Walkthrough</span>
             </button>
           )}
 
