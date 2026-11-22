@@ -48,7 +48,6 @@ export function runMigration007(db: DatabaseSync): Migration007Result {
       CREATE TABLE IF NOT EXISTS sections (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        code TEXT UNIQUE NOT NULL,
         description TEXT,
         grade_range TEXT,
         created_at TEXT DEFAULT (datetime('now')),
@@ -56,9 +55,30 @@ export function runMigration007(db: DatabaseSync): Migration007Result {
       );
     `);
 
-    // Ensure grade_range column exists if sections table was pre-existing
+    // Ensure code column is removed if sections table was pre-existing
     const secCols = db.prepare("SELECT name FROM pragma_table_info('sections')").all() as { name: string }[];
-    if (!secCols.some((c) => c.name === 'grade_range')) {
+    if (secCols.some((c) => c.name === 'code')) {
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE IF NOT EXISTS sections_nocode (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          description TEXT,
+          grade_range TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO sections_nocode (id, name, description, grade_range, created_at, updated_at)
+        SELECT id, name, description, grade_range, created_at, updated_at FROM sections;
+        DROP TABLE sections;
+        ALTER TABLE sections_nocode RENAME TO sections;
+        PRAGMA foreign_keys = ON;
+      `);
+    }
+
+    // Ensure grade_range column exists if sections table was pre-existing
+    const existingCols = db.prepare("SELECT name FROM pragma_table_info('sections')").all() as { name: string }[];
+    if (!existingCols.some((c) => c.name === 'grade_range')) {
       db.exec('ALTER TABLE sections ADD COLUMN grade_range TEXT;');
     }
 

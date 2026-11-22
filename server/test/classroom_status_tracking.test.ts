@@ -67,9 +67,9 @@ describe('Phase 2: Live Classroom Status Tracking & 9-Period Timetable Tests', (
     regularClassTeacher = { id: ctId, username: 'ct_phase2', token: await login('ct_phase2') };
 
     // 3. Create Sections (Junior Grades 6-9, Senior Grades 10-11)
-    const insSec = db.prepare('INSERT INTO sections (name, code, grade_range) VALUES (?, ?, ?)');
-    sectionJuniorId = Number(insSec.run('Junior Secondary', 'SEC_JUNIOR', '6-9').lastInsertRowid);
-    sectionSeniorId = Number(insSec.run('Senior Secondary', 'SEC_SENIOR', '10-11').lastInsertRowid);
+    const insSec = db.prepare('INSERT INTO sections (name, grade_range) VALUES (?, ?)');
+    sectionJuniorId = Number(insSec.run('Junior Secondary', '6-9').lastInsertRowid);
+    sectionSeniorId = Number(insSec.run('Senior Secondary', '10-11').lastInsertRowid);
 
     // 4. Assign classes:
     // Class A -> Junior Section
@@ -81,8 +81,8 @@ describe('Phase 2: Live Classroom Status Tracking & 9-Period Timetable Tests', (
     db.prepare('UPDATE classes SET section_id = ? WHERE id = ?').run(sectionJuniorId, classJuniorAId);
     db.prepare('UPDATE classes SET section_id = ? WHERE id = ?').run(sectionJuniorId, classJuniorBId);
 
-    const insCls = db.prepare('INSERT INTO classes (grade, name, room_number, academic_year_id, section_id) VALUES (?, ?, ?, 1, ?)');
-    classSeniorAId = Number(insCls.run(10, 'Grade 10-A', 'Room 301', sectionSeniorId).lastInsertRowid);
+    const insCls = db.prepare('INSERT INTO classes (grade, name, academic_year_id, section_id) VALUES (?, ?, 1, ?)');
+    classSeniorAId = Number(insCls.run(10, 'Grade 10-A', sectionSeniorId).lastInsertRowid);
 
     // 5. Assign Section Heads:
     // sh1 -> Junior Section

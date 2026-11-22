@@ -3,8 +3,6 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { runMigration004 } from './migrations/004_attendance_integrity.js';
-import { runMigration005 } from './migrations/005_examination_integrity.js';
-import { runMigration006 } from './migrations/006_examination_publication_policy.js';
 import { runMigration007 } from './migrations/007_school_sections_and_assignments.js';
 import { runMigration008 } from './migrations/008_classroom_status_tracking.js';
 import { createSafeDatabaseBackup, generateTimestampedBackupPath } from './backupUtils.js';
@@ -162,7 +160,6 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS sections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      code TEXT UNIQUE NOT NULL,
       description TEXT,
       grade_range TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -173,7 +170,6 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       grade INTEGER NOT NULL CHECK(grade >= 6 AND grade <= 13),
       name TEXT NOT NULL,
-      room_number TEXT,
       academic_year_id INTEGER REFERENCES academic_years(id),
       class_teacher_id INTEGER REFERENCES users(id),
       section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL
@@ -265,34 +261,6 @@ export function initDatabase() {
       UNIQUE(session_id, student_id)
     );
 
-    CREATE TABLE IF NOT EXISTS examinations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      term INTEGER NOT NULL CHECK(term IN (1, 2, 3)),
-      academic_year_id INTEGER REFERENCES academic_years(id),
-      start_date TEXT,
-      end_date TEXT,
-      max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0),
-      is_published INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS marks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      examination_id INTEGER NOT NULL REFERENCES examinations(id) ON DELETE CASCADE,
-      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-      subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-      score REAL,
-      is_absent INTEGER DEFAULT 0,
-      is_exempt INTEGER DEFAULT 0,
-      max_score REAL DEFAULT 100,
-      grade_letter TEXT,
-      status TEXT DEFAULT 'submitted' CHECK(status IN ('draft', 'submitted', 'published')),
-      entered_by_user_id INTEGER REFERENCES users(id),
-      updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(examination_id, subject_id, student_id)
-    );
-
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER REFERENCES users(id),
@@ -305,53 +273,68 @@ export function initDatabase() {
       timestamp TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS examination_schedules (
+    CREATE TABLE IF NOT EXISTS academic_terms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      examination_id INTEGER NOT NULL REFERENCES examinations(id) ON DELETE CASCADE,
-      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-      subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-      max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0),
-      is_required INTEGER NOT NULL DEFAULT 1 CHECK(is_required IN (0, 1)),
-      status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('draft', 'approved')),
-      approved_by_user_id INTEGER REFERENCES users(id),
-      approved_at TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(examination_id, class_id, subject_id)
+      academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+      term_number INTEGER NOT NULL CHECK(term_number IN (1, 2, 3)),
+      name TEXT NOT NULL,
+      start_date TEXT,
+      end_date TEXT,
+      is_verified INTEGER NOT NULL DEFAULT 0 CHECK(is_verified IN (0, 1)),
+      UNIQUE(academic_year_id, term_number)
     );
 
-    CREATE TRIGGER IF NOT EXISTS trg_prevent_exam_schedule_insert_after_publish
-    BEFORE INSERT ON examination_schedules
-    BEGIN
-      SELECT CASE
-        WHEN (SELECT is_published FROM examinations WHERE id = NEW.examination_id) = 1
-        THEN RAISE(ABORT, 'Cannot modify examination schedule after examination has been published.')
-      END;
-    END;
+    CREATE TABLE IF NOT EXISTS academic_staff_authorizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+      auth_role TEXT NOT NULL CHECK(auth_role IN (
+        'principal',
+        'vice_principal_academic',
+        'section_head'
+      )),
+      grade_band TEXT NOT NULL CHECK(grade_band IN ('junior_6_9', 'ol_10_11', 'al_12_13', 'all')),
+      is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+      granted_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      granted_at TEXT DEFAULT (datetime('now')),
+      revoked_by_user_id INTEGER REFERENCES users(id),
+      revoked_at TEXT,
+      revocation_reason TEXT,
+      UNIQUE(user_id, academic_year_id, auth_role, grade_band)
+    );
 
-    CREATE TRIGGER IF NOT EXISTS trg_prevent_exam_schedule_update_after_publish
-    BEFORE UPDATE ON examination_schedules
-    BEGIN
-      SELECT CASE
-        WHEN (SELECT is_published FROM examinations WHERE id = OLD.examination_id) = 1
-        THEN RAISE(ABORT, 'Cannot modify examination schedule after examination has been published.')
-      END;
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS trg_prevent_exam_schedule_delete_after_publish
-    BEFORE DELETE ON examination_schedules
-    BEGIN
-      SELECT CASE
-        WHEN (SELECT is_published FROM examinations WHERE id = OLD.examination_id) = 1
-        THEN RAISE(ABORT, 'Cannot modify examination schedule after examination has been published.')
-      END;
-    END;
+    CREATE TABLE IF NOT EXISTS student_subject_enrollments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+      enrollment_status TEXT NOT NULL DEFAULT 'provisional_unverified' CHECK(enrollment_status IN (
+        'confirmed',
+        'provisional_unverified',
+        'dropped',
+        'transferred'
+      )),
+      enrollment_category TEXT NOT NULL CHECK(enrollment_category IN (
+        'core_compulsory',
+        'religion_specific',
+        'language_specific',
+        'ol_basket_1',
+        'ol_basket_2',
+        'ol_basket_3',
+        'al_stream_main',
+        'al_common_compulsory'
+      )),
+      created_at TEXT DEFAULT (datetime('now')),
+      verified_by_user_id INTEGER REFERENCES users(id),
+      verified_at TEXT,
+      UNIQUE(student_id, subject_id, academic_year_id)
+    );
 
     CREATE INDEX IF NOT EXISTS idx_students_admission ON students(admission_no);
     CREATE INDEX IF NOT EXISTS idx_enrollments_class ON enrollments(class_id, academic_year_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_sessions(date, class_id);
-    CREATE INDEX IF NOT EXISTS idx_marks_exam_subject ON marks(examination_id, subject_id, class_id);
     CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp DESC);
-    CREATE INDEX IF NOT EXISTS idx_exam_schedules ON examination_schedules(examination_id, class_id);
 
     CREATE TABLE IF NOT EXISTS school_periods (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -389,6 +372,52 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_classroom_period_lookup ON classroom_period_statuses(school_date, period_number, class_id);
     CREATE INDEX IF NOT EXISTS idx_classroom_period_class ON classroom_period_statuses(class_id, school_date);
     CREATE INDEX IF NOT EXISTS idx_classroom_period_recorded_by ON classroom_period_statuses(recorded_by_user_id);
+
+    CREATE TABLE IF NOT EXISTS school_information (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      school_name_en TEXT NOT NULL,
+      school_name_ta TEXT,
+      school_name_si TEXT,
+      secondary_title TEXT,
+      census_no TEXT NOT NULL,
+      school_type TEXT NOT NULL,
+      address_line1 TEXT NOT NULL,
+      address_line2 TEXT,
+      district TEXT NOT NULL,
+      province TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT 'Sri Lanka',
+      postal_code TEXT,
+      zone TEXT NOT NULL,
+      division TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT NOT NULL,
+      principal_name TEXT NOT NULL,
+      principal_notes TEXT,
+      founded_year INTEGER,
+      student_category TEXT DEFAULT 'Boys',
+      medium TEXT DEFAULT 'Tamil / English',
+      supported_grades TEXT DEFAULT 'Grades 6–13',
+      emblem_status TEXT DEFAULT 'verified',
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by_user_id INTEGER REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS school_daily_period_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_of_week TEXT NOT NULL CHECK(day_of_week IN ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')),
+      period_number INTEGER NOT NULL CHECK(period_number >= 1 AND period_number <= 12),
+      name TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      period_type TEXT NOT NULL DEFAULT 'teaching' CHECK(period_type IN ('assembly', 'teaching', 'interval', 'prayer', 'extra_curricular', 'other')),
+      is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+      sort_order INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(day_of_week, period_number)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_school_daily_schedule ON school_daily_period_schedules(day_of_week, period_number);
   `;
 
   db.exec(schema);
@@ -400,39 +429,43 @@ export function initDatabase() {
     // Column already exists
   }
 
-  // Safe column migrations for examination_schedules in existing databases
-  try {
-    db.exec("ALTER TABLE examination_schedules ADD COLUMN status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('draft', 'approved'));");
-  } catch { }
-  try {
-    db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_by_user_id INTEGER REFERENCES users(id);');
-  } catch { }
-  try {
-    db.exec('ALTER TABLE examination_schedules ADD COLUMN approved_at TEXT;');
-  } catch { }
-  try {
-    db.exec('ALTER TABLE examination_schedules ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
-  } catch { }
-
-  // Safe column migrations for examinations in existing databases
-  try {
-    db.exec('ALTER TABLE examinations ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
-  } catch { }
-
-  // Safe column migrations for marks_sheets in existing databases
-  try {
-    db.exec('ALTER TABLE marks_sheets ADD COLUMN max_score REAL NOT NULL DEFAULT 100.0 CHECK(max_score > 0.0 AND max_score <= 1000.0);');
-  } catch { }
-
-  // Safe column migrations for marks in existing databases
-  try {
-    db.exec("ALTER TABLE marks ADD COLUMN status TEXT DEFAULT 'submitted' CHECK(status IN ('draft', 'submitted', 'published'));");
-  } catch { }
-
   // Safe column migration for classes in existing databases
   try {
     db.exec('ALTER TABLE classes ADD COLUMN section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL;');
   } catch { }
+
+  // Safe migration: drop 'room_number' column from classes if it exists in pre-existing database
+  try {
+    const classTableCols = db.prepare("SELECT name FROM pragma_table_info('classes')").all() as { name: string }[];
+    if (classTableCols.some((c) => c.name === 'room_number')) {
+      db.exec('ALTER TABLE classes DROP COLUMN room_number;');
+    }
+  } catch { }
+
+  // Safe migration: drop 'code' column from sections if it exists in pre-existing database
+  try {
+    const secTableCols = db.prepare("SELECT name FROM pragma_table_info('sections')").all() as { name: string }[];
+    if (secTableCols.some((c) => c.name === 'code')) {
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE IF NOT EXISTS sections_nocode (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          description TEXT,
+          grade_range TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO sections_nocode (id, name, description, grade_range, created_at, updated_at)
+        SELECT id, name, description, grade_range, created_at, updated_at FROM sections;
+        DROP TABLE sections;
+        ALTER TABLE sections_nocode RENAME TO sections;
+        PRAGMA foreign_keys = ON;
+      `);
+    }
+  } catch (err) {
+    // Ignore migration notice
+  }
 
   // Safe migration 004: Attendance integrity, revisions & receipts
   // Inspect whether migration 004 is needed
@@ -481,95 +514,6 @@ export function initDatabase() {
       }
       console.error('Server startup halted to prevent schema corruption or partial state.\n');
       throw new Error(`Migration 004 failed: ${migErr.message}. Server startup halted.`);
-    }
-  }
-
-  // Safe migration 005: Examination integrity, canonical marks & audit trail
-  const vRow5 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
-  const ver5 = Number(vRow5?.user_version || 0);
-
-  const sheetsTableCheck = db.prepare(
-    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'marks_sheets';"
-  ).get() as { cnt: number };
-  const hasSheetsTable = Number(sheetsTableCheck?.cnt || 0) > 0;
-
-  const marksSheetIdCheck = db.prepare(
-    "SELECT COUNT(*) as cnt FROM pragma_table_info('marks') WHERE name = 'sheet_id';"
-  ).get() as { cnt: number };
-  const hasSheetIdCol = Number(marksSheetIdCheck?.cnt || 0) > 0;
-
-  const needsMigration005 = ver5 < 5 || !hasSheetsTable || !hasSheetIdCol;
-
-  if (needsMigration005) {
-    let backupPath: string | null = null;
-    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
-      try {
-        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
-        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
-        createSafeDatabaseBackup(db, backupPath);
-        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
-      } catch (backupErr: any) {
-        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 005!');
-        console.error(backupErr.message);
-        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
-      }
-    }
-
-    try {
-      const result = runMigration005(db);
-      if (result.applied) {
-        console.log(
-          `[Database Migration] Migration 005 applied successfully (Schema V${result.version}). Migrated ${result.migratedMarks} marks across ${result.migratedSheets} sheets, quarantined ${result.quarantinedMarks} ambiguous marks.`
-        );
-      }
-    } catch (migErr: any) {
-      console.error('\n❌ FATAL: Migration 005 failed during server startup!');
-      console.error(migErr.message);
-      if (backupPath) {
-        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
-      }
-      throw new Error(`Migration 005 failed: ${migErr.message}. Server startup halted.`);
-    }
-  }
-
-  // Safe migration 006: Examination publication governance, versioned policies, and post-publication corrections
-  const vRow6 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
-  const ver6 = Number(vRow6?.user_version || 0);
-
-  const pubTableCheck = db.prepare(
-    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type = 'table' AND name = 'examination_publications';"
-  ).get() as { cnt: number };
-  const hasPubTable = Number(pubTableCheck?.cnt || 0) > 0;
-
-  const needsMigration006 = ver6 < 6 || !hasPubTable;
-
-  if (needsMigration006) {
-    let backupPath: string | null = null;
-    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
-      try {
-        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
-        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
-        createSafeDatabaseBackup(db, backupPath);
-        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
-      } catch (backupErr: any) {
-        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 006!');
-        console.error(backupErr.message);
-        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
-      }
-    }
-
-    try {
-      const result = runMigration006(db);
-      if (result.applied) {
-        console.log(`[Database Migration] Migration 006 applied successfully (Schema V${result.version}).`);
-      }
-    } catch (migErr: any) {
-      console.error('\n❌ FATAL: Migration 006 failed during server startup!');
-      console.error(migErr.message);
-      if (backupPath) {
-        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
-      }
-      throw new Error(`Migration 006 failed: ${migErr.message}. Server startup halted.`);
     }
   }
 

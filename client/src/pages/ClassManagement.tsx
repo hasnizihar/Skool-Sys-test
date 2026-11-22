@@ -17,6 +17,7 @@ import {
   Alert,
   Box
 } from '@mantine/core';
+import { useForm, isNotEmpty } from '@mantine/form';
 import {
   School,
   Plus,
@@ -44,10 +45,8 @@ interface ClassItem {
   id: number;
   grade: number;
   name: string;
-  room_number?: string | null;
   section_id?: number | null;
   section_name?: string | null;
-  section_code?: string | null;
   class_teacher_id?: number | null;
   class_teacher_name?: string | null;
   student_count?: number;
@@ -70,27 +69,51 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
-  // Create Modal
+  // Create Modal & Form powered by @mantine/form
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    grade: '8',
-    name: '',
-    room_number: '',
-    section_id: '',
-    class_teacher_id: ''
+  const createClassForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      grade: '8',
+      name: '',
+      section_id: '',
+      class_teacher_id: '',
+    },
+    validate: {
+      name: isNotEmpty('Class name is required (e.g. Grade 8-C)'),
+      grade: isNotEmpty('Grade level is required'),
+    },
+    transformValues: (values) => ({
+      grade: Number(values.grade),
+      name: values.name.trim(),
+      section_id: values.section_id ? Number(values.section_id) : undefined,
+      class_teacher_id: values.class_teacher_id ? Number(values.class_teacher_id) : undefined,
+    }),
   });
 
-  // Edit Modal
+  // Edit Modal & Form powered by @mantine/form
   const [showEditModal, setShowEditModal] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editingClass, setEditingClass] = useState<ClassItem | null>(null);
-  const [editForm, setEditForm] = useState({
-    grade: '8',
-    name: '',
-    room_number: '',
-    section_id: '',
-    class_teacher_id: ''
+  const editClassForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      grade: '8',
+      name: '',
+      section_id: '',
+      class_teacher_id: '',
+    },
+    validate: {
+      name: isNotEmpty('Class name cannot be empty'),
+      grade: isNotEmpty('Grade level is required'),
+    },
+    transformValues: (values) => ({
+      grade: Number(values.grade),
+      name: values.name.trim(),
+      section_id: values.section_id ? Number(values.section_id) : null,
+      class_teacher_id: values.class_teacher_id ? Number(values.class_teacher_id) : null,
+    }),
   });
 
   // Delete Confirm Modal
@@ -137,9 +160,8 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesName = c.name?.toLowerCase().includes(q);
-        const matchesRoom = c.room_number?.toLowerCase().includes(q);
         const matchesSection = c.section_name?.toLowerCase().includes(q);
-        if (!matchesName && !matchesRoom && !matchesSection) return false;
+        if (!matchesName && !matchesSection) return false;
       }
       if (selectedGrade && Number(selectedGrade) !== c.grade) {
         return false;
@@ -164,33 +186,15 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
     return { total, withSection, unassigned, totalStudents };
   }, [classes]);
 
-  // Handle Create Class
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!createForm.name.trim()) {
-      showAppNotification.error('Validation Error', 'Class name is required (e.g. Grade 8-C).');
-      return;
-    }
-
+  // Handle Create Class with @mantine/form
+  const handleCreateSubmit = createClassForm.onSubmit(async (transformedValues) => {
     try {
       setCreateLoading(true);
-      await api.createClass({
-        grade: Number(createForm.grade),
-        name: createForm.name.trim(),
-        room_number: createForm.room_number.trim() || undefined,
-        section_id: createForm.section_id ? Number(createForm.section_id) : undefined,
-        class_teacher_id: createForm.class_teacher_id ? Number(createForm.class_teacher_id) : undefined
-      });
+      await api.createClass(transformedValues);
 
-      showAppNotification.success('Class Created', `Class "${createForm.name}" created successfully.`);
+      showAppNotification.success('Class Created', `Class "${transformedValues.name}" created successfully.`);
       setShowCreateModal(false);
-      setCreateForm({
-        grade: '8',
-        name: '',
-        room_number: '',
-        section_id: '',
-        class_teacher_id: ''
-      });
+      createClassForm.reset();
       loadData();
       onClassChanged?.();
     } catch (err: any) {
@@ -198,41 +202,29 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
     } finally {
       setCreateLoading(false);
     }
-  };
+  });
 
   // Open Edit Modal
   const openEditModal = (c: ClassItem) => {
     setEditingClass(c);
-    setEditForm({
+    editClassForm.setValues({
       grade: String(c.grade),
       name: c.name,
-      room_number: c.room_number || '',
       section_id: c.section_id ? String(c.section_id) : '',
       class_teacher_id: c.class_teacher_id ? String(c.class_teacher_id) : ''
     });
     setShowEditModal(true);
   };
 
-  // Handle Edit Submit
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle Edit Submit with @mantine/form
+  const handleEditSubmit = editClassForm.onSubmit(async (transformedValues) => {
     if (!editingClass) return;
-    if (!editForm.name.trim()) {
-      showAppNotification.error('Validation Error', 'Class name cannot be empty.');
-      return;
-    }
 
     try {
       setEditLoading(true);
-      await api.updateClass(editingClass.id, {
-        grade: Number(editForm.grade),
-        name: editForm.name.trim(),
-        room_number: editForm.room_number.trim() || null,
-        section_id: editForm.section_id ? Number(editForm.section_id) : null,
-        class_teacher_id: editForm.class_teacher_id ? Number(editForm.class_teacher_id) : null
-      });
+      await api.updateClass(editingClass.id, transformedValues);
 
-      showAppNotification.success('Class Updated', `Class "${editForm.name}" updated successfully.`);
+      showAppNotification.success('Class Updated', `Class "${transformedValues.name}" updated successfully.`);
       setShowEditModal(false);
       setEditingClass(null);
       loadData();
@@ -242,7 +234,7 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
     } finally {
       setEditLoading(false);
     }
-  };
+  });
 
   // Handle Safe Delete
   const handleConfirmDelete = async () => {
@@ -453,7 +445,6 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                   <Table.Th style={{ width: 140 }}>Class Name</Table.Th>
                   <Table.Th style={{ width: 90 }}>Grade</Table.Th>
                   <Table.Th>Assigned Section</Table.Th>
-                  <Table.Th style={{ width: 130 }}>Room Number</Table.Th>
                   <Table.Th style={{ width: 110 }}>Students</Table.Th>
                   <Table.Th>Class Teacher(s)</Table.Th>
                   <Table.Th style={{ textAlign: 'right', width: 160 }}>Actions</Table.Th>
@@ -488,12 +479,6 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                             Unassigned
                           </Badge>
                         )}
-                      </Table.Td>
-
-                      <Table.Td>
-                        <Text size="xs" c={cls.room_number ? 'slate.7' : 'dimmed'}>
-                          {cls.room_number || '—'}
-                        </Text>
                       </Table.Td>
 
                       <Table.Td>
@@ -577,7 +562,7 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
         )}
       </Card>
 
-      {/* 4. Create Class Modal */}
+      {/* 4. Create Class Modal powered by @mantine/form */}
       <Modal
         opened={showCreateModal}
         onClose={() => setShowCreateModal(false)}
@@ -599,23 +584,16 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                 value: String(g),
                 label: `Grade ${g}`
               }))}
-              value={createForm.grade}
-              onChange={(val) => setCreateForm((prev) => ({ ...prev, grade: val || '8' }))}
+              key={createClassForm.key('grade')}
+              {...createClassForm.getInputProps('grade')}
             />
 
             <TextInput
               label="Class Name"
               required
               placeholder="e.g. Grade 8-C"
-              value={createForm.name}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
-            />
-
-            <TextInput
-              label="Room Number"
-              placeholder="e.g. Block B - 203"
-              value={createForm.room_number}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, room_number: e.target.value }))}
+              key={createClassForm.key('name')}
+              {...createClassForm.getInputProps('name')}
             />
 
             <Select
@@ -625,11 +603,11 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                 { value: '', label: 'None (Unassigned)' },
                 ...sections.map((s) => ({
                   value: String(s.id),
-                  label: `${s.name} (${s.code})`
+                  label: s.name
                 }))
               ]}
-              value={createForm.section_id}
-              onChange={(val) => setCreateForm((prev) => ({ ...prev, section_id: val || '' }))}
+              key={createClassForm.key('section_id')}
+              {...createClassForm.getInputProps('section_id')}
               clearable
             />
 
@@ -643,8 +621,8 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                   label: `${t.full_name} (${t.email})`
                 }))
               ]}
-              value={createForm.class_teacher_id}
-              onChange={(val) => setCreateForm((prev) => ({ ...prev, class_teacher_id: val || '' }))}
+              key={createClassForm.key('class_teacher_id')}
+              {...createClassForm.getInputProps('class_teacher_id')}
               clearable
             />
 
@@ -652,7 +630,7 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
               <Button variant="default" onClick={() => setShowCreateModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" color="refinedBlue" loading={createLoading}>
+              <Button type="submit" color="refinedBlue" loading={createLoading || createClassForm.submitting}>
                 Create Class
               </Button>
             </Group>
@@ -660,7 +638,7 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
         </form>
       </Modal>
 
-      {/* 5. Edit Class Modal */}
+      {/* 5. Edit Class Modal powered by @mantine/form */}
       <Modal
         opened={showEditModal}
         onClose={() => setShowEditModal(false)}
@@ -682,23 +660,16 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                 value: String(g),
                 label: `Grade ${g}`
               }))}
-              value={editForm.grade}
-              onChange={(val) => setEditForm((prev) => ({ ...prev, grade: val || '8' }))}
+              key={editClassForm.key('grade')}
+              {...editClassForm.getInputProps('grade')}
             />
 
             <TextInput
               label="Class Name"
               required
               placeholder="e.g. Grade 8-C"
-              value={editForm.name}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
-            />
-
-            <TextInput
-              label="Room Number"
-              placeholder="e.g. Block B - 203"
-              value={editForm.room_number}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, room_number: e.target.value }))}
+              key={editClassForm.key('name')}
+              {...editClassForm.getInputProps('name')}
             />
 
             <Select
@@ -708,11 +679,11 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                 { value: '', label: 'None (Unassigned)' },
                 ...sections.map((s) => ({
                   value: String(s.id),
-                  label: `${s.name} (${s.code})`
+                  label: s.name
                 }))
               ]}
-              value={editForm.section_id}
-              onChange={(val) => setEditForm((prev) => ({ ...prev, section_id: val || '' }))}
+              key={editClassForm.key('section_id')}
+              {...editClassForm.getInputProps('section_id')}
               clearable
             />
 
@@ -726,8 +697,8 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
                   label: `${t.full_name} (${t.email})`
                 }))
               ]}
-              value={editForm.class_teacher_id}
-              onChange={(val) => setEditForm((prev) => ({ ...prev, class_teacher_id: val || '' }))}
+              key={editClassForm.key('class_teacher_id')}
+              {...editClassForm.getInputProps('class_teacher_id')}
               clearable
             />
 
@@ -741,7 +712,7 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
               <Button variant="default" onClick={() => setShowEditModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" color="refinedBlue" loading={editLoading}>
+              <Button type="submit" color="refinedBlue" loading={editLoading || editClassForm.submitting}>
                 Save Changes
               </Button>
             </Group>

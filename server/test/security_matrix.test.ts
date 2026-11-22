@@ -66,11 +66,6 @@ describe('4. Security Baseline & Negative Authorization Matrix Tests', () => {
       assert.equal(res.status, 401);
     });
 
-    it('rejects GET /api/marks/sheet without token with 401', async () => {
-      const res = await server.request('/api/marks/sheet?examId=1&classId=1&subjectId=1');
-      assert.equal(res.status, 401);
-    });
-
     it('rejects GET /api/attendance/session without token with 401', async () => {
       const res = await server.request('/api/attendance/session?classId=1&date=2026-10-18');
       assert.equal(res.status, 401);

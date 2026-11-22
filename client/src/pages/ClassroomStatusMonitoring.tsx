@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Activity,
   CheckCircle2,
@@ -6,11 +6,12 @@ import {
   HelpCircle,
   AlertTriangle,
   RotateCw,
-  Clock,
   Coffee,
   Building2,
-  Settings,
-  Smartphone
+  Smartphone,
+  School,
+  Moon,
+  RotateCcw
 } from 'lucide-react';
 import {
   Paper,
@@ -21,14 +22,11 @@ import {
   Text,
   Title,
   SimpleGrid,
-  Modal,
   Box,
-  ScrollArea,
   Alert,
   Tooltip
 } from '@mantine/core';
 import { api } from '../api/client';
-import { Input } from '../ui/Input';
 import { useToast } from '../ui/useToast';
 import { LoadingState, EmptyState } from '../ui/mantine';
 import './classroomStatusMonitoring.css';
@@ -38,6 +36,14 @@ interface Props {
   onNavigate?: (tab: string) => void;
 }
 
+const cleanTeacherName = (name?: string | null): string => {
+  if (!name) return 'No Class Teacher';
+  return name
+    .replace(/^DEMO ONLY:\s*/i, '')
+    .replace(/\s*\(Synthetic[^)]*\)/i, '')
+    .trim();
+};
+
 export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate }) => {
   const { showToast: addToast } = useToast();
   const [data, setData] = useState<any>(null);
@@ -46,24 +52,6 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
   const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-
-  // Timetable Configuration Modal State
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [configLoading, setConfigLoading] = useState(false);
-  const [periodsForm, setPeriodsForm] = useState<Array<{ periodNumber: number; name: string; startTime: string; endTime: string }>>([
-    { periodNumber: 1, name: 'Period 1', startTime: '07:50', endTime: '08:30' },
-    { periodNumber: 2, name: 'Period 2', startTime: '08:30', endTime: '09:10' },
-    { periodNumber: 3, name: 'Period 3', startTime: '09:10', endTime: '09:50' },
-    { periodNumber: 4, name: 'Period 4', startTime: '09:50', endTime: '10:30' },
-    { periodNumber: 5, name: 'Period 5', startTime: '10:50', endTime: '11:30' },
-    { periodNumber: 6, name: 'Period 6', startTime: '11:30', endTime: '12:10' },
-    { periodNumber: 7, name: 'Period 7', startTime: '12:10', endTime: '12:50' },
-    { periodNumber: 8, name: 'Period 8', startTime: '12:50', endTime: '13:30' },
-    { periodNumber: 9, name: 'Period 9', startTime: '13:30', endTime: '14:10' }
-  ]);
-  const [breakStartTime, setBreakStartTime] = useState('10:30');
-  const [breakEndTime, setBreakEndTime] = useState('10:50');
-  const [breakName, setBreakName] = useState('Interval / Recess');
 
   const pollIntervalRef = useRef<any>(null);
 
@@ -123,101 +111,96 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
     };
   }, [fetchOverview]);
 
-  // Load existing timetable config if modal opens
-  const openTimetableConfig = async () => {
-    try {
-      setConfigLoading(true);
-      const res = await api.getTimetableConfig();
-      if (res?.config?.periods?.length === 9) {
-        setPeriodsForm(res.config.periods.map((p: any) => ({
-          periodNumber: p.period_number,
-          name: p.name,
-          startTime: p.start_time,
-          endTime: p.end_time
-        })));
-        if (res.config.breakStartTime) setBreakStartTime(res.config.breakStartTime);
-        if (res.config.breakEndTime) setBreakEndTime(res.config.breakEndTime);
-        if (res.config.breakName) setBreakName(res.config.breakName);
-      }
-    } catch {
-      // Use defaults
-    } finally {
-      setConfigLoading(false);
-      setShowConfigModal(true);
-    }
-  };
-
-  const handleSaveTimetable = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setConfigLoading(true);
-      await api.updateTimetableConfig({
-        periods: periodsForm,
-        breakAfterPeriod: 4,
-        breakStartTime,
-        breakEndTime,
-        breakName,
-        schoolDays: [1, 2, 3, 4, 5]
-      });
-
-      addToast({
-        title: 'Timetable Saved',
-        message: 'The official 9-period timetable has been configured successfully.',
-        type: 'success'
-      });
-      setShowConfigModal(false);
-      fetchOverview();
-    } catch (err: any) {
-      addToast({
-        title: 'Configuration Error',
-        message: err.message || 'Failed to update timetable configuration.',
-        type: 'error'
-      });
-    } finally {
-      setConfigLoading(false);
-    }
-  };
-
-  const loadStandardSriLankanPreset = () => {
-    setPeriodsForm([
-      { periodNumber: 1, name: 'Period 1', startTime: '07:50', endTime: '08:30' },
-      { periodNumber: 2, name: 'Period 2', startTime: '08:30', endTime: '09:10' },
-      { periodNumber: 3, name: 'Period 3', startTime: '09:10', endTime: '09:50' },
-      { periodNumber: 4, name: 'Period 4', startTime: '09:50', endTime: '10:30' },
-      { periodNumber: 5, name: 'Period 5', startTime: '10:50', endTime: '11:30' },
-      { periodNumber: 6, name: 'Period 6', startTime: '11:30', endTime: '12:10' },
-      { periodNumber: 7, name: 'Period 7', startTime: '12:10', endTime: '12:50' },
-      { periodNumber: 8, name: 'Period 8', startTime: '12:50', endTime: '13:30' },
-      { periodNumber: 9, name: 'Period 9', startTime: '13:30', endTime: '14:10' }
-    ]);
-    setBreakStartTime('10:30');
-    setBreakEndTime('10:50');
-    setBreakName('Interval / Recess');
-  };
-
   const context = data?.context;
   const summary = data?.summary || { total: 0, teaching: 0, notTeaching: 0, otherActivity: 0, pending: 0 };
   const sections = data?.sections || [];
   const unassignedClasses = data?.unassignedClasses || [];
 
+  // Organize sections into a cohesive Bento Grid layout:
+  // A/L Stream sections (Arts, Commerce, Science, Technology) first,
+  // followed by Secondary Sections (Secondary 1, 2, 3)
+  const sortedSections = useMemo(() => {
+    return [...sections].sort((a: any, b: any) => {
+      const aIsSec = /secondary/i.test(a.name) || (a.gradeRange && a.gradeRange.includes('6'));
+      const bIsSec = /secondary/i.test(b.name) || (b.gradeRange && b.gradeRange.includes('6'));
+      if (aIsSec && !bIsSec) return 1;
+      if (!aIsSec && bIsSec) return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [sections]);
+
+  const getBentoSpanClass = (classCount: number, sectionName: string) => {
+    if (classCount >= 10 || /secondary/i.test(sectionName)) {
+      return 'csm-bento-span-4';
+    }
+    return 'csm-bento-span-6';
+  };
+
+  const isSchoolEnded = context?.state === 'after_school' || context?.state === 'weekend';
+  const isViewingLive = selectedPeriod === null;
+
+  // Enforce: only Teaching Periods are selectable for status monitoring
+  const teachingPeriods = useMemo(() => {
+    const list = context?.availablePeriods || [];
+    const filtered = list.filter((p: any) => p.isTeaching !== false && p.periodType === 'teaching');
+    if (filtered.length > 0) return filtered;
+    const nonBreaks = list.filter(
+      (p: any) =>
+        p.periodType !== 'interval' &&
+        p.periodType !== 'prayer' &&
+        p.periodType !== 'assembly' &&
+        p.periodType !== 'extra_curricular' &&
+        p.periodType !== 'other'
+    );
+    if (nonBreaks.length > 0) return nonBreaks;
+    return [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
+      periodNumber: n,
+      name: `Period ${n}`,
+      startTime: '',
+      endTime: '',
+      isTeaching: true,
+      periodType: 'teaching'
+    }));
+  }, [context?.availablePeriods]);
+
+  // Current schedule status indicator on the right side of the ribbon (only when reviewing a period)
+  const renderCurrentStatusSide = () => {
+    if (selectedPeriod !== null) {
+      return (
+        <Group gap={6}>
+          <Badge color="blue" size="sm" variant="filled">
+            Reviewing: Period {selectedPeriod}
+          </Badge>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color="gray"
+            onClick={() => setSelectedPeriod(null)}
+            title="Return to real-time status"
+          >
+            Live View &times;
+          </Button>
+        </Group>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="csm-container">
       {/* 1. Header & Live Indicator */}
-      <Paper p="md" radius="lg" withBorder shadow="xs" className="csm-header-card">
+      <Paper p="sm" radius="lg" withBorder shadow="xs" className="csm-header-card">
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
           <div className="csm-title-area">
             <Group gap="xs" align="center">
-              <Activity className="csm-title-icon" size={26} aria-hidden="true" />
+              <Activity className="csm-title-icon" size={24} aria-hidden="true" />
               <Title order={2} className="csm-title">
                 Classroom Status Monitoring
               </Title>
             </Group>
-            <Text size="sm" c="dimmed" mt={2} className="csm-subtitle">
-              Live school-wide teaching status tracking across school sections · Kattankudy Central College
-            </Text>
           </div>
 
-          <Group gap="sm" wrap="wrap" className="csm-actions">
+          <Group gap="sm" wrap="wrap" className="csm-actions" align="center">
             <div
               className={`csm-live-indicator ${isLiveConnected ? '' : 'error'}`}
               title={lastSyncTime ? `Last synced: ${lastSyncTime}` : undefined}
@@ -225,7 +208,7 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
               <span className="csm-pulse-dot" aria-hidden="true" />
               <span>
                 {isLiveConnected
-                  ? `Live Updates (5s) ${lastSyncTime ? `· ${lastSyncTime}` : ''}`
+                  ? `Live (5s)${lastSyncTime ? ` · ${lastSyncTime}` : ''}`
                   : 'Connecting...'}
               </span>
             </div>
@@ -239,17 +222,6 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
             >
               Refresh
             </Button>
-
-            {user?.role === 'admin' && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={openTimetableConfig}
-                leftSection={<Settings size={15} />}
-              >
-                Timetable
-              </Button>
-            )}
 
             {/* Quick link for Section Heads to Mobile Mode */}
             {onNavigate && (
@@ -266,7 +238,7 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
         </Group>
       </Paper>
 
-      {/* 2. Status Banners (Unconfigured / Break / Non-School Hours) */}
+      {/* 2. Status Banners (Unconfigured / Break) */}
       {context && !context.configured && (
         <Alert
           icon={<AlertTriangle size={20} />}
@@ -276,11 +248,11 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
         >
           <Group justify="space-between" align="center" wrap="wrap" gap="sm">
             <Text size="sm">
-              The official 9-period timetable has not been configured yet. Classroom statuses will default to unconfirmed until period times are set.
+              The official 9-period timetable has not been configured yet. Classroom statuses will default to unconfirmed until period times are set in School Settings.
             </Text>
-            {user?.role === 'admin' && (
-              <Button size="xs" color="yellow" variant="filled" onClick={openTimetableConfig}>
-                Configure Timetable
+            {user?.role === 'admin' && onNavigate && (
+              <Button size="xs" color="yellow" variant="filled" onClick={() => onNavigate('settings')}>
+                Go to School Settings
               </Button>
             )}
           </Group>
@@ -301,54 +273,77 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
         </Alert>
       )}
 
-      {context && context.configured && (context.state === 'before_school' || context.state === 'after_school' || context.state === 'weekend') && (
-        <Alert
-          icon={<Clock size={20} />}
-          title="Current Period Status"
-          color="blue"
-          radius="md"
-        >
-          <Text size="sm">
-            {context.message}. You may select a period below to inspect recorded historical statuses.
-          </Text>
-        </Alert>
-      )}
-
       {/* 3. Period Selector Ribbon */}
-      <Paper p="xs" radius="md" withBorder shadow="xs">
-        <ScrollArea type="auto" offsetScrollbars>
-          <nav className="csm-period-bar" aria-label="School Period Selection">
-            <span className="csm-period-label">Period:</span>
+      <Paper p="xs" radius="md" withBorder shadow="xs" className="csm-period-ribbon-card">
+        <div className="csm-period-ribbon-wrapper">
+          <div className="csm-period-bar-container">
+            {/* Real-time Live Mode Toggle Button */}
             <button
               type="button"
-              className={`csm-period-btn ${selectedPeriod === null ? 'active' : ''}`}
+              className={`csm-live-btn ${selectedPeriod === null ? 'active' : ''} ${isSchoolEnded ? 'ended' : context?.isBreak ? 'break' : 'live'}`}
               onClick={() => setSelectedPeriod(null)}
-              title="Current active period as resolved by school civil time"
+              aria-current={selectedPeriod === null ? 'page' : undefined}
+              title={selectedPeriod !== null ? 'Click to return to real-time status' : 'Viewing real-time status'}
             >
-              <span className="csm-pbtn-name">Current</span>
-              <span className="csm-pbtn-time">{context?.currentTime || 'Active'}</span>
+              {selectedPeriod === null ? (
+                <>
+                  {isSchoolEnded ? (
+                    <>
+                      <Moon size={14} aria-hidden="true" />
+                      <span>Live Status</span>
+                    </>
+                  ) : context?.isBreak ? (
+                    <>
+                      <Coffee size={14} aria-hidden="true" />
+                      <span>Live &middot; {context?.periodName || 'Interval'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="csm-pulse-dot" aria-hidden="true" />
+                      <span>Live &middot; Period {context?.periodNumber || 1}</span>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <RotateCcw size={13} aria-hidden="true" />
+                  <span>Return to Live</span>
+                </>
+              )}
             </button>
 
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((pNum) => {
-              const isCurrentActive = context?.periodNumber === pNum;
-              const pInfo = context?.availablePeriods?.find((p: any) => p.periodNumber === pNum);
+            <div className="csm-ribbon-divider" aria-hidden="true" />
 
-              return (
-                <button
-                  key={pNum}
-                  type="button"
-                  className={`csm-period-btn ${selectedPeriod === pNum ? 'active' : ''}`}
-                  onClick={() => setSelectedPeriod(pNum)}
-                  aria-current={selectedPeriod === pNum ? 'page' : undefined}
-                >
-                  <span className="csm-pbtn-name">Period {pNum}</span>
-                  <span className="csm-pbtn-time">{pInfo ? `${pInfo.startTime} - ${pInfo.endTime}` : `P${pNum}`}</span>
-                  {isCurrentActive && <span className="csm-pbtn-badge">Now</span>}
-                </button>
-              );
-            })}
-          </nav>
-        </ScrollArea>
+            <nav className="csm-period-bar" aria-label="School Period Selection">
+              {teachingPeriods.map((pInfo: any, index: number) => {
+                const pNum = pInfo.periodNumber;
+                const isSelected = selectedPeriod === pNum;
+                const label = pInfo.name && /^Period\s+\d+$/i.test(pInfo.name)
+                  ? pInfo.name
+                  : `Period ${index + 1}`;
+
+                return (
+                  <button
+                    key={pNum}
+                    type="button"
+                    className={`csm-period-btn ${isSelected ? 'active' : ''}`}
+                    onClick={() => setSelectedPeriod(selectedPeriod === pNum ? null : pNum)}
+                    aria-current={isSelected ? 'page' : undefined}
+                    title={isSelected ? 'Click again to return to live view' : `Inspect ${label} records`}
+                  >
+                    <span className="csm-pbtn-name">{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {selectedPeriod !== null && (
+            <div className="csm-current-status-side">
+              {renderCurrentStatusSide()}
+            </div>
+          )}
+        </div>
       </Paper>
 
       {/* 4. KPI Stat Summary Cards */}
@@ -398,42 +393,73 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
           </div>
         </div>
 
-        <div className="csm-kpi-card csm-kpi-white">
-          <div className="csm-kpi-icon" aria-hidden="true">
-            <HelpCircle size={24} />
-          </div>
-          <div className="csm-kpi-info">
-            <h3>Pending / Unconfirmed</h3>
-            <div className="csm-kpi-value">
-              {summary.pending}
-              <span className="csm-kpi-pct">
-                ({summary.total > 0 ? Math.round((summary.pending / summary.total) * 100) : 0}%)
-              </span>
+        {isSchoolEnded && isViewingLive ? (
+          <div className="csm-kpi-card csm-kpi-grey">
+            <div className="csm-kpi-icon" aria-hidden="true">
+              <Moon size={24} />
+            </div>
+            <div className="csm-kpi-info">
+              <h3>School Ended</h3>
+              <div className="csm-kpi-value">
+                {summary.schoolEnded ?? summary.pending ?? summary.total}
+                <span className="csm-kpi-pct">
+                  ({summary.total > 0 ? Math.round(((summary.schoolEnded ?? summary.pending ?? summary.total) / summary.total) * 100) : 0}%)
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="csm-kpi-card csm-kpi-white">
+            <div className="csm-kpi-icon" aria-hidden="true">
+              <HelpCircle size={24} />
+            </div>
+            <div className="csm-kpi-info">
+              <h3>Pending</h3>
+              <div className="csm-kpi-value">
+                {summary.pending}
+                <span className="csm-kpi-pct">
+                  ({summary.total > 0 ? Math.round((summary.pending / summary.total) * 100) : 0}%)
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 5. Status Legend */}
       <Paper p="xs" radius="md" withBorder shadow="xs">
         <div className="csm-legend" aria-label="Status Color Code Legend">
-          <strong>Legend:</strong>
-          <div className="csm-legend-item">
-            <span className="csm-legend-chip csm-chip-green" aria-hidden="true" />
-            <span>Teaching (Assigned teaching taking place)</span>
-          </div>
-          <div className="csm-legend-item">
-            <span className="csm-legend-chip csm-chip-red" aria-hidden="true" />
-            <span>Not Teaching (Confirmed not teaching)</span>
-          </div>
-          <div className="csm-legend-item">
-            <span className="csm-legend-chip csm-chip-yellow" aria-hidden="true" />
-            <span>Other Activity (Substitute / School event)</span>
-          </div>
-          <div className="csm-legend-item">
-            <span className="csm-legend-chip csm-chip-white" aria-hidden="true" />
-            <span>Pending (Awaiting reading for this period)</span>
-          </div>
+          <strong className="csm-legend-title">Legend:</strong>
+          <Tooltip label="Assigned teaching taking place in classroom" withArrow position="top">
+            <div className="csm-legend-item">
+              <span className="csm-legend-chip csm-chip-green" aria-hidden="true" />
+              <span>Teaching</span>
+            </div>
+          </Tooltip>
+          <Tooltip label="Confirmed teacher absent or not teaching" withArrow position="top">
+            <div className="csm-legend-item">
+              <span className="csm-legend-chip csm-chip-red" aria-hidden="true" />
+              <span>Not Teaching</span>
+            </div>
+          </Tooltip>
+          <Tooltip label="Substitute teacher, assembly, or school event" withArrow position="top">
+            <div className="csm-legend-item">
+              <span className="csm-legend-chip csm-chip-yellow" aria-hidden="true" />
+              <span>Other Activity</span>
+            </div>
+          </Tooltip>
+          <Tooltip label="Classes dismissed for the day / after school hours" withArrow position="top">
+            <div className="csm-legend-item">
+              <span className="csm-legend-chip csm-chip-grey" aria-hidden="true" />
+              <span>School Ended</span>
+            </div>
+          </Tooltip>
+          <Tooltip label="Awaiting walkthrough status confirmation" withArrow position="top">
+            <div className="csm-legend-item">
+              <span className="csm-legend-chip csm-chip-white" aria-hidden="true" />
+              <span>Pending</span>
+            </div>
+          </Tooltip>
         </div>
       </Paper>
 
@@ -448,71 +474,83 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
             description="School sections must be configured by the Principal in School Administration."
           />
         ) : (
-          sections.map((section: any) => {
+          sortedSections.map((section: any) => {
             const sectionTotal = section.classes.length;
             const sectionTeaching = section.classes.filter((c: any) => c.status === 'teaching').length;
+            const spanClass = getBentoSpanClass(sectionTotal, section.name);
 
             return (
-              <Paper key={section.id} radius="lg" withBorder shadow="xs" className="csm-section-card" aria-labelledby={`sec-title-${section.id}`}>
+              <Paper
+                key={section.id}
+                radius="lg"
+                withBorder
+                shadow="xs"
+                className={`csm-section-card ${spanClass}`}
+                aria-labelledby={`sec-title-${section.id}`}
+              >
                 <div className="csm-section-header">
                   <div className="csm-section-title-group">
                     <h2 id={`sec-title-${section.id}`}>
                       {section.name}
-                      <span className="csm-sec-badge">{section.code}</span>
                       {section.gradeRange && <span className="csm-sec-badge">Grades {section.gradeRange}</span>}
                     </h2>
                   </div>
                   <div className="csm-section-stats">
-                    <Badge color="blue" variant="light" size="sm">
-                      {sectionTeaching} of {sectionTotal} Classrooms Teaching
-                    </Badge>
+                    {isSchoolEnded && isViewingLive ? (
+                      <Badge color="gray" variant="light" size="sm">
+                        School Ended &middot; {sectionTotal} Classrooms Dismissed
+                      </Badge>
+                    ) : (
+                      <Badge color="blue" variant="light" size="sm">
+                        {sectionTeaching} of {sectionTotal} Classrooms Teaching
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
                 <div className="csm-classroom-grid">
-                  {section.classes.map((cls: any) => (
-                    <article
-                      key={cls.id}
-                      className={`csm-class-box ${cls.status}`}
-                      aria-label={`${cls.name}, status: ${cls.status.replace('_', ' ')}`}
-                    >
-                      <div className="csm-box-top">
-                        <div>
-                          <div className="csm-box-classname">{cls.name}</div>
-                          {cls.roomNumber && <div className="csm-box-room">Room {cls.roomNumber}</div>}
-                        </div>
-                        <span className="csm-status-pill">
-                          {cls.status === 'teaching' && <CheckCircle2 size={12} aria-hidden="true" />}
-                          {cls.status === 'not_teaching' && <XCircle size={12} aria-hidden="true" />}
-                          {cls.status === 'other_activity' && <AlertTriangle size={12} aria-hidden="true" />}
-                          {cls.status === 'pending' && <HelpCircle size={12} aria-hidden="true" />}
-                          {cls.status === 'teaching' && 'Teaching'}
-                          {cls.status === 'not_teaching' && 'Not Teaching'}
-                          {cls.status === 'other_activity' && 'Other Activity'}
-                          {cls.status === 'pending' && 'Pending'}
-                        </span>
-                      </div>
+                  {section.classes.map((cls: any) => {
+                    const effectiveStatus =
+                      (isSchoolEnded && isViewingLive) || cls.status === 'school_ended'
+                        ? 'school_ended'
+                        : cls.status;
 
-                      <div className="csm-box-middle">
-                        <div className="csm-box-teacher">
-                          {cls.classTeacherName ? `Teacher: ${cls.classTeacherName}` : 'No Class Teacher'}
+                    return (
+                      <article
+                        key={cls.id}
+                        className={`csm-class-box ${effectiveStatus}`}
+                        aria-label={`${cls.name}, status: ${effectiveStatus.replace('_', ' ')}`}
+                      >
+                        <div className="csm-box-top">
+                          <div className="csm-box-classname">{cls.name}</div>
+                          {effectiveStatus !== 'pending' && effectiveStatus !== 'school_ended' && (
+                            <span className="csm-status-pill">
+                              {effectiveStatus === 'teaching' && <CheckCircle2 size={12} aria-hidden="true" />}
+                              {effectiveStatus === 'not_teaching' && <XCircle size={12} aria-hidden="true" />}
+                              {effectiveStatus === 'other_activity' && <AlertTriangle size={12} aria-hidden="true" />}
+                              {effectiveStatus === 'teaching' && 'Teaching'}
+                              {effectiveStatus === 'not_teaching' && 'Not Teaching'}
+                              {effectiveStatus === 'other_activity' && 'Other Activity'}
+                            </span>
+                          )}
                         </div>
+
                         {cls.activityNote && (
-                          <div className="csm-box-note" title={cls.activityNote}>
-                            {cls.activityNote}
+                          <div className="csm-box-middle">
+                            <div className="csm-box-note" title={cls.activityNote}>
+                              {cls.activityNote}
+                            </div>
                           </div>
                         )}
-                      </div>
 
-                      <div className="csm-box-footer">
-                        {cls.recordedBy ? (
-                          <span>By {cls.recordedBy} &middot; {new Date(cls.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        ) : (
-                          <span>Awaiting period status</span>
+                        {cls.recordedBy && (
+                          <div className="csm-box-footer">
+                            <span>By {cleanTeacherName(cls.recordedBy)} &middot; {new Date(cls.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
                         )}
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    );
+                  })}
                 </div>
               </Paper>
             );
@@ -521,7 +559,7 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
 
         {/* 7. Unassigned Classes Alert Container (Principal Only) */}
         {user?.role === 'admin' && unassignedClasses.length > 0 && (
-          <Paper radius="lg" withBorder shadow="xs" className="csm-section-card csm-unassigned-section" aria-labelledby="unassigned-title">
+          <Paper radius="lg" withBorder shadow="xs" className="csm-section-card csm-bento-span-12 csm-unassigned-section" aria-labelledby="unassigned-title">
             <div className="csm-section-header csm-unassigned-header">
               <div className="csm-section-title-group">
                 <h2 id="unassigned-title">
@@ -535,151 +573,37 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
             </div>
 
             <div className="csm-classroom-grid">
-              {unassignedClasses.map((cls: any) => (
-                <article key={cls.id} className={`csm-class-box ${cls.status}`}>
-                  <div className="csm-box-top">
-                    <div>
+              {unassignedClasses.map((cls: any) => {
+                const effectiveStatus =
+                  (isSchoolEnded && isViewingLive) || cls.status === 'school_ended'
+                    ? 'school_ended'
+                    : cls.status;
+
+                return (
+                  <article key={cls.id} className={`csm-class-box ${effectiveStatus}`}>
+                    <div className="csm-box-top">
                       <div className="csm-box-classname">{cls.name}</div>
-                      {cls.roomNumber && <div className="csm-box-room">Room {cls.roomNumber}</div>}
+                      {effectiveStatus !== 'pending' && effectiveStatus !== 'school_ended' && (
+                        <span className="csm-status-pill">
+                          {effectiveStatus === 'teaching' && <CheckCircle2 size={12} aria-hidden="true" />}
+                          {effectiveStatus === 'not_teaching' && <XCircle size={12} aria-hidden="true" />}
+                          {effectiveStatus === 'other_activity' && <AlertTriangle size={12} aria-hidden="true" />}
+                          {effectiveStatus === 'teaching' && 'Teaching'}
+                          {effectiveStatus === 'not_teaching' && 'Not Teaching'}
+                          {effectiveStatus === 'other_activity' && 'Other Activity'}
+                        </span>
+                      )}
                     </div>
-                    <span className="csm-status-pill">
-                      {cls.status.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <div className="csm-box-middle">
-                    <div className="csm-box-teacher">
-                      {cls.classTeacherName || 'No Class Teacher'}
+                    <div className="csm-box-footer">
+                      <span className="text-amber-800 font-medium">Missing Section Assignment</span>
                     </div>
-                  </div>
-                  <div className="csm-box-footer">
-                    <span className="text-amber-800 font-medium">Missing Section Assignment</span>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </Paper>
         )}
       </main>
-
-      {/* 8. Timetable Configuration Modal (Principal Only) */}
-      <Modal
-        opened={showConfigModal}
-        onClose={() => setShowConfigModal(false)}
-        title={<Title order={4}>Configure 9-Period School Timetable</Title>}
-        size="lg"
-        radius="md"
-      >
-        <form onSubmit={handleSaveTimetable} className="csm-tt-form">
-          <Group justify="space-between" align="center" mb="xs">
-            <Text size="sm" c="dimmed">
-              Configure standard start and end times for all 9 periods and the interval.
-            </Text>
-            <Button
-              type="button"
-              variant="light"
-              color="blue"
-              size="xs"
-              onClick={loadStandardSriLankanPreset}
-            >
-              Load Sri Lankan Preset
-            </Button>
-          </Group>
-
-          <Stack gap="xs" mah={380} style={{ overflowY: 'auto' }} pr={4}>
-            {periodsForm.slice(0, 4).map((p, idx) => (
-              <div key={p.periodNumber} className="csm-tt-row">
-                <Text size="sm" fw={700} c="dark.7">Period {p.periodNumber}</Text>
-                <Input
-                  type="time"
-                  label="Start"
-                  value={p.startTime}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setPeriodsForm((prev) => prev.map((item, i) => i === idx ? { ...item, startTime: val } : item));
-                  }}
-                  required
-                />
-                <Input
-                  type="time"
-                  label="End"
-                  value={p.endTime}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setPeriodsForm((prev) => prev.map((item, i) => i === idx ? { ...item, endTime: val } : item));
-                  }}
-                  required
-                />
-              </div>
-            ))}
-
-            {/* Break after Period 4 */}
-            <div className="csm-tt-break">
-              <strong className="text-xs text-blue-900 col-span-3">
-                <Coffee className="inline mr-1" size={14} /> Break / Interval (After Period 4)
-              </strong>
-              <Input
-                type="text"
-                label="Name"
-                value={breakName}
-                onChange={(e) => setBreakName(e.target.value)}
-                required
-              />
-              <Input
-                type="time"
-                label="Break Start"
-                value={breakStartTime}
-                onChange={(e) => setBreakStartTime(e.target.value)}
-                required
-              />
-              <Input
-                type="time"
-                label="Break End"
-                value={breakEndTime}
-                onChange={(e) => setBreakEndTime(e.target.value)}
-                required
-              />
-            </div>
-
-            {periodsForm.slice(4).map((p, idx) => {
-              const realIdx = idx + 4;
-              return (
-                <div key={p.periodNumber} className="csm-tt-row">
-                  <Text size="sm" fw={700} c="dark.7">Period {p.periodNumber}</Text>
-                  <Input
-                    type="time"
-                    label="Start"
-                    value={p.startTime}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPeriodsForm((prev) => prev.map((item, i) => i === realIdx ? { ...item, startTime: val } : item));
-                    }}
-                    required
-                  />
-                  <Input
-                    type="time"
-                    label="End"
-                    value={p.endTime}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPeriodsForm((prev) => prev.map((item, i) => i === realIdx ? { ...item, endTime: val } : item));
-                    }}
-                    required
-                  />
-                </div>
-              );
-            })}
-          </Stack>
-
-          <Group justify="flex-end" gap="sm" pt="md" style={{ borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
-            <Button type="button" variant="default" onClick={() => setShowConfigModal(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" color="blue" loading={configLoading}>
-              Save 9-Period Timetable
-            </Button>
-          </Group>
-        </form>
-      </Modal>
     </div>
   );
 };

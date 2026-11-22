@@ -242,7 +242,7 @@ router.get('/teachers', (req, res) => {
 
     // 2. Section Head assignments
     const sectionAssignments = db.prepare(`
-      SELECT s.id, s.name, s.code, s.grade_range
+      SELECT s.id, s.name, s.grade_range
       FROM section_head_assignments sha
       JOIN sections s ON sha.section_id = s.id
       WHERE sha.user_id = ?
@@ -479,7 +479,7 @@ router.get('/teachers/:id', (req, res) => {
   `).all(teacher.id, teacher.id);
 
   teacher.assigned_sections = db.prepare(`
-    SELECT s.id, s.name, s.code, s.grade_range
+    SELECT s.id, s.name, s.grade_range
     FROM section_head_assignments sha
     JOIN sections s ON sha.section_id = s.id
     WHERE sha.user_id = ?
@@ -767,7 +767,7 @@ router.post('/academic-authorizations', (req, res) => {
     return;
   }
 
-  const validRoles: AcademicAuthRole[] = ['principal', 'vice_principal_academic', 'section_head', 'exam_coordinator'];
+  const validRoles: AcademicAuthRole[] = ['principal', 'vice_principal_academic', 'section_head'];
   if (!validRoles.includes(auth_role)) {
     res.status(400).json({ error: `Invalid auth_role '${auth_role}'. Must be one of: ${validRoles.join(', ')}.` });
     return;
@@ -861,7 +861,8 @@ router.get('/backup', (req, res) => {
   const tables = [
     'users', 'academic_years', 'classes', 'subjects', 'class_subjects',
     'teacher_assignments', 'students', 'enrollments', 'attendance_sessions',
-    'attendance_records', 'examinations', 'marks', 'audit_logs'
+    'attendance_records', 'audit_logs', 'sections', 'section_heads',
+    'school_periods', 'classroom_period_statuses', 'classroom_status_settings'
   ];
 
   const backupData: Record<string, any[]> = {};

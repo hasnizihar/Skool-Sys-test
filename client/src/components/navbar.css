@@ -224,6 +224,8 @@
   transform: scale(0.94);
 }
 
+
+
 /* Responsive Progressive Hiding to Prevent Crowding */
 @media (max-width: 1080px) {
   .navbar-date-badge {

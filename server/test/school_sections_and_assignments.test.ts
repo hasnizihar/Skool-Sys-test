@@ -73,11 +73,11 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
 
     // Create extra classes for tests: Class C (grade 9) and Class D (grade 11)
     const insClass = db.prepare(`
-      INSERT INTO classes (grade, name, room_number, academic_year_id)
-      VALUES (?, ?, ?, 1)
+      INSERT INTO classes (grade, name, academic_year_id)
+      VALUES (?, ?, 1)
     `);
-    testClassCId = Number(insClass.run(9, 'Grade 9-A Test', 'Room 201').lastInsertRowid);
-    testClassDId = Number(insClass.run(11, 'Grade 11-A Test', 'Room 301').lastInsertRowid);
+    testClassCId = Number(insClass.run(9, 'Grade 9-A Test').lastInsertRowid);
+    testClassDId = Number(insClass.run(11, 'Grade 11-A Test').lastInsertRowid);
   });
 
   after(async () => {
@@ -127,7 +127,6 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
           Authorization: `Bearer ${adminToken}`
         },
         body: JSON.stringify({
-          code: 'JUNIOR_SEC',
           name: 'Junior Secondary',
           description: 'Grades 6 through 9',
           grade_range: '6-9'
@@ -137,13 +136,12 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
       assert.equal(res.status, 201);
       const data = await res.json();
       assert.equal(data.success, true);
-      assert.equal(data.section.code, 'JUNIOR_SEC');
       assert.equal(data.section.name, 'Junior Secondary');
       assert.equal(data.section.grade_range, '6-9');
       createdSectionId = data.section.id;
     });
 
-    it('Rejects duplicate section code with 409', async () => {
+    it('Rejects duplicate section name with 409', async () => {
       const res = await server.request('/api/academic/sections', {
         method: 'POST',
         headers: {
@@ -151,18 +149,17 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
           Authorization: `Bearer ${adminToken}`
         },
         body: JSON.stringify({
-          code: 'JUNIOR_SEC', // Duplicate
-          name: 'Another Junior Section',
+          name: 'Junior Secondary', // Duplicate
           grade_range: '6-9'
         })
       });
 
       assert.equal(res.status, 409);
       const data = await res.json();
-      assert.equal(data.code, 'SECTION_CODE_EXISTS');
+      assert.equal(data.code, 'SECTION_NAME_EXISTS');
     });
 
-    it('Rejects invalid section payload (missing code or name) with 400', async () => {
+    it('Rejects invalid section payload (missing name) with 400', async () => {
       const res = await server.request('/api/academic/sections', {
         method: 'POST',
         headers: {
@@ -170,7 +167,6 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
           Authorization: `Bearer ${adminToken}`
         },
         body: JSON.stringify({
-          code: '   ',
           name: ''
         })
       });
@@ -188,7 +184,6 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
           Authorization: `Bearer ${adminToken}`
         },
         body: JSON.stringify({
-          code: 'JUNIOR_SEC',
           name: 'Junior Secondary (Updated)',
           description: 'Updated Description',
           grade_range: '6-9'
@@ -208,7 +203,6 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
           Authorization: `Bearer ${regularTeacherUser.token}`
         },
         body: JSON.stringify({
-          code: 'FORBIDDEN_SEC',
           name: 'Forbidden Section'
         })
       });
@@ -233,14 +227,14 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
     let section2Id: number;
 
     before(async () => {
-      // Find JUNIOR_SEC
-      const s1 = db.prepare("SELECT id FROM sections WHERE code = 'JUNIOR_SEC'").get() as any;
+      // Find Junior Secondary
+      const s1 = db.prepare("SELECT id FROM sections WHERE name = 'Junior Secondary (Updated)'").get() as any;
       section1Id = s1.id;
 
-      // Create SENIOR_SEC
+      // Create Senior Secondary
       const s2 = db.prepare(`
-        INSERT INTO sections (code, name, grade_range)
-        VALUES ('SENIOR_SEC', 'Senior Secondary', '10-11')
+        INSERT INTO sections (name, grade_range)
+        VALUES ('Senior Secondary', '10-11')
       `).run();
       section2Id = Number(s2.lastInsertRowid);
     });
@@ -304,7 +298,7 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
     let sectionId: number;
 
     before(() => {
-      const s = db.prepare("SELECT id FROM sections WHERE code = 'JUNIOR_SEC'").get() as any;
+      const s = db.prepare("SELECT id FROM sections WHERE name = 'Junior Secondary (Updated)'").get() as any;
       sectionId = s.id;
     });
 
@@ -416,12 +410,12 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
     let section1Id: number;
 
     before(() => {
-      const s1 = db.prepare("SELECT id FROM sections WHERE code = 'JUNIOR_SEC'").get() as any;
+      const s1 = db.prepare("SELECT id FROM sections WHERE name = 'Junior Secondary (Updated)'").get() as any;
       section1Id = s1.id;
 
-      // Ensure Class A is in JUNIOR_SEC
+      // Ensure Class A is in Junior Section
       db.prepare('UPDATE classes SET section_id = ? WHERE id = ?').run(section1Id, fixtures.testClassA.id);
-      // Ensure Class B is NOT in JUNIOR_SEC (set section_id = null)
+      // Ensure Class B is NOT in Junior Section (set section_id = null)
       db.prepare('UPDATE classes SET section_id = NULL WHERE id = ?').run(fixtures.testClassB.id);
 
       // Assign dualRoleUser as class teacher for Class B
@@ -433,7 +427,7 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
     });
 
     it('Section head receives scoped view of sections (GET /api/academic/sections)', async () => {
-      // sectionHeadUser is assigned to JUNIOR_SEC only, not SENIOR_SEC
+      // sectionHeadUser is assigned to Junior Section only, not Senior Section
       const res = await server.request('/api/academic/sections', {
         headers: { Authorization: `Bearer ${sectionHeadUser.token}` }
       });
@@ -441,7 +435,7 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
       assert.equal(res.status, 200);
       const data = await res.json();
       assert.equal(data.sections.length, 1);
-      assert.equal(data.sections[0].code, 'JUNIOR_SEC');
+      assert.equal(data.sections[0].name, 'Junior Secondary (Updated)');
     });
 
     it('Section head can view section details of assigned section, but receives 403 on unassigned section', async () => {
@@ -451,8 +445,8 @@ describe('Phase 1: School Sections, Class Assignments & Multi-Head/Teacher Scopi
       });
       assert.equal(allowedRes.status, 200);
 
-      // Unassigned section (SENIOR_SEC)
-      const s2 = db.prepare("SELECT id FROM sections WHERE code = 'SENIOR_SEC'").get() as any;
+      // Unassigned section (Senior Section)
+      const s2 = db.prepare("SELECT id FROM sections WHERE name = 'Senior Secondary'").get() as any;
       const deniedRes = await server.request(`/api/academic/sections/${s2.id}`, {
         headers: { Authorization: `Bearer ${sectionHeadUser.token}` }
       });

@@ -19,8 +19,21 @@ import {
   UserCheck,
   School,
   ChevronRight,
+  ChevronDown,
   GraduationCap
 } from 'lucide-react';
+import {
+  Modal,
+  TextInput,
+  PasswordInput,
+  Select,
+  Textarea,
+  Button,
+  Stack,
+  Group,
+  Text
+} from '@mantine/core';
+import { useForm, isNotEmpty, isEmail } from '@mantine/form';
 import { api } from '../api/client';
 import { ClassManagement } from './ClassManagement';
 import { TeacherDirectory } from './TeacherDirectory';
@@ -42,10 +55,42 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
   const [sections, setSections] = useState<any[]>([]);
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [editingSection, setEditingSection] = useState<any | null>(null);
-  const [sectionFormData, setSectionFormData] = useState({
-    name: '',
-    code: '',
-    description: ''
+  const [expandedSectionIds, setExpandedSectionIds] = useState<Set<number>>(() => new Set());
+
+  const toggleSectionCollapse = (sectionId: number) => {
+    setExpandedSectionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
+  const expandAllSections = () => {
+    setExpandedSectionIds(new Set(sections.map((s) => s.id)));
+  };
+
+  const collapseAllSections = () => {
+    setExpandedSectionIds(new Set());
+  };
+
+  // Section Form powered by @mantine/form
+  const sectionForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      name: '',
+      description: '',
+    },
+    validate: {
+      name: isNotEmpty('Section name is required'),
+    },
+    transformValues: (values) => ({
+      name: values.name.trim(),
+      description: values.description.trim(),
+    }),
   });
 
   // Assign Classes Modal State
@@ -67,12 +112,30 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
   // Users State
   const [users, setUsers] = useState<any[]>([]);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [userFormData, setUserFormData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    full_name: '',
-    role: 'class_teacher'
+
+  // User Form powered by @mantine/form
+  const createUserForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      username: '',
+      email: '',
+      password: '',
+      full_name: '',
+      role: 'class_teacher',
+    },
+    validate: {
+      full_name: isNotEmpty('Full name is required'),
+      username: isNotEmpty('Username is required'),
+      email: isEmail('Valid email address is required'),
+      password: (val) => (val && val.length >= 8 ? null : 'Password must be at least 8 characters'),
+    },
+    transformValues: (values) => ({
+      username: values.username.trim(),
+      email: values.email.trim(),
+      password: values.password,
+      full_name: values.full_name.trim(),
+      role: values.role,
+    }),
   });
 
   // Assignments State
@@ -80,11 +143,26 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
   const [classes, setClasses] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignFormData, setAssignFormData] = useState({
-    teacher_id: '',
-    class_id: '',
-    subject_id: '',
-    assignment_type: 'class_teacher'
+
+  // Assignment Form powered by @mantine/form
+  const assignForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      teacher_id: '',
+      class_id: '',
+      subject_id: '',
+      assignment_type: 'class_teacher',
+    },
+    validate: {
+      teacher_id: isNotEmpty('Please select a faculty member'),
+      class_id: isNotEmpty('Please select a class'),
+    },
+    transformValues: (values) => ({
+      teacher_id: Number(values.teacher_id),
+      class_id: Number(values.class_id),
+      subject_id: values.assignment_type === 'subject_teacher' && values.subject_id ? Number(values.subject_id) : undefined,
+      assignment_type: values.assignment_type,
+    }),
   });
 
   // Backup State
@@ -128,37 +206,36 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     }
   };
 
-  // Section Handlers
+  // Section Handlers with @mantine/form
   const handleOpenAddSection = () => {
     setEditingSection(null);
-    setSectionFormData({ name: '', code: '', description: '' });
+    sectionForm.reset();
     setShowSectionModal(true);
   };
 
   const handleOpenEditSection = (sec: any) => {
     setEditingSection(sec);
-    setSectionFormData({
+    sectionForm.setValues({
       name: sec.name,
-      code: sec.code,
       description: sec.description || ''
     });
     setShowSectionModal(true);
   };
 
-  const handleSaveSection = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveSection = sectionForm.onSubmit(async (transformedValues) => {
     try {
       if (editingSection) {
-        await api.updateSection(editingSection.id, sectionFormData);
+        await api.updateSection(editingSection.id, transformedValues);
       } else {
-        await api.createSection(sectionFormData);
+        await api.createSection(transformedValues);
       }
       setShowSectionModal(false);
+      sectionForm.reset();
       await reloadSections();
     } catch (err: any) {
       alert(`Failed to save section: ${err.message}`);
     }
-  };
+  });
 
   const handleDeleteSection = async (sec: any) => {
     if (!window.confirm(`Are you sure you want to delete section "${sec.name}"?\nClasses in this section will be unassigned, but will NOT be deleted.`)) {
@@ -269,44 +346,31 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
     }
   };
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateUser = createUserForm.onSubmit(async (transformedValues) => {
     try {
-      await api.createUser(userFormData);
+      await api.createUser(transformedValues);
       setShowAddUserModal(false);
-      setUserFormData({
-        username: '',
-        email: '',
-        password: '',
-        full_name: '',
-        role: 'class_teacher'
-      });
+      createUserForm.reset();
       const res = await api.getUsers();
       setUsers(res.users || []);
       alert('User account created successfully!');
     } catch (err: any) {
       alert(`Failed to create user: ${err.message}`);
     }
-  };
+  });
 
-  const handleCreateAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateAssignment = assignForm.onSubmit(async (transformedValues) => {
     try {
-      await api.createAssignment(assignFormData);
+      await api.createAssignment(transformedValues);
       setShowAssignModal(false);
-      setAssignFormData({
-        teacher_id: '',
-        class_id: '',
-        subject_id: '',
-        assignment_type: 'class_teacher'
-      });
+      assignForm.reset();
       const res = await api.getAssignments();
       setAssignments(res.assignments || []);
       alert('Teacher assignment saved successfully!');
     } catch (err: any) {
       alert(`Assignment failed: ${err.message}`);
     }
-  };
+  });
 
   const handleDeleteAssignment = async (id: number) => {
     if (!confirm('Are you sure you want to remove this teacher assignment?')) return;
@@ -373,7 +437,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
   };
 
   const handleResetSeed = async () => {
-    if (!confirm('Re-seed will reset the school database to default pilot demo data (Grade 6–13 classes, demo students, Term 1 marks). Proceed?')) return;
+    if (!confirm('Re-seed will reset the school database to default pilot demo data (Grade 6–13 classes, demo students, faculty rosters). Proceed?')) return;
     try {
       await api.resetSeed();
       alert('Database re-seeded successfully to pilot state!');
@@ -397,10 +461,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
         }}
       >
         <div>
-          <h2>School Administration & Security</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            User credentials, role assignments, system backups, and database recovery.
-          </p>
+          <h2 style={{ margin: 0 }}>School Administration & Security</h2>
         </div>
 
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -461,17 +522,36 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
           <div className="card" style={{ padding: '1.25rem 1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
                   <Layers size={18} style={{ color: 'var(--kcc-primary, #075E3B)' }} />
                   School Sections & Organizational Structure
                 </h3>
-                <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                  Define school sections (e.g. Junior Secondary, Senior Secondary, G.C.E. A/L), assign sectional heads, and link classroom units with multiple class teachers.
-                </p>
               </div>
-              <button onClick={handleOpenAddSection} className="btn btn-primary btn-sm">
-                <Plus size={14} /> Add New Section
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                {sections.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={expandAllSections}
+                      className="btn btn-secondary btn-sm"
+                      title="Expand all sections"
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={collapseAllSections}
+                      className="btn btn-secondary btn-sm"
+                      title="Collapse all sections"
+                    >
+                      Collapse All
+                    </button>
+                  </>
+                )}
+                <button onClick={handleOpenAddSection} className="btn btn-primary btn-sm">
+                  <Plus size={14} /> Add New Section
+                </button>
+              </div>
             </div>
           </div>
 
@@ -512,184 +592,294 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
               </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {sections.map((sec) => (
-                <div key={sec.id} className="card" style={{ padding: '1.25rem 1.5rem' }}>
-                  {/* Section Top Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        <h4 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{sec.name}</h4>
-                        <span className="badge" style={{ background: 'var(--kcc-primary-soft, #e9f5ed)', color: 'var(--kcc-primary, #075E3B)', fontWeight: 600 }}>
-                          {sec.code}
-                        </span>
-                        {sec.academic_year_name && (
-                          <span className="badge" style={{ background: 'var(--bg-subtle, #f1f5f9)', color: 'var(--text-muted)' }}>
-                            {sec.academic_year_name}
-                          </span>
-                        )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {sections.map((sec) => {
+                const isExpanded = expandedSectionIds.has(sec.id);
+                return (
+                  <div
+                    key={sec.id}
+                    className="card"
+                    style={{
+                      padding: isExpanded ? '1.25rem 1.5rem' : '1rem 1.25rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {/* Section Top Header (Collapsible Toggle) */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem',
+                        paddingBottom: isExpanded ? '1rem' : 0,
+                        borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none'
+                      }}
+                    >
+                      <div
+                        onClick={() => toggleSectionCollapse(sec.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          flex: 1,
+                          minWidth: '220px'
+                        }}
+                      >
+                        <button
+                          type="button"
+                          aria-label={isExpanded ? `Collapse ${sec.name}` : `Expand ${sec.name}`}
+                          style={{
+                            background: 'var(--bg-subtle, #f1f5f9)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '6px',
+                            width: '28px',
+                            height: '28px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'var(--text-color, #1e293b)',
+                            flexShrink: 0
+                          }}
+                        >
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </button>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                            <h4 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>{sec.name}</h4>
+                            {sec.grade_range && (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: 'var(--kcc-primary-soft, #e9f5ed)',
+                                  color: 'var(--kcc-primary, #075E3B)',
+                                  fontWeight: 600,
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                Grades {sec.grade_range}
+                              </span>
+                            )}
+                            {sec.academic_year_name && (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: 'var(--bg-subtle, #f1f5f9)',
+                                  color: 'var(--text-muted)',
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                {sec.academic_year_name}
+                              </span>
+                            )}
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              ({sec.section_heads?.length || 0} Heads &middot; {sec.classes?.length || 0} Classes)
+                            </span>
+                          </div>
+                          {sec.description && isExpanded && (
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem', marginBottom: 0 }}>
+                              {sec.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      {sec.description && (
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                          {sec.description}
-                        </p>
-                      )}
+
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAssignClasses(sec);
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          title="Link classes to this section"
+                        >
+                          <BookOpen size={13} /> Link Classes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAssignHead(sec);
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          title="Assign Section Head"
+                        >
+                          <UserCheck size={13} /> Assign Head
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditSection(sec);
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          title="Edit Section details"
+                        >
+                          <Edit3 size={13} /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteSection(sec);
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: '#ef4444' }}
+                          title="Delete Section"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                      <button onClick={() => handleOpenAssignClasses(sec)} className="btn btn-secondary btn-sm" title="Link classes to this section">
-                        <BookOpen size={13} /> Link Classes
-                      </button>
-                      <button onClick={() => handleOpenAssignHead(sec)} className="btn btn-secondary btn-sm" title="Assign Section Head">
-                        <UserCheck size={13} /> Assign Head
-                      </button>
-                      <button onClick={() => handleOpenEditSection(sec)} className="btn btn-secondary btn-sm" title="Edit Section details">
-                        <Edit3 size={13} /> Edit
-                      </button>
-                      <button onClick={() => handleDeleteSection(sec)} className="btn btn-secondary btn-sm" style={{ color: '#ef4444' }} title="Delete Section">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sectional Heads Sub-Section */}
-                  <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
-                        Sectional Heads ({sec.section_heads?.length || 0})
-                      </span>
-                      <button onClick={() => handleOpenAssignHead(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
-                        + Add Head
-                      </button>
-                    </div>
-
-                    {(!sec.section_heads || sec.section_heads.length === 0) ? (
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        No sectional heads assigned. Click "+ Add Head" to assign a supervisor.
-                      </span>
-                    ) : (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        {sec.section_heads.map((head: any) => (
-                          <span
-                            key={head.id}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.4rem',
-                              padding: '0.25rem 0.6rem',
-                              borderRadius: '20px',
-                              background: '#ffffff',
-                              border: '1px solid var(--border-color)',
-                              fontSize: '0.8rem',
-                              fontWeight: 500
-                            }}
-                          >
-                            <UserCheck size={12} style={{ color: 'var(--kcc-primary, #075E3B)' }} />
-                            <span>{head.full_name}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveSectionHead(sec.id, head.id)}
-                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px' }}
-                              title="Remove section head assignment"
-                            >
-                              <X size={12} />
+                    {/* Collapsible Content */}
+                    {isExpanded && (
+                      <div style={{ marginTop: '1rem' }}>
+                        {/* Sectional Heads Sub-Section */}
+                        <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
+                              Sectional Heads ({sec.section_heads?.length || 0})
+                            </span>
+                            <button onClick={() => handleOpenAssignHead(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
+                              + Add Head
                             </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                          </div>
 
-                  {/* Assigned Classes Table */}
-                  <div style={{ marginTop: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
-                        Linked Classes ({sec.classes?.length || 0})
-                      </span>
-                      <button onClick={() => handleOpenAssignClasses(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
-                        + Link More Classes
-                      </button>
-                    </div>
+                          {(!sec.section_heads || sec.section_heads.length === 0) ? (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                              No sectional heads assigned. Click "+ Add Head" to assign a supervisor.
+                            </span>
+                          ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              {sec.section_heads.map((head: any) => (
+                                <span
+                                  key={head.id}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.4rem',
+                                    padding: '0.25rem 0.6rem',
+                                    borderRadius: '20px',
+                                    background: '#ffffff',
+                                    border: '1px solid var(--border-color)',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 500
+                                  }}
+                                >
+                                  <UserCheck size={12} style={{ color: 'var(--kcc-primary, #075E3B)' }} />
+                                  <span>{head.full_name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSectionHead(sec.id, head.id)}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px' }}
+                                    title="Remove section head assignment"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
 
-                    {(!sec.classes || sec.classes.length === 0) ? (
-                      <div style={{ padding: '1rem', textAlign: 'center', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        No classes linked to this section yet. Click "+ Link More Classes" to assign classes.
-                      </div>
-                    ) : (
-                      <div className="table-responsive">
-                        <table className="data-table" style={{ fontSize: '0.825rem' }}>
-                          <thead>
-                            <tr>
-                              <th style={{ width: '120px' }}>Class</th>
-                              <th style={{ width: '80px' }}>Grade</th>
-                              <th style={{ width: '90px' }}>Pupils</th>
-                              <th>Assigned Class Teacher(s)</th>
-                              <th style={{ textAlign: 'right', width: '190px' }}>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sec.classes.map((cls: any) => (
-                              <tr key={cls.id}>
-                                <td>
-                                  <strong>{cls.name}</strong>
-                                </td>
-                                <td>Grade {cls.grade}</td>
-                                <td>{cls.student_count || 0}</td>
-                                <td>
-                                  {(!cls.class_teachers || cls.class_teachers.length === 0) ? (
-                                    <span style={{ color: 'var(--late, #d97706)', fontStyle: 'italic', fontSize: '0.775rem' }}>
-                                      No Class Teacher assigned
-                                    </span>
-                                  ) : (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                                      {cls.class_teachers.map((t: any) => (
-                                        <span
-                                          key={t.id}
-                                          style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.3rem',
-                                            padding: '0.15rem 0.5rem',
-                                            borderRadius: '4px',
-                                            background: 'var(--kcc-primary-soft, #e9f5ed)',
-                                            color: 'var(--kcc-primary, #075E3B)',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 600
-                                          }}
+                        {/* Assigned Classes Table */}
+                        <div style={{ marginTop: '1rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
+                              Linked Classes ({sec.classes?.length || 0})
+                            </span>
+                            <button onClick={() => handleOpenAssignClasses(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
+                              + Link More Classes
+                            </button>
+                          </div>
+
+                          {(!sec.classes || sec.classes.length === 0) ? (
+                            <div style={{ padding: '1rem', textAlign: 'center', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              No classes linked to this section yet. Click "+ Link More Classes" to assign classes.
+                            </div>
+                          ) : (
+                            <div className="table-responsive">
+                              <table className="data-table" style={{ fontSize: '0.825rem' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ width: '120px' }}>Class</th>
+                                    <th style={{ width: '80px' }}>Grade</th>
+                                    <th style={{ width: '90px' }}>Pupils</th>
+                                    <th>Assigned Class Teacher(s)</th>
+                                    <th style={{ textAlign: 'right', width: '190px' }}>Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sec.classes.map((cls: any) => (
+                                    <tr key={cls.id}>
+                                      <td>
+                                        <strong>{cls.name}</strong>
+                                      </td>
+                                      <td>Grade {cls.grade}</td>
+                                      <td>{cls.student_count || 0}</td>
+                                      <td>
+                                        {(!cls.class_teachers || cls.class_teachers.length === 0) ? (
+                                          <span style={{ color: 'var(--late, #d97706)', fontStyle: 'italic', fontSize: '0.775rem' }}>
+                                            No Class Teacher assigned
+                                          </span>
+                                        ) : (
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                            {cls.class_teachers.map((t: any) => (
+                                              <span
+                                                key={t.id}
+                                                style={{
+                                                  display: 'inline-flex',
+                                                  alignItems: 'center',
+                                                  gap: '0.3rem',
+                                                  padding: '0.15rem 0.5rem',
+                                                  borderRadius: '4px',
+                                                  background: 'var(--kcc-primary-soft, #e9f5ed)',
+                                                  color: 'var(--kcc-primary, #075E3B)',
+                                                  fontSize: '0.75rem',
+                                                  fontWeight: 600
+                                                }}
+                                              >
+                                                {t.full_name}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td style={{ textAlign: 'right' }}>
+                                        <button
+                                          onClick={() => handleOpenClassTeachers(cls)}
+                                          className="btn btn-secondary btn-sm"
+                                          style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', marginRight: '0.4rem' }}
+                                          title="Manage teachers for this class"
                                         >
-                                          {t.full_name}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <button
-                                    onClick={() => handleOpenClassTeachers(cls)}
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', marginRight: '0.4rem' }}
-                                    title="Manage teachers for this class"
-                                  >
-                                    Teachers ({cls.class_teachers?.length || 0})
-                                  </button>
-                                  <button
-                                    onClick={() => handleUnassignClassFromSection(sec.id, cls.id)}
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--text-muted)' }}
-                                    title="Unassign class from this section"
-                                  >
-                                    Unlink
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                          Teachers ({cls.class_teachers?.length || 0})
+                                        </button>
+                                        <button
+                                          onClick={() => handleUnassignClassFromSection(sec.id, cls.id)}
+                                          className="btn btn-secondary btn-sm"
+                                          style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--text-muted)' }}
+                                          title="Unassign class from this section"
+                                        >
+                                          Unlink
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -882,7 +1072,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
               </div>
 
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-                Includes all students, attendance histories, marks, users, academic years, and audit logs. This file can be stored on external media or used to migrate the system.
+                Includes all students, attendance histories, users, academic years, sections, and audit logs. This file can be stored on external media or used to migrate the system.
               </p>
 
               <button onClick={handleDownloadBackup} className="btn btn-primary">
@@ -941,251 +1131,200 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
         </div>
       )}
 
-      {/* Add User Modal */}
-      {showAddUserModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>Create User Account</h3>
-              <button onClick={() => setShowAddUserModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
+      {/* Add User Modal powered by @mantine/form */}
+      <Modal
+        opened={showAddUserModal}
+        onClose={() => setShowAddUserModal(false)}
+        title={
+          <Group gap="xs">
+            <UserPlus size={18} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Create User Account</Text>
+          </Group>
+        }
+        size="md"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleCreateUser}>
+          <Stack gap="sm">
+            <TextInput
+              label="Full Name"
+              required
+              placeholder="e.g. Mrs. Sunethra Jayasinghe"
+              key={createUserForm.key('full_name')}
+              {...createUserForm.getInputProps('full_name')}
+            />
 
-            <form onSubmit={handleCreateUser}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={userFormData.full_name}
-                    onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
-                    placeholder="e.g. Mrs. Sunethra Jayasinghe"
-                    required
-                  />
-                </div>
+            <TextInput
+              label="Username"
+              required
+              placeholder="e.g. teacher_sunethra"
+              key={createUserForm.key('username')}
+              {...createUserForm.getInputProps('username')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Username *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={userFormData.username}
-                    onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
-                    placeholder="e.g. teacher_sunethra"
-                    required
-                  />
-                </div>
+            <TextInput
+              label="Email Address"
+              required
+              type="email"
+              placeholder="teacher@skoolsys.edu"
+              key={createUserForm.key('email')}
+              {...createUserForm.getInputProps('email')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Email Address *</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    value={userFormData.email}
-                    onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
-                    placeholder="teacher@skoolsys.edu"
-                    required
-                  />
-                </div>
+            <PasswordInput
+              label="Temporary Password"
+              required
+              placeholder="••••••••"
+              description="Must be at least 8 characters long and contain both letters and numbers."
+              key={createUserForm.key('password')}
+              {...createUserForm.getInputProps('password')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Temporary Password *</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    value={userFormData.password}
-                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                    placeholder="••••••••"
-                    minLength={8}
-                    required
-                  />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                    Must be at least 8 characters long and contain both letters and numbers.
-                  </span>
-                </div>
+            <Select
+              label="System Role"
+              required
+              data={[
+                { value: 'class_teacher', label: 'Class Teacher' },
+                { value: 'subject_teacher', label: 'Subject Teacher' },
+                { value: 'admin', label: 'Administrator / Principal' },
+              ]}
+              key={createUserForm.key('role')}
+              {...createUserForm.getInputProps('role')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">System Role *</label>
-                  <select
-                    className="form-select"
-                    value={userFormData.role}
-                    onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
-                  >
-                    <option value="class_teacher">Class Teacher</option>
-                    <option value="subject_teacher">Subject Teacher</option>
-                    <option value="admin">Administrator / Principal</option>
-                  </select>
-                </div>
-              </div>
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowAddUserModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue" loading={createUserForm.submitting}>
+                Create Account
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAddUserModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Create Account
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Add Assignment Modal powered by @mantine/form */}
+      <Modal
+        opened={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        title={
+          <Group gap="xs">
+            <BookOpen size={18} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Assign Teacher to Class / Subject</Text>
+          </Group>
+        }
+        size="md"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleCreateAssignment}>
+          <Stack gap="sm">
+            <Select
+              label="Select Teacher"
+              required
+              placeholder="Select Faculty Member"
+              data={users.map((u) => ({
+                value: String(u.id),
+                label: `${u.full_name} (${u.username})`,
+              }))}
+              key={assignForm.key('teacher_id')}
+              {...assignForm.getInputProps('teacher_id')}
+            />
 
-      {/* Add Assignment Modal */}
-      {showAssignModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>Assign Teacher to Class / Subject</h3>
-              <button onClick={() => setShowAssignModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
+            <Select
+              label="Assignment Type"
+              required
+              data={[
+                { value: 'class_teacher', label: 'Class Teacher (Daily Attendance & Roster)' },
+                { value: 'subject_teacher', label: 'Subject Teacher (Subject Instruction)' },
+              ]}
+              key={assignForm.key('assignment_type')}
+              {...assignForm.getInputProps('assignment_type')}
+            />
 
-            <form onSubmit={handleCreateAssignment}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Select Teacher *</label>
-                  <select
-                    className="form-select"
-                    value={assignFormData.teacher_id}
-                    onChange={(e) => setAssignFormData({ ...assignFormData, teacher_id: e.target.value })}
-                    required
-                  >
-                    <option value="">Select Faculty Member</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.full_name} ({u.username})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <Select
+              label="Class (Grade 6–13)"
+              required
+              placeholder="Select Class"
+              data={classes.map((c) => ({
+                value: String(c.id),
+                label: c.name,
+              }))}
+              key={assignForm.key('class_id')}
+              {...assignForm.getInputProps('class_id')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Assignment Type *</label>
-                  <select
-                    className="form-select"
-                    value={assignFormData.assignment_type}
-                    onChange={(e) => setAssignFormData({ ...assignFormData, assignment_type: e.target.value })}
-                  >
-                    <option value="class_teacher">Class Teacher (Daily Attendance & Roster)</option>
-                    <option value="subject_teacher">Subject Teacher (Marks Entry)</option>
-                  </select>
-                </div>
+            {assignForm.useWatchValue('assignment_type') === 'subject_teacher' && (
+              <Select
+                label="Subject"
+                required
+                placeholder="Select Subject"
+                data={subjects.map((s) => ({
+                  value: String(s.id),
+                  label: `${s.name} (${s.code})`,
+                }))}
+                key={assignForm.key('subject_id')}
+                {...assignForm.getInputProps('subject_id')}
+              />
+            )}
 
-                <div className="form-group">
-                  <label className="form-label">Class (Grade 6–13) *</label>
-                  <select
-                    className="form-select"
-                    value={assignFormData.class_id}
-                    onChange={(e) => setAssignFormData({ ...assignFormData, class_id: e.target.value })}
-                    required
-                  >
-                    <option value="">Select Class</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowAssignModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue" loading={assignForm.submitting}>
+                Save Assignment
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
-                {assignFormData.assignment_type === 'subject_teacher' && (
-                  <div className="form-group">
-                    <label className="form-label">Subject *</label>
-                    <select
-                      className="form-select"
-                      value={assignFormData.subject_id}
-                      onChange={(e) => setAssignFormData({ ...assignFormData, subject_id: e.target.value })}
-                      required
-                    >
-                      <option value="">Select Subject</option>
-                      {subjects.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
+      {/* 1. Add / Edit Section Modal powered by @mantine/form */}
+      <Modal
+        opened={showSectionModal}
+        onClose={() => setShowSectionModal(false)}
+        title={
+          <Group gap="xs">
+            <Layers size={18} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">{editingSection ? 'Edit Section' : 'Create New Section'}</Text>
+          </Group>
+        }
+        size="md"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleSaveSection}>
+          <Stack gap="sm">
+            <TextInput
+              label="Section Name"
+              required
+              placeholder="e.g. Junior Secondary (Grades 6–9)"
+              key={sectionForm.key('name')}
+              {...sectionForm.getInputProps('name')}
+            />
 
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowAssignModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Assignment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Textarea
+              label="Description (Optional)"
+              rows={3}
+              placeholder="Optional description of grades, buildings, or administrative scope..."
+              key={sectionForm.key('description')}
+              {...sectionForm.getInputProps('description')}
+            />
 
-      {/* 1. Add / Edit Section Modal */}
-      {showSectionModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem' }}>
-                {editingSection ? 'Edit Section' : 'Create New Section'}
-              </h3>
-              <button onClick={() => setShowSectionModal(false)} className="btn btn-secondary btn-icon btn-sm">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSection}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Section Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={sectionFormData.name}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, name: e.target.value })}
-                    placeholder="e.g. Junior Secondary (Grades 6–9)"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Section Code *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={sectionFormData.code}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, code: e.target.value.toUpperCase() })}
-                    placeholder="e.g. SEC-JUNIOR"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Description (Optional)</label>
-                  <textarea
-                    className="form-textarea"
-                    rows={3}
-                    value={sectionFormData.description}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, description: e.target.value })}
-                    placeholder="Optional description of grades, buildings, or administrative scope..."
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowSectionModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingSection ? 'Save Changes' : 'Create Section'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowSectionModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue" loading={sectionForm.submitting}>
+                {editingSection ? 'Save Changes' : 'Create Section'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* 2. Assign Classes to Section Modal */}
       {showAssignClassesModal && targetSectionForClasses && (
@@ -1195,7 +1334,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
               <div>
                 <h3 style={{ fontSize: '1.15rem' }}>Link Classes to Section</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Section: <strong>{targetSectionForClasses.name}</strong> ({targetSectionForClasses.code})
+                  Section: <strong>{targetSectionForClasses.name}</strong>
                 </p>
               </div>
               <button onClick={() => setShowAssignClassesModal(false)} className="btn btn-secondary btn-icon btn-sm">

@@ -169,17 +169,19 @@
   border-color: #cbd5e1;
 }
 
+.mcs-class-card.school_ended {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  opacity: 0.95;
+}
+
 .mcs-card-name {
   font-size: 1.25rem;
   font-weight: 800;
   color: #0f172a;
 }
 
-.mcs-card-room {
-  font-size: 0.75rem;
-  color: #64748b;
-  font-weight: 500;
-}
+
 
 .mcs-card-badge {
   display: inline-flex;
@@ -211,6 +213,11 @@
 .mcs-class-card.pending .mcs-card-badge {
   background-color: #e2e8f0;
   color: #475569;
+}
+
+.mcs-class-card.school_ended .mcs-card-badge {
+  background-color: #64748b;
+  color: #ffffff;
 }
 
 /* Action Sheet Modal */

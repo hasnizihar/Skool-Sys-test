@@ -56,7 +56,7 @@ router.get('/classes', requireAuth, (req, res) => {
   const { grade, section_id } = req.query;
 
   let query = `
-    SELECT c.*, sec.name as section_name, sec.code as section_code,
+    SELECT c.*, sec.name as section_name,
       u.full_name as class_teacher_name,
       (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count
     FROM classes c
@@ -167,180 +167,13 @@ router.get('/classes/:id/subjects', requireAuth, (req, res) => {
   res.json({ subjects });
 });
 
-// Examinations
-router.get('/examinations', requireAuth, (req, res) => {
-  const { academic_year_id, term, status } = req.query;
-  let query = `
-    SELECT e.*, ay.name as academic_year_name,
-           (SELECT COUNT(*) FROM examination_schedules es WHERE es.examination_id = e.id) as scheduled_count,
-           (SELECT COUNT(*) FROM examination_schedules es WHERE es.examination_id = e.id AND es.status = 'approved') as approved_schedules_count,
-           (SELECT COUNT(*) FROM marks_sheets ms WHERE ms.examination_id = e.id) as sheets_count,
-           (SELECT COUNT(*) FROM marks_sheets ms WHERE ms.examination_id = e.id AND ms.status = 'approved') as approved_sheets_count
-    FROM examinations e
-    LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
-    WHERE 1=1
-  `;
-  const params: any[] = [];
-
-  if (academic_year_id) {
-    query += ' AND e.academic_year_id = ?';
-    params.push(Number(academic_year_id));
-  }
-  if (term) {
-    query += ' AND e.term = ?';
-    params.push(Number(term));
-  }
-  if (status) {
-    query += ' AND e.status = ?';
-    params.push(String(status));
-  }
-
-  query += ' ORDER BY e.term ASC, e.id DESC';
-
-  const exams = db.prepare(query).all(...params);
-  res.json({ examinations: exams });
-});
-
-// Create Examination (Admin or authorized leadership)
-router.post('/examinations', requireAuth, (req, res) => {
-  try {
-    const { name, term, academic_year_id, start_date, end_date, grade_band = 'all', exam_type = 'term', max_score, maxScore } = req.body;
-    if (!name || !term || !academic_year_id) {
-      res.status(400).json({ error: 'Examination name, term (1, 2, 3), and academic_year_id are required.' });
-      return;
-    }
-
-    const targetMax = max_score !== undefined
-      ? Number(max_score)
-      : (maxScore !== undefined ? Number(maxScore) : 100.0);
-    if (isNaN(targetMax) || targetMax <= 0 || targetMax > 1000) {
-      res.status(400).json({ error: 'Invalid max_score: must be a positive number in range (0, 1000].' });
-      return;
-    }
-
-    const user = req.user!;
-    const activeAuths = getActiveStaffAuthorizations(user.id, Number(academic_year_id));
-    const isAuthorized = user.role === 'admin' || activeAuths.some(a =>
-      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role)
-    );
-
-    if (!isAuthorized) {
-      res.status(403).json({ error: 'Access denied: Creating examinations requires admin role or academic leadership appointment.' });
-      return;
-    }
-
-    const stmt = db.prepare(`
-      INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, grade_band, exam_type, max_score, status, is_published)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0)
-    `);
-
-    const result = stmt.run(name, Number(term), Number(academic_year_id), start_date || null, end_date || null, grade_band, exam_type, targetMax);
-    const examId = Number(result.lastInsertRowid);
-
-    logAudit(user.id, user.username, 'EXAMINATION_CREATE', 'examinations', examId, { name, term, academic_year_id, grade_band, exam_type, maxScore: targetMax }, req.ip);
-
-    res.status(201).json({ success: true, id: examId, examinationId: examId, maxScore: targetMax });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Update Examination (if not published)
-router.put('/examinations/:id', requireAuth, (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const exam = db.prepare('SELECT * FROM examinations WHERE id = ?').get(id) as any;
-    if (!exam) {
-      res.status(404).json({ error: 'Examination not found.' });
-      return;
-    }
-
-    if (exam.is_published === 1 || exam.status === 'published') {
-      res.status(409).json({ error: 'Cannot modify examination after it has been published.', code: 'EXAMINATION_LOCKED' });
-      return;
-    }
-
-    const user = req.user!;
-    const activeAuths = getActiveStaffAuthorizations(user.id, exam.academic_year_id);
-    const isAuthorized = user.role === 'admin' || activeAuths.some(a =>
-      ['principal', 'vice_principal_academic', 'section_head'].includes(a.auth_role)
-    );
-
-    if (!isAuthorized) {
-      res.status(403).json({ error: 'Access denied: Modifying examinations requires admin role or academic leadership appointment.' });
-      return;
-    }
-
-    const { name, start_date, end_date, grade_band, exam_type, status, max_score, maxScore } = req.body;
-    let targetMax = exam.max_score || 100.0;
-    if (max_score !== undefined || maxScore !== undefined) {
-      const candidateMax = max_score !== undefined ? Number(max_score) : Number(maxScore);
-      if (isNaN(candidateMax) || candidateMax <= 0 || candidateMax > 1000) {
-        res.status(400).json({ error: 'Invalid max_score: must be a positive number in range (0, 1000].' });
-        return;
-      }
-      const submittedSheets = db.prepare(`
-        SELECT COUNT(*) as count FROM marks_sheets
-        WHERE examination_id = ? AND status IN ('submitted', 'reviewed', 'approved', 'published')
-      `).get(id) as { count: number };
-      if (submittedSheets && submittedSheets.count > 0 && candidateMax !== Number(exam.max_score)) {
-        res.status(409).json({
-          error: 'Cannot modify maximum score after marks sheets have been submitted, approved, or published.',
-          code: 'MARKS_ALREADY_SUBMITTED'
-        });
-        return;
-      }
-
-      const recordedMarks = db.prepare(`
-        SELECT COUNT(*) as count FROM marks m
-        JOIN marks_sheets ms ON m.sheet_id = ms.id
-        WHERE ms.examination_id = ? AND (m.score IS NOT NULL OR m.assessment_status != 'NOT_ASSESSED')
-      `).get(id) as { count: number };
-      if (recordedMarks && recordedMarks.count > 0 && candidateMax !== Number(exam.max_score)) {
-        res.status(409).json({
-          error: 'Cannot modify maximum score after student marks have been recorded.',
-          code: 'MARKS_ALREADY_RECORDED'
-        });
-        return;
-      }
-
-      // Synchronize empty draft sheets and schedules matching the old examination default max_score
-      if (candidateMax !== Number(exam.max_score)) {
-        const oldMax = Number(exam.max_score);
-        db.prepare("UPDATE marks_sheets SET max_score = ?, updated_at = datetime('now') WHERE examination_id = ? AND max_score = ?").run(candidateMax, id, oldMax);
-        db.prepare("UPDATE marks SET max_score = ?, updated_at = datetime('now') WHERE examination_id = ? AND max_score = ?").run(candidateMax, id, oldMax);
-        db.prepare("UPDATE examination_schedules SET max_score = ? WHERE examination_id = ? AND max_score = ?").run(candidateMax, id, oldMax);
-      }
-      targetMax = candidateMax;
-    }
-
-    db.prepare(`
-      UPDATE examinations
-      SET name = COALESCE(?, name),
-          start_date = COALESCE(?, start_date),
-          end_date = COALESCE(?, end_date),
-          grade_band = COALESCE(?, grade_band),
-          exam_type = COALESCE(?, exam_type),
-          status = COALESCE(?, status),
-          max_score = ?
-      WHERE id = ?
-    `).run(name || null, start_date || null, end_date || null, grade_band || null, exam_type || null, status || null, targetMax, id);
-
-    logAudit(user.id, user.username, 'EXAMINATION_UPDATE', 'examinations', id, req.body, req.ip);
-
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // ============================================================================
 // Class Management (Phase 2)
 // ============================================================================
 
 // 1. Create Class (Admin only)
 router.post('/classes', requireAuth, requireRole(['admin']), (req, res) => {
-  const { grade, name, room_number, class_teacher_id, section_id, academic_year_id } = req.body;
+  const { grade, name, class_teacher_id, section_id, academic_year_id } = req.body;
 
   if (grade === undefined || grade === null || !name || !String(name).trim()) {
     res.status(400).json({ error: 'Grade and Name are required.', code: 'VALIDATION_ERROR' });
@@ -354,7 +187,6 @@ router.post('/classes', requireAuth, requireRole(['admin']), (req, res) => {
   }
 
   const cleanName = String(name).trim();
-  const cleanRoom = room_number ? String(room_number).trim() : null;
 
   // Resolve target academic year
   let targetYearId = academic_year_id ? Number(academic_year_id) : null;
@@ -411,11 +243,11 @@ router.post('/classes', requireAuth, requireRole(['admin']), (req, res) => {
     db.exec('BEGIN IMMEDIATE;');
 
     const stmt = db.prepare(`
-      INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id, section_id)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO classes (grade, name, academic_year_id, class_teacher_id, section_id)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(numGrade, cleanName, cleanRoom, targetYearId, targetTeacherId, targetSectionId);
+    const result = stmt.run(numGrade, cleanName, targetYearId, targetTeacherId, targetSectionId);
     const classId = Number(result.lastInsertRowid);
 
     // If a class teacher was assigned, ensure entry in teacher_assignments table
@@ -434,12 +266,12 @@ router.post('/classes', requireAuth, requireRole(['admin']), (req, res) => {
       'CLASS_CREATE',
       'classes',
       String(classId),
-      { grade: numGrade, name: cleanName, room: cleanRoom, sectionId: targetSectionId, classTeacherId: targetTeacherId },
+      { grade: numGrade, name: cleanName, sectionId: targetSectionId, classTeacherId: targetTeacherId },
       req.ip
     );
 
     const createdClass = db.prepare(`
-      SELECT c.*, sec.name as section_name, sec.code as section_code, u.full_name as class_teacher_name
+      SELECT c.*, sec.name as section_name, u.full_name as class_teacher_name
       FROM classes c
       LEFT JOIN sections sec ON c.section_id = sec.id
       LEFT JOIN users u ON c.class_teacher_id = u.id
@@ -467,7 +299,7 @@ router.put('/classes/:id', requireAuth, requireRole(['admin']), (req, res) => {
     return;
   }
 
-  const { grade, name, room_number, class_teacher_id, section_id } = req.body;
+  const { grade, name, class_teacher_id, section_id } = req.body;
 
   const numGrade = grade !== undefined ? Number(grade) : cls.grade;
   if (isNaN(numGrade) || numGrade < 6 || numGrade > 13) {
@@ -535,8 +367,6 @@ router.put('/classes/:id', requireAuth, requireRole(['admin']), (req, res) => {
     }
   }
 
-  const cleanRoom = room_number !== undefined ? (room_number ? String(room_number).trim() : null) : cls.room_number;
-
   try {
     db.exec('BEGIN IMMEDIATE;');
 
@@ -544,11 +374,10 @@ router.put('/classes/:id', requireAuth, requireRole(['admin']), (req, res) => {
       UPDATE classes SET
         grade = ?,
         name = ?,
-        room_number = ?,
         section_id = ?,
         class_teacher_id = ?
       WHERE id = ?
-    `).run(numGrade, cleanName, cleanRoom, targetSectionId, targetTeacherId, classId);
+    `).run(numGrade, cleanName, targetSectionId, targetTeacherId, classId);
 
     // If class_teacher_id was updated to a new teacher, ensure entry in teacher_assignments
     if (targetTeacherId && targetTeacherId !== cls.class_teacher_id) {
@@ -567,14 +396,14 @@ router.put('/classes/:id', requireAuth, requireRole(['admin']), (req, res) => {
       'classes',
       String(classId),
       {
-        previous: { grade: cls.grade, name: cls.name, room: cls.room_number, sectionId: cls.section_id, teacherId: cls.class_teacher_id },
-        updated: { grade: numGrade, name: cleanName, room: cleanRoom, sectionId: targetSectionId, teacherId: targetTeacherId }
+        previous: { grade: cls.grade, name: cls.name, sectionId: cls.section_id, teacherId: cls.class_teacher_id },
+        updated: { grade: numGrade, name: cleanName, sectionId: targetSectionId, teacherId: targetTeacherId }
       },
       req.ip
     );
 
     const updatedClass = db.prepare(`
-      SELECT c.*, sec.name as section_name, sec.code as section_code, u.full_name as class_teacher_name,
+      SELECT c.*, sec.name as section_name, u.full_name as class_teacher_name,
         (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status = 'enrolled') as student_count
       FROM classes c
       LEFT JOIN sections sec ON c.section_id = sec.id
@@ -633,17 +462,6 @@ router.delete('/classes/:id', requireAuth, requireRole(['admin']), (req, res) =>
       error: `Cannot delete class "${cls.name}": It has ${periodStatusesCount} recorded period teaching status(es). Historical monitoring records cannot be deleted.`,
       code: 'CLASS_HAS_PERIOD_STATUSES',
       count: periodStatusesCount
-    });
-    return;
-  }
-
-  // 4. Marks Records
-  const marksCount = (db.prepare('SELECT COUNT(*) as count FROM marks WHERE class_id = ?').get(classId) as any)?.count || 0;
-  if (marksCount > 0) {
-    res.status(409).json({
-      error: `Cannot delete class "${cls.name}": It has ${marksCount} examination mark record(s).`,
-      code: 'CLASS_HAS_MARKS',
-      count: marksCount
     });
     return;
   }
@@ -950,34 +768,33 @@ router.get('/sections/:id', requireAuth, (req, res) => {
 
 // Create Section (Admin only)
 router.post('/sections', requireAuth, requireRole(['admin']), (req, res) => {
-  const { name, code, description, grade_range } = req.body;
+  const { name, description, grade_range } = req.body;
 
-  if (!name || !String(name).trim() || !code || !String(code).trim()) {
-    res.status(400).json({ error: 'Section name and code are required.', code: 'VALIDATION_ERROR' });
+  if (!name || !String(name).trim()) {
+    res.status(400).json({ error: 'Section name is required.', code: 'VALIDATION_ERROR' });
     return;
   }
 
-  const existing = db.prepare('SELECT id FROM sections WHERE code = ?').get(String(code).trim());
+  const existing = db.prepare('SELECT id FROM sections WHERE LOWER(name) = LOWER(?)').get(String(name).trim());
   if (existing) {
-    res.status(409).json({ error: `A section with code "${String(code).trim()}" already exists.`, code: 'SECTION_CODE_EXISTS' });
+    res.status(409).json({ error: `A section with name "${String(name).trim()}" already exists.`, code: 'SECTION_NAME_EXISTS' });
     return;
   }
 
   try {
     const stmt = db.prepare(`
-      INSERT INTO sections (name, code, description, grade_range)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO sections (name, description, grade_range)
+      VALUES (?, ?, ?)
     `);
     const result = stmt.run(
       String(name).trim(),
-      String(code).trim(),
       description ? String(description).trim() : null,
       grade_range ? String(grade_range).trim() : null
     );
     const sectionId = Number(result.lastInsertRowid);
     const section = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId);
 
-    logAudit(req.user!.id, req.user!.username, 'SECTION_CREATE', 'sections', String(sectionId), { name, code, grade_range }, req.ip);
+    logAudit(req.user!.id, req.user!.username, 'SECTION_CREATE', 'sections', String(sectionId), { name, grade_range }, req.ip);
 
     res.status(201).json({ success: true, section, sectionId, message: 'Section created successfully.' });
   } catch (err: any) {
@@ -988,7 +805,7 @@ router.post('/sections', requireAuth, requireRole(['admin']), (req, res) => {
 // Update Section (Admin only)
 router.put('/sections/:id', requireAuth, requireRole(['admin']), (req, res) => {
   const sectionId = Number(req.params.id);
-  const { name, code, description, grade_range } = req.body;
+  const { name, description, grade_range } = req.body;
 
   const current = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId) as any;
   if (!current) {
@@ -998,27 +815,26 @@ router.put('/sections/:id', requireAuth, requireRole(['admin']), (req, res) => {
 
   try {
     const newName = name !== undefined ? String(name).trim() : current.name;
-    const newCode = code !== undefined ? String(code).trim() : current.code;
     const newDesc = description !== undefined ? (description ? String(description).trim() : null) : current.description;
     const newRange = grade_range !== undefined ? (grade_range ? String(grade_range).trim() : null) : current.grade_range;
 
-    if (newCode !== current.code) {
-      const existing = db.prepare('SELECT id FROM sections WHERE code = ? AND id != ?').get(newCode, sectionId);
+    if (newName.toLowerCase() !== current.name.toLowerCase()) {
+      const existing = db.prepare('SELECT id FROM sections WHERE LOWER(name) = LOWER(?) AND id != ?').get(newName, sectionId);
       if (existing) {
-        res.status(409).json({ error: `A section with code "${newCode}" already exists.`, code: 'SECTION_CODE_EXISTS' });
+        res.status(409).json({ error: `A section with name "${newName}" already exists.`, code: 'SECTION_NAME_EXISTS' });
         return;
       }
     }
 
     db.prepare(`
       UPDATE sections SET
-        name = ?, code = ?, description = ?, grade_range = ?, updated_at = datetime('now')
+        name = ?, description = ?, grade_range = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(newName, newCode, newDesc, newRange, sectionId);
+    `).run(newName, newDesc, newRange, sectionId);
 
     const updated = db.prepare('SELECT * FROM sections WHERE id = ?').get(sectionId);
 
-    logAudit(req.user!.id, req.user!.username, 'SECTION_UPDATE', 'sections', String(sectionId), { previous: current, updated: { name: newName, code: newCode, grade_range: newRange } }, req.ip);
+    logAudit(req.user!.id, req.user!.username, 'SECTION_UPDATE', 'sections', String(sectionId), { previous: current, updated: { name: newName, grade_range: newRange } }, req.ip);
 
     res.json({ success: true, section: updated, message: 'Section updated successfully.' });
   } catch (err: any) {
@@ -1046,7 +862,7 @@ router.delete('/sections/:id', requireAuth, requireRole(['admin']), (req, res) =
     db.prepare('DELETE FROM sections WHERE id = ?').run(sectionId);
     db.exec('COMMIT;');
 
-    logAudit(req.user!.id, req.user!.username, 'SECTION_DELETE', 'sections', String(sectionId), { name: current.name, code: current.code }, req.ip);
+    logAudit(req.user!.id, req.user!.username, 'SECTION_DELETE', 'sections', String(sectionId), { name: current.name }, req.ip);
 
     res.json({ success: true, message: 'Section deleted successfully.' });
   } catch (err: any) {
@@ -1358,7 +1174,7 @@ router.get('/dashboard-summary', requireAuth, (req, res) => {
 
     // 4. Section-wise breakdown
     const sections = db.prepare(`
-      SELECT s.id, s.name, s.code, s.grade_range, s.description
+      SELECT s.id, s.name, s.grade_range, s.description
       FROM sections s
       ORDER BY s.name ASC
     `).all() as any[];
@@ -1461,7 +1277,7 @@ router.get('/dashboard-summary', requireAuth, (req, res) => {
     // Scoped section head metrics
     const placeholders = sectionIds.map(() => '?').join(',');
     const sections = db.prepare(`
-      SELECT s.id, s.name, s.code, s.grade_range, s.description
+      SELECT s.id, s.name, s.grade_range, s.description
       FROM sections s
       WHERE s.id IN (${placeholders})
       ORDER BY s.name ASC

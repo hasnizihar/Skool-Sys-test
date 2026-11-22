@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -13,10 +13,17 @@ import {
   X,
   Sparkles,
   LayoutList,
-  Calendar,
   School,
   WifiOff,
-  Users
+  Users,
+  Building2,
+  ArrowLeft,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+  Check,
+  Edit3
 } from 'lucide-react';
 import {
   Badge,
@@ -30,10 +37,12 @@ import {
   SimpleGrid,
   Box,
   Alert,
-  Tooltip
+  Tooltip,
+  SegmentedControl
 } from '@mantine/core';
 import { api, HttpError } from '../api/client';
-import { MobileSequentialAttendance } from './MobileSequentialAttendance';
+import { MobileSequentialAttendance, PREDEFINED_ABSENCE_REASONS } from './MobileSequentialAttendance';
+import { UnsubmittedAttendanceModal } from '../components/UnsubmittedAttendanceModal';
 import {
   cacheClassRoster,
   getCachedClassRoster,
@@ -49,12 +58,15 @@ import {
 import { useToast } from '../ui/useToast';
 import { LoadingState, EmptyState } from '../ui/mantine';
 import './attendance.css';
+import './mobileSequentialAttendance.css';
 
 interface AttendanceProps {
   user: any;
+  onNavigate?: (tab: string) => void;
+  registerNavGuard?: (guard: ((targetTab: string) => boolean) | null) => void;
 }
 
-export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
+export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, registerNavGuard }) => {
   const toast = useToast();
 
   const [displayMode, setDisplayMode] = useState<'card' | 'table'>(() => {
@@ -62,8 +74,12 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   });
 
   const [classes, setClasses] = useState<any[]>([]);
+  const [sections, setSections] = useState<any[]>([]);
+  const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(getColomboCivilDate());
+  const [dailySummaries, setDailySummaries] = useState<Record<number, any>>({});
+  const [loadingHierarchy, setLoadingHierarchy] = useState<boolean>(true);
 
   const [students, setStudents] = useState<any[]>([]);
   const [attendanceMap, setAttendanceMap] = useState<Record<number, { status: string; remarks: string }>>({});
@@ -73,7 +89,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const [sessionNotes, setSessionNotes] = useState<string>('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterView, setFilterView] = useState<'all' | 'absent' | 'late' | 'unmarked'>('all');
+  const [filterView, setFilterView] = useState<'all' | 'absent' | 'unmarked'>('all');
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -95,8 +111,131 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
   const [copiedDraft, setCopiedDraft] = useState(false);
 
+  // Absence Reason Modal State for Table Mode (Strictly single-choice selection)
+  const [absenceModalOpen, setAbsenceModalOpen] = useState(false);
+  const [activeStudentForAbsence, setActiveStudentForAbsence] = useState<any | null>(null);
+  const [selectedReason, setSelectedReason] = useState<string | null>(null);
+  const [customReason, setCustomReason] = useState<string>('');
+
+  // Unsubmitted Attendance Interception Modal State
+  const initialAttendanceMapRef = React.useRef<string>('');
+  const isBypassingGuardRef = React.useRef<boolean>(false);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
+
+  // Real-time Counts
+  const counts = useMemo(() => {
+    let present = 0;
+    let absent = 0;
+    let unrecorded = 0;
+    students.forEach((st) => {
+      const s = attendanceMap[st.student_id]?.status;
+      if (s === 'present') present++;
+      else if (s === 'absent') absent++;
+      else unrecorded++;
+    });
+    const total = students.length;
+    const recorded = total - unrecorded;
+    const rate = total > 0 && present > 0 ? Math.round((present / total) * 100) : 0;
+    return { total, present, absent, unrecorded, recorded, rate };
+  }, [students, attendanceMap]);
+
+  const hasMarksRecorded = counts.recorded > 0;
+  const isDirty = useMemo(() => {
+    if (!initialAttendanceMapRef.current) return false;
+    return JSON.stringify(attendanceMap) !== initialAttendanceMapRef.current;
+  }, [attendanceMap]);
+
+  const isUnsubmitted = useMemo(() => {
+    if (!selectedClassId || students.length === 0) return false;
+    if (existingSession?.status !== 'submitted') {
+      return hasMarksRecorded;
+    }
+    return isDirty;
+  }, [selectedClassId, students.length, existingSession?.status, hasMarksRecorded, isDirty]);
+
+  // Attempt Leave interceptor
+  const handleAttemptLeave = (action: () => void) => {
+    if (isUnsubmitted) {
+      setPendingLeaveAction(() => action);
+      setLeaveModalOpen(true);
+    } else {
+      action();
+    }
+  };
+
+  // Global Navigation Guard for tab changes
   useEffect(() => {
-    loadClasses();
+    if (!registerNavGuard) return;
+    registerNavGuard((targetTab: string) => {
+      if (isBypassingGuardRef.current) return true;
+      if (isUnsubmitted) {
+        setPendingLeaveAction(() => () => {
+          isBypassingGuardRef.current = true;
+          onNavigate?.(targetTab);
+        });
+        setLeaveModalOpen(true);
+        return false;
+      }
+      return true;
+    });
+    return () => registerNavGuard(null);
+  }, [registerNavGuard, isUnsubmitted, onNavigate]);
+
+  // Window unload / refresh guard
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isUnsubmitted) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isUnsubmitted]);
+
+  // Modal leave actions
+  const handleSubmitAndLeave = async () => {
+    const success = await handleSaveAttendance('submitted');
+    if (success) {
+      setLeaveModalOpen(false);
+      if (pendingLeaveAction) {
+        const act = pendingLeaveAction;
+        setPendingLeaveAction(null);
+        act();
+      }
+    }
+  };
+
+  const handleSaveDraftAndLeave = async () => {
+    const success = await handleSaveAttendance('draft');
+    if (success) {
+      setLeaveModalOpen(false);
+      if (pendingLeaveAction) {
+        const act = pendingLeaveAction;
+        setPendingLeaveAction(null);
+        act();
+      }
+    }
+  };
+
+  const handleDiscardAndLeave = () => {
+    setLeaveModalOpen(false);
+    if (pendingLeaveAction) {
+      const act = pendingLeaveAction;
+      setPendingLeaveAction(null);
+      act();
+    }
+  };
+
+  const handleStayOnRegister = () => {
+    setLeaveModalOpen(false);
+    setPendingLeaveAction(null);
+  };
+
+  useEffect(() => {
+    loadHierarchy(selectedDate);
 
     const handleOnline = () => setIsOfflineMode(false);
     const handleOffline = () => setIsOfflineMode(true);
@@ -109,16 +248,47 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     };
   }, []);
 
+  // When date changes, refresh daily report summaries
+  useEffect(() => {
+    api.getDailyAttendanceReport(selectedDate)
+      .then((res) => {
+        if (res?.summaries) {
+          const sumMap: Record<number, any> = {};
+          res.summaries.forEach((s: any) => {
+            sumMap[s.class_id] = s;
+          });
+          setDailySummaries(sumMap);
+        }
+      })
+      .catch(() => {});
+  }, [selectedDate]);
+
   useEffect(() => {
     if (selectedClassId && selectedDate) {
       loadAttendanceSession(selectedClassId, selectedDate);
     }
   }, [selectedClassId, selectedDate]);
 
-  const loadClasses = async () => {
+  // Auto-sync selectedSectionId if selectedClassId is set
+  useEffect(() => {
+    if (selectedClassId && !selectedSectionId && classes.length > 0) {
+      const target = classes.find((c) => c.id === selectedClassId);
+      if (target?.section_id) {
+        setSelectedSectionId(target.section_id);
+      }
+    }
+  }, [selectedClassId, selectedSectionId, classes]);
+
+  const loadHierarchy = async (dateStr: string) => {
     try {
-      const res = await api.getClasses();
-      let availableClasses = res.classes || [];
+      setLoadingHierarchy(true);
+      const [classRes, secRes, dailyRes] = await Promise.all([
+        api.getClasses().catch(() => ({ classes: [] })),
+        api.getSections().catch(() => ({ sections: [] })),
+        api.getDailyAttendanceReport(dateStr).catch(() => ({ summaries: [] }))
+      ]);
+
+      let availableClasses = classRes.classes || [];
 
       // If user is class teacher, prioritize assigned classes
       if (user.role === 'class_teacher' && user.assignedClassIds?.length > 0) {
@@ -131,11 +301,70 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       }
 
       setClasses(availableClasses);
-      if (availableClasses.length > 0 && !selectedClassId) {
-        setSelectedClassId(availableClasses[0].id);
+
+      // Map daily summaries by class_id
+      const sumMap: Record<number, any> = {};
+      if (dailyRes?.summaries) {
+        dailyRes.summaries.forEach((s: any) => {
+          sumMap[s.class_id] = s;
+        });
       }
+      setDailySummaries(sumMap);
+
+      // Build sections list enriched with accessible classes
+      const rawSections = secRes.sections || [];
+      const accessibleClassSectionIds = new Set(
+        availableClasses.map((c: any) => c.section_id).filter(Boolean)
+      );
+
+      let enrichedSections: any[] = [];
+      if (rawSections.length > 0) {
+        enrichedSections = rawSections
+          .filter((sec: any) => {
+            if (user.role === 'admin') return true;
+            return accessibleClassSectionIds.has(sec.id);
+          })
+          .map((sec: any) => {
+            const secClasses = availableClasses.filter((c: any) => c.section_id === sec.id);
+            return {
+              ...sec,
+              classes: secClasses,
+              classCount: secClasses.length,
+              totalStudents: secClasses.reduce((acc: number, c: any) => acc + (c.student_count || 0), 0)
+            };
+          })
+          .filter((sec: any) => sec.classes.length > 0 || user.role === 'admin');
+      }
+
+      // Check for leftover classes without a section or whose section wasn't returned
+      const accountedClassIds = new Set(
+        enrichedSections.flatMap((s: any) => s.classes.map((c: any) => c.id))
+      );
+      const leftoverClasses = availableClasses.filter((c: any) => !accountedClassIds.has(c.id));
+      if (leftoverClasses.length > 0) {
+        const groups: Record<string, any[]> = {};
+        leftoverClasses.forEach((c: any) => {
+          const sName = c.section_name || 'General / Other Classes';
+          if (!groups[sName]) groups[sName] = [];
+          groups[sName].push(c);
+        });
+        Object.entries(groups).forEach(([name, clsList], idx) => {
+          enrichedSections.push({
+            id: -(idx + 1), // synthetic id
+            name,
+            grade_range: clsList.map((c: any) => c.grade).filter((v, i, a) => a.indexOf(v) === i).sort((a: number, b: number) => a - b).join(', '),
+            classes: clsList,
+            classCount: clsList.length,
+            totalStudents: clsList.reduce((acc: number, c: any) => acc + (c.student_count || 0), 0)
+          });
+        });
+      }
+
+      setSections(enrichedSections);
     } catch (err) {
-      console.error('Failed to load classes:', err);
+      console.error('Failed to load classes or sections:', err);
+    } finally {
+      setLoadingHierarchy(false);
     }
   };
 
@@ -177,6 +406,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           };
         });
         setAttendanceMap(newMap);
+        initialAttendanceMapRef.current = JSON.stringify(newMap);
       } else {
         // Offline: Load from IndexedDB v2 cache for this specific date
         setIsOfflineMode(true);
@@ -193,11 +423,13 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             };
           });
           setAttendanceMap(newMap);
+          initialAttendanceMapRef.current = JSON.stringify(newMap);
         } else {
           setStudents([]);
           setServerRevision(0);
           setRosterFingerprint('');
           setAttendanceMap({});
+          initialAttendanceMapRef.current = '';
           setErrorMessage(`No offline register cached for Class ${classId} on Date ${date}. Connect to school network to download this register.`);
         }
       }
@@ -218,11 +450,13 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           };
         });
         setAttendanceMap(newMap);
+        initialAttendanceMapRef.current = JSON.stringify(newMap);
       } else {
         setStudents([]);
         setServerRevision(0);
         setRosterFingerprint('');
         setAttendanceMap({});
+        initialAttendanceMapRef.current = '';
         setErrorMessage(`Network error: No offline register cached for Date ${date}. Connect to school network to download this register.`);
       }
     } finally {
@@ -238,11 +472,92 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       return {
         ...prev,
         [studentId]: {
-          ...prev[studentId],
-          status: nextStatus
+          status: nextStatus,
+          remarks: nextStatus === 'present' || nextStatus === 'unmarked' ? '' : prev[studentId]?.remarks || ''
         }
       };
     });
+  };
+
+  const handleOpenAbsentModal = (student: any) => {
+    setActiveStudentForAbsence(student);
+    const existing = attendanceMap[student.student_id];
+    if (existing && existing.remarks) {
+      const matched = PREDEFINED_ABSENCE_REASONS.find((r) =>
+        existing.remarks.startsWith(r.label)
+      );
+      if (matched) {
+        setSelectedReason(matched.label);
+        const remainder = existing.remarks.replace(matched.label, '').replace(/^ - /, '').trim();
+        setCustomReason(remainder);
+      } else {
+        setSelectedReason(null);
+        setCustomReason(existing.remarks);
+      }
+    } else {
+      setSelectedReason(null);
+      setCustomReason('');
+    }
+    setAbsenceModalOpen(true);
+  };
+
+  const handleToggleReason = (reasonLabel: string) => {
+    // Strictly single-choice selection: clicking toggles or replaces
+    setSelectedReason((prev) => (prev === reasonLabel ? null : reasonLabel));
+  };
+
+  const handleConfirmAbsent = () => {
+    if (!activeStudentForAbsence) return;
+
+    let remarks = selectedReason || '';
+    if (customReason.trim()) {
+      remarks = remarks ? `${remarks} - ${customReason.trim()}` : customReason.trim();
+    }
+
+    setAttendanceMap((prev) => ({
+      ...prev,
+      [activeStudentForAbsence.student_id]: {
+        status: 'absent',
+        remarks
+      }
+    }));
+
+    setAbsenceModalOpen(false);
+    setActiveStudentForAbsence(null);
+    setSelectedReason(null);
+    setCustomReason('');
+  };
+
+  const handleSkipReason = () => {
+    if (!activeStudentForAbsence) return;
+
+    setAttendanceMap((prev) => ({
+      ...prev,
+      [activeStudentForAbsence.student_id]: {
+        status: 'absent',
+        remarks: ''
+      }
+    }));
+
+    setAbsenceModalOpen(false);
+    setActiveStudentForAbsence(null);
+    setSelectedReason(null);
+    setCustomReason('');
+  };
+
+  const handleClearAbsent = () => {
+    if (!activeStudentForAbsence) return;
+
+    setAttendanceMap((prev) => {
+      const next = { ...prev };
+      delete next[activeStudentForAbsence.student_id];
+      return next;
+    });
+
+    setAbsenceModalOpen(false);
+    setActiveStudentForAbsence(null);
+    setSelectedReason(null);
+    setCustomReason('');
   };
 
   const handleRemarksChange = (studentId: number, remarks: string) => {
@@ -302,38 +617,39 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     });
   };
 
-  // Real-time Counts
-  let countPresent = 0;
-  let countAbsent = 0;
-  let countLate = 0;
-  let countExcused = 0;
-  let countUnmarked = 0;
-
-  students.forEach((st) => {
-    const s = attendanceMap[st.student_id]?.status;
-    if (s === 'present') countPresent++;
-    else if (s === 'absent') countAbsent++;
-    else if (s === 'late') countLate++;
-    else if (s === 'excused') countExcused++;
-    else countUnmarked++;
-  });
-
-  const total = students.length;
+  // Real-time Counts derived from useMemo counts
+  const countPresent = counts.present;
+  const countAbsent = counts.absent;
+  const countUnmarked = counts.unrecorded;
+  const total = counts.total;
   const isRecorded = existingSession !== null || (total > 0 && countUnmarked < total);
-  const attendanceRate = total > 0 && (countPresent + countLate > 0)
-    ? Math.round(((countPresent + countLate) / total) * 100)
-    : 0;
+  const attendanceRate = counts.rate;
 
-  // Execute Submission (Draft or Final)
-  const handleSaveAttendance = async (mode: 'draft' | 'submitted') => {
+  // Civil Calendar Date Navigation Handlers (Prev, Today, Next)
+  const handleShiftDate = (offset: number) => {
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const dt = new Date(Date.UTC(year, month - 1, day));
+    dt.setUTCDate(dt.getUTCDate() + offset);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(dt.getUTCDate()).padStart(2, '0');
+    setSelectedDate(`${y}-${m}-${d}`);
+  };
+
+  const handleGoToday = () => {
+    setSelectedDate(getColomboCivilDate());
+  };
+
+  // Execute Submission (Draft or Final) - returns Promise<boolean>
+  const handleSaveAttendance = async (mode: 'draft' | 'submitted'): Promise<boolean> => {
     if (!selectedClassId || students.length === 0) {
       setErrorMessage('Cannot save attendance: No student roster loaded for the selected class and date.');
-      return;
+      return false;
     }
 
     if (!rosterFingerprint && !navigator.onLine) {
       setErrorMessage(`Cannot save offline attendance: No verified roster fingerprint cached for Date ${selectedDate}. Connect online to initialize.`);
-      return;
+      return false;
     }
 
     setErrorMessage(null);
@@ -342,9 +658,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     // Validation for final submitted register: 100% of roster must be marked
     if (mode === 'submitted' && countUnmarked > 0) {
       setErrorMessage(
-        `Cannot submit final register: ${countUnmarked} student(s) remain unmarked. Please mark all students as Present, Absent, Late, or Excused, or click "Save Draft".`
+        `Cannot submit final register: ${countUnmarked} student(s) remain unmarked. Please mark all students as Present or Absent, or click "Save Draft".`
       );
-      return;
+      return false;
     }
 
     const targetClass = classes.find((c) => c.id === selectedClassId);
@@ -421,7 +737,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         toast.showWarning(mode === 'submitted' ? 'Final register queued offline.' : 'Draft queued offline.');
       }
 
+      initialAttendanceMapRef.current = JSON.stringify(attendanceMap);
       setTimeout(() => setSaveSuccessMsg(null), 6000);
+      return true;
     } catch (err: any) {
       if (err instanceof HttpError) {
         if (err.status === 409) {
@@ -446,7 +764,10 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         const queuedText = 'Network transport failure: Register safely queued in offline browser storage.';
         setSaveSuccessMsg(queuedText);
         toast.showWarning('Network failure: Saved to offline storage.');
+        initialAttendanceMapRef.current = JSON.stringify(attendanceMap);
+        return true;
       }
+      return false;
     } finally {
       setSaving(false);
     }
@@ -630,7 +951,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const filteredStudents = students.filter((st) => {
     const s = attendanceMap[st.student_id]?.status || 'unmarked';
     if (filterView === 'absent' && s !== 'absent') return false;
-    if (filterView === 'late' && s !== 'late') return false;
     if (filterView === 'unmarked' && s !== 'unmarked') return false;
 
     if (!searchQuery.trim()) return true;
@@ -655,13 +975,42 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     }
   };
 
-  if (displayMode === 'card') {
+  const currentSection = useMemo(() => {
+    if (!selectedSectionId) return null;
+    return sections.find((s) => s.id === selectedSectionId) || null;
+  }, [sections, selectedSectionId]);
+
+  const currentClass = useMemo(() => {
+    if (!selectedClassId) return null;
+    return classes.find((c) => c.id === selectedClassId) || null;
+  }, [classes, selectedClassId]);
+
+  const activeClassesInCurrentSection = useMemo(() => {
+    if (!selectedSectionId) return classes;
+    const sec = sections.find((s) => s.id === selectedSectionId);
+    return sec?.classes || classes.filter((c) => c.section_id === selectedSectionId);
+  }, [sections, selectedSectionId, classes]);
+
+  const secondarySections = useMemo(
+    () => sections.filter((s) => s.grade_range === '6-11' || s.name?.toLowerCase().includes('secondary')),
+    [sections]
+  );
+
+  const collegiateSections = useMemo(
+    () => sections.filter((s) => !secondarySections.includes(s)),
+    [sections, secondarySections]
+  );
+
+  if (selectedClassId && displayMode === 'card') {
     return (
       <MobileSequentialAttendance
         user={user}
-        initialClassId={selectedClassId || undefined}
+        initialClassId={selectedClassId}
         initialDate={selectedDate}
         onSwitchToTableMode={() => setDisplayMode('table')}
+        onBackToClasses={() => setSelectedClassId(null)}
+        onNavigate={onNavigate}
+        registerNavGuard={registerNavGuard}
       />
     );
   }
@@ -679,183 +1028,575 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
               </Badge>
             )}
           </div>
-          <p className="attendance-subtitle">
-            Touch-friendly roll call with atomic revision concurrency, date boundaries, and offline sync.
-          </p>
         </div>
 
         <div className="attendance-actions">
-          {/* Switch to Card Roll-Call Mode */}
-          <button
-            type="button"
-            onClick={() => setDisplayMode('card')}
-            className="btn btn-secondary"
-            title="Switch to Mobile Sequential Card Roll-Call"
-          >
-            <Sparkles size={16} />
-            <span>Card Mode</span>
-          </button>
+          {/* Date Quick Nav & Calendar Selector */}
+          <Group gap={6} align="center" wrap="nowrap">
+            <Button.Group>
+              <Button
+                variant="default"
+                size="sm"
+                px={8}
+                style={{ height: 36 }}
+                onClick={() => handleAttemptLeave(() => handleShiftDate(-1))}
+                title="Previous Day"
+                aria-label="Previous Day"
+              >
+                <ChevronLeft size={15} />
+              </Button>
+              <Button
+                variant={selectedDate === getColomboCivilDate() ? 'light' : 'default'}
+                color={selectedDate === getColomboCivilDate() ? 'blue' : undefined}
+                size="sm"
+                px={12}
+                style={{ height: 36, fontWeight: 600 }}
+                onClick={() => handleAttemptLeave(() => handleGoToday())}
+                title="Jump to Today"
+              >
+                Today
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                px={8}
+                style={{ height: 36 }}
+                onClick={() => handleAttemptLeave(() => handleShiftDate(1))}
+                title="Next Day"
+                aria-label="Next Day"
+              >
+                <ChevronRight size={15} />
+              </Button>
+            </Button.Group>
 
-          {/* Draft Button: Allows partial records */}
-          <button
-            type="button"
-            onClick={() => handleSaveAttendance('draft')}
-            disabled={saving || students.length === 0 || isSubmittedState}
-            className="btn btn-secondary"
-            title={isSubmittedState ? 'Submitted registers cannot be downgraded to draft' : 'Save partial roll-call progress'}
-          >
-            <Save size={16} />
-            <span>{saving ? 'Saving...' : 'Save Draft'}</span>
-          </button>
-
-          {/* Final Submit Button: Requires 100% complete records */}
-          <button
-            type="button"
-            onClick={() => handleSaveAttendance('submitted')}
-            disabled={saving || students.length === 0}
-            className="btn btn-primary"
-            style={{ minWidth: '175px' }}
-            title="Submit official finalized attendance register"
-          >
-            <Send size={16} />
-            <span>
-              {saving
-                ? 'Submitting...'
-                : isSubmittedState
-                ? `Update Register (Rev ${serverRevision})`
-                : 'Submit Final Register'}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* Class, Date & Quick Actions Controls Card */}
-      <div className="card attendance-controls-card">
-        <div className="attendance-controls-row">
-          <div className="attendance-control-group attendance-control-group--class">
-            <label className="attendance-control-label">Class (Grade 6–13)</label>
-            <select
-              className="form-select attendance-select"
-              value={selectedClassId || ''}
-              onChange={(e) => setSelectedClassId(Number(e.target.value))}
-            >
-              {classes.map((c) => {
-                const cleanTeacher = c.class_teacher_name
-                  ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim()
-                  : '';
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {cleanTeacher ? `• ${cleanTeacher}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          <div className="attendance-control-group attendance-control-group--date">
-            <label className="attendance-control-label">Attendance Date</label>
-            <div style={{ position: 'relative' }}>
+            {/* Attendance Date Selector */}
+            <div className="attendance-header-date" title="Select attendance date">
               <input
                 type="date"
-                className="form-input attendance-date-input"
+                className="attendance-date-input"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => {
+                  const nextDate = e.target.value;
+                  if (nextDate === selectedDate) return;
+                  handleAttemptLeave(() => setSelectedDate(nextDate));
+                }}
+                aria-label="Attendance Date"
               />
             </div>
-          </div>
+          </Group>
 
-          <div className="attendance-control-group attendance-control-group--actions">
-            <label className="attendance-control-label">Quick Roll Actions</label>
-            <div className="attendance-bulk-actions">
+          {/* Clear Toggle for Table / Card Mode */}
+          <SegmentedControl
+            value={displayMode}
+            onChange={(val: any) => {
+              if (val === displayMode) return;
+              handleAttemptLeave(() => setDisplayMode(val));
+            }}
+            data={[
+              {
+                value: 'table',
+                label: (
+                  <Group gap={6} align="center" wrap="nowrap">
+                    <LayoutList size={15} />
+                    <span>Table Mode</span>
+                  </Group>
+                )
+              },
+              {
+                value: 'card',
+                label: (
+                  <Group gap={6} align="center" wrap="nowrap">
+                    <Sparkles size={15} />
+                    <span>Card Mode</span>
+                  </Group>
+                )
+              }
+            ]}
+            size="sm"
+            radius="md"
+          />
+
+          {/* If a class is selected, show Save Draft and Submit Final buttons */}
+          {selectedClassId && (
+            <>
               <button
                 type="button"
-                onClick={() => handleMarkAll('present')}
-                className="btn btn-secondary attendance-bulk-btn attendance-bulk-btn--present"
-                title="Mark all enrolled students as Present"
+                onClick={() => handleSaveAttendance('draft')}
+                disabled={saving || students.length === 0 || isSubmittedState}
+                className="btn btn-secondary"
+                title={isSubmittedState ? 'Submitted registers cannot be downgraded to draft' : 'Save partial roll-call progress'}
               >
-                <CheckCircle2 size={15} className="attendance-bulk-icon--present" />
-                <span>Mark All Present</span>
+                <Save size={16} />
+                <span>{saving ? 'Saving...' : 'Save Draft'}</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleMarkAll('absent')}
-                className="btn btn-secondary attendance-bulk-btn attendance-bulk-btn--absent"
-                title="Mark all enrolled students as Absent"
+                onClick={() => handleSaveAttendance('submitted')}
+                disabled={saving || students.length === 0}
+                className="btn btn-primary"
+                style={{ minWidth: '175px' }}
+                title="Submit official finalized attendance register"
               >
-                <XCircle size={15} className="attendance-bulk-icon--absent" />
-                <span>Mark All Absent</span>
+                <Send size={16} />
+                <span>
+                  {saving
+                    ? 'Submitting...'
+                    : isSubmittedState
+                    ? `Update Register (Rev ${serverRevision})`
+                    : 'Submit Final Register'}
+                </span>
               </button>
-
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="btn btn-secondary attendance-bulk-btn attendance-bulk-btn--clear"
-                title="Reset all students to Unmarked"
-              >
-                <RotateCcw size={15} />
-                <span>Clear to Unmarked</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Feedback / Alert Banners */}
-        {saveSuccessMsg && (
-          <div className="attendance-alert attendance-alert--success" role="status">
-            <CheckCircle2 size={18} />
-            <span>{saveSuccessMsg}</span>
-          </div>
-        )}
-
-        {errorMessage && (
-          <div className="attendance-alert attendance-alert--error" role="alert">
-            <AlertTriangle size={18} />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Truthful Session Status Indicator */}
-        <div
-          className={`attendance-status-banner ${
-            isSubmittedState
-              ? 'attendance-status-banner--submitted'
-              : existingSession
-              ? 'attendance-status-banner--draft'
-              : 'attendance-status-banner--unrecorded'
-          }`}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Info size={16} />
-            <span>
-              {isSubmittedState
-                ? `Official Register Finalized for ${selectedDate} (Revision ${serverRevision}). Submitted by ${existingSession?.taken_by_name || 'Class Teacher'}.`
-                : existingSession
-                ? `Draft Attendance in Progress for ${selectedDate} (Revision ${serverRevision}). ${countUnmarked} student(s) unmarked.`
-                : `No attendance record exists for ${selectedDate}. Select students and submit final register or draft.`}
-            </span>
-          </div>
-
-          <span
-            className={`attendance-status-pill ${
-              isSubmittedState
-                ? 'attendance-status-pill--submitted'
-                : existingSession
-                ? 'attendance-status-pill--draft'
-                : 'attendance-status-pill--unrecorded'
-            }`}
-          >
-            <span className="attendance-status-dot" />
-            <span>
-              {isSubmittedState
-                ? `Final (Rev ${serverRevision})`
-                : existingSession
-                ? `Draft (Rev ${serverRevision})`
-                : 'Not Recorded'}
-            </span>
-          </span>
+            </>
+          )}
         </div>
       </div>
+
+      {/* ================================================================ */}
+      {/* 1. SECTIONS SELECTION LEVEL (CARDS)                               */}
+      {/* ================================================================ */}
+      {!selectedSectionId && !selectedClassId && (
+        <div className="att-hierarchy-container">
+          <Paper p="xs" radius="md" withBorder className="att-guidance-card">
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+              <Group gap="xs" align="center">
+                <Building2 size={16} color="#2563eb" />
+                <Text fw={700} size="sm" c="#0f172a">
+                  School Sections
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Select a section below to view classrooms and record attendance
+                </Text>
+              </Group>
+
+              <Badge color="blue" variant="light" size="sm">
+                {sections.length} Section{sections.length !== 1 ? 's' : ''} Accessible
+              </Badge>
+            </Group>
+          </Paper>
+
+          {loadingHierarchy ? (
+            <LoadingState message="Loading accessible school sections..." />
+          ) : sections.length === 0 ? (
+            <EmptyState
+              title="No Sections Assigned"
+              description="You do not have any accessible school sections or classes assigned to your user account."
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {secondarySections.length > 0 && (
+                <div>
+                  <Group justify="space-between" align="center" mb={8}>
+                    <Text fw={700} size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }}>
+                      Secondary Division &middot; Grades 6&ndash;11
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {secondarySections.length} Sections
+                    </Text>
+                  </Group>
+                  <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+                    {secondarySections.map((sec) => {
+                      let submittedCount = 0;
+                      let draftCount = 0;
+                      (sec.classes || []).forEach((c: any) => {
+                        const sum = dailySummaries[c.id];
+                        if (sum?.session_status === 'submitted') submittedCount++;
+                        else if (sum?.session_status === 'draft') draftCount++;
+                      });
+                      const isAllSubmitted = sec.classCount > 0 && submittedCount === sec.classCount;
+
+                      return (
+                        <Paper
+                          key={sec.id}
+                          p="md"
+                          radius="md"
+                          withBorder
+                          className="att-section-card"
+                          onClick={() => setSelectedSectionId(sec.id)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              setSelectedSectionId(sec.id);
+                            }
+                          }}
+                        >
+                          <Group justify="space-between" align="center" mb="xs">
+                            <Group gap={6} align="center">
+                              <Building2 size={16} color="#2563eb" />
+                              <Text fw={750} size="md" c="#0f172a">
+                                {sec.name}
+                              </Text>
+                            </Group>
+                            {sec.grade_range && (
+                              <Badge variant="light" color="blue" size="xs">
+                                Grades {sec.grade_range}
+                              </Badge>
+                            )}
+                          </Group>
+
+                          <Text size="xs" c="dimmed" mb="md">
+                            {sec.classCount} Classes &bull; {sec.totalStudents} Pupils
+                          </Text>
+
+                          <div className="att-card-footer">
+                            <div>
+                              {isAllSubmitted ? (
+                                <Badge color="green" variant="light" size="xs">
+                                  All {sec.classCount} Submitted
+                                </Badge>
+                              ) : submittedCount > 0 ? (
+                                <Badge color="blue" variant="light" size="xs">
+                                  {submittedCount} of {sec.classCount} Submitted
+                                </Badge>
+                              ) : draftCount > 0 ? (
+                                <Badge color="yellow" variant="light" size="xs">
+                                  {draftCount} Draft in Progress
+                                </Badge>
+                              ) : (
+                                <Badge color="gray" variant="light" size="xs">
+                                  Pending Roll-Call
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="att-card-arrow">
+                              View Classes &rarr;
+                            </span>
+                          </div>
+                        </Paper>
+                      );
+                    })}
+                  </SimpleGrid>
+                </div>
+              )}
+
+              {collegiateSections.length > 0 && (
+                <div>
+                  <Group justify="space-between" align="center" mb={8}>
+                    <Text fw={700} size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }}>
+                      Collegiate Division &middot; Grades 12&ndash;13 (A/L)
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {collegiateSections.length} Sections
+                    </Text>
+                  </Group>
+                  <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+                    {collegiateSections.map((sec) => {
+                      let submittedCount = 0;
+                      let draftCount = 0;
+                      (sec.classes || []).forEach((c: any) => {
+                        const sum = dailySummaries[c.id];
+                        if (sum?.session_status === 'submitted') submittedCount++;
+                        else if (sum?.session_status === 'draft') draftCount++;
+                      });
+                      const isAllSubmitted = sec.classCount > 0 && submittedCount === sec.classCount;
+
+                      return (
+                        <Paper
+                          key={sec.id}
+                          p="md"
+                          radius="md"
+                          withBorder
+                          className="att-section-card"
+                          onClick={() => setSelectedSectionId(sec.id)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              setSelectedSectionId(sec.id);
+                            }
+                          }}
+                        >
+                          <Group justify="space-between" align="center" mb="xs">
+                            <Group gap={6} align="center">
+                              <Building2 size={16} color="#2563eb" />
+                              <Text fw={750} size="md" c="#0f172a">
+                                {sec.name}
+                              </Text>
+                            </Group>
+                            {sec.grade_range && (
+                              <Badge variant="light" color="blue" size="xs">
+                                Grades {sec.grade_range}
+                              </Badge>
+                            )}
+                          </Group>
+
+                          <Text size="xs" c="dimmed" mb="md">
+                            {sec.classCount} Classes &bull; {sec.totalStudents} Pupils
+                          </Text>
+
+                          <div className="att-card-footer">
+                            <div>
+                              {isAllSubmitted ? (
+                                <Badge color="green" variant="light" size="xs">
+                                  All {sec.classCount} Submitted
+                                </Badge>
+                              ) : submittedCount > 0 ? (
+                                <Badge color="blue" variant="light" size="xs">
+                                  {submittedCount} of {sec.classCount} Submitted
+                                </Badge>
+                              ) : draftCount > 0 ? (
+                                <Badge color="yellow" variant="light" size="xs">
+                                  {draftCount} Draft in Progress
+                                </Badge>
+                              ) : (
+                                <Badge color="gray" variant="light" size="xs">
+                                  Pending Roll-Call
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="att-card-arrow">
+                              View Classes &rarr;
+                            </span>
+                          </div>
+                        </Paper>
+                      );
+                    })}
+                  </SimpleGrid>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* 2. CLASSES SELECTION LEVEL (CARDS)                                */}
+      {/* ================================================================ */}
+      {selectedSectionId && !selectedClassId && (
+        <div className="att-hierarchy-container">
+          <Paper p="sm" radius="md" withBorder className="att-breadcrumb-card">
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+              <Group gap="xs" align="center">
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="xs"
+                  leftSection={<ArrowLeft size={14} />}
+                  onClick={() => setSelectedSectionId(null)}
+                >
+                  All Sections
+                </Button>
+                <ChevronRight size={14} color="#94a3b8" />
+                <Group gap={6} align="center">
+                  <Building2 size={16} color="#2563eb" />
+                  <Text fw={700} size="sm" c="#0f172a">
+                    {currentSection?.name || 'Section Classes'}
+                  </Text>
+                  {currentSection?.grade_range && (
+                    <Badge variant="light" color="blue" size="xs">
+                      Grades {currentSection.grade_range}
+                    </Badge>
+                  )}
+                </Group>
+              </Group>
+
+              <Badge color="blue" variant="light" size="sm">
+                {activeClassesInCurrentSection.length} Class{activeClassesInCurrentSection.length !== 1 ? 'es' : ''}
+              </Badge>
+            </Group>
+          </Paper>
+
+          {activeClassesInCurrentSection.length === 0 ? (
+            <EmptyState
+              title="No Classes in this Section"
+              description="No classroom units are currently assigned or accessible to you in this section."
+            />
+          ) : (
+            <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
+              {activeClassesInCurrentSection.map((cls: any) => {
+                const summary = dailySummaries[cls.id];
+                const isSubmitted = summary?.session_status === 'submitted';
+                const isDraft = summary?.session_status === 'draft';
+                const cleanTeacher = cls.class_teacher_name
+                  ? cls.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim()
+                  : '';
+
+                return (
+                  <Paper
+                    key={cls.id}
+                    p="lg"
+                    radius="md"
+                    withBorder
+                    className="att-class-card"
+                    onClick={() => setSelectedClassId(cls.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelectedClassId(cls.id);
+                      }
+                    }}
+                  >
+                    <Group justify="space-between" align="flex-start" mb="xs">
+                      <Text fw={750} size="lg" c="#0f172a">
+                        {cls.name}
+                      </Text>
+                      <Badge variant="light" color="blue" size="sm">
+                        Grade {cls.grade}
+                      </Badge>
+                    </Group>
+
+                    <Text size="xs" c="dimmed" mb={4} lineClamp={1}>
+                      Teacher: <span style={{ color: '#334155', fontWeight: 600 }}>{cleanTeacher || 'Unassigned'}</span>
+                    </Text>
+
+                    <Text size="xs" c="dimmed" mb="md">
+                      <Users size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                      {cls.student_count || 0} Pupils
+                    </Text>
+
+                    <div className="att-card-footer">
+                      <div>
+                        {isSubmitted ? (
+                          <Badge color="green" variant="light" size="xs">
+                            ✓ Submitted ({summary.present_count}/{summary.enrolled_count})
+                          </Badge>
+                        ) : isDraft ? (
+                          <Badge color="yellow" variant="light" size="xs">
+                            ✎ Draft in Progress
+                          </Badge>
+                        ) : (
+                          <Badge color="gray" variant="light" size="xs">
+                            Pending Roll-Call
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="att-card-arrow">
+                        {displayMode === 'card' ? 'Roll-Call' : 'Open Register'} &rarr;
+                      </span>
+                    </div>
+                  </Paper>
+                );
+              })}
+            </SimpleGrid>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* 3. ATTENDANCE TRACKING FOR SELECTED CLASS                         */}
+      {/* ================================================================ */}
+      {selectedClassId && (
+        <>
+          {/* Navigation Breadcrumb Bar */}
+          <Paper p="xs" radius="md" withBorder className="att-breadcrumb-card">
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+              <Group gap="xs" align="center">
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="xs"
+                  leftSection={<ArrowLeft size={14} />}
+                  onClick={() => handleAttemptLeave(() => setSelectedClassId(null))}
+                >
+                  Back to Classes
+                </Button>
+                <ChevronRight size={14} color="#94a3b8" />
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="xs"
+                  onClick={() => handleAttemptLeave(() => {
+                    setSelectedClassId(null);
+                    setSelectedSectionId(null);
+                  })}
+                >
+                  All Sections
+                </Button>
+                <ChevronRight size={14} color="#94a3b8" />
+                <Text fw={700} size="sm" c="#0f172a">
+                  {currentSection?.name || 'Section'}
+                </Text>
+                <ChevronRight size={14} color="#94a3b8" />
+                <Badge color="blue" size="sm" variant="filled">
+                  {currentClass?.name || `Class ${selectedClassId}`}
+                </Badge>
+                <Badge
+                  color={isSubmittedState ? 'green' : existingSession ? 'yellow' : 'gray'}
+                  variant="light"
+                  size="sm"
+                >
+                  {isSubmittedState
+                    ? `Final (Rev ${serverRevision})`
+                    : existingSession
+                    ? `Draft (Rev ${serverRevision})`
+                    : 'Not Recorded'}
+                </Badge>
+              </Group>
+
+              {/* Quick Roll Actions & Class Switcher */}
+              <Group gap="xs" align="center">
+                <Button.Group>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="teal"
+                    leftSection={<CheckCircle2 size={13} />}
+                    onClick={() => handleMarkAll('present')}
+                    title="Mark all enrolled students as Present"
+                  >
+                    All Present
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="red"
+                    leftSection={<XCircle size={13} />}
+                    onClick={() => handleMarkAll('absent')}
+                    title="Mark all enrolled students as Absent"
+                  >
+                    All Absent
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="default"
+                    leftSection={<RotateCcw size={13} />}
+                    onClick={handleClearAll}
+                    title="Reset all students to Unmarked"
+                  >
+                    Clear
+                  </Button>
+                </Button.Group>
+
+                {activeClassesInCurrentSection.length > 1 && (
+                  <Group gap={4} align="center">
+                    <Text size="xs" c="dimmed">Class:</Text>
+                    <select
+                      className="attendance-select-compact"
+                      value={selectedClassId}
+                      onChange={(e) => {
+                        const nextId = Number(e.target.value);
+                        if (nextId === selectedClassId) return;
+                        handleAttemptLeave(() => setSelectedClassId(nextId));
+                      }}
+                    >
+                      {activeClassesInCurrentSection.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Group>
+                )}
+              </Group>
+            </Group>
+          </Paper>
+
+          {/* Feedback / Alert Banners */}
+          {saveSuccessMsg && (
+            <div className="attendance-alert attendance-alert--success" role="status">
+              <CheckCircle2 size={18} />
+              <span>{saveSuccessMsg}</span>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="attendance-alert attendance-alert--error" role="alert">
+              <AlertTriangle size={18} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
 
       {/* Live Roll Summary & Metrics Banner */}
       <div className="attendance-tally-card">
@@ -875,16 +1616,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             <span>Absent: {countAbsent}</span>
           </span>
 
-          <span className="attendance-tally-pill attendance-tally-pill--late">
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--late)' }} />
-            <span>Late: {countLate}</span>
-          </span>
-
-          <span className="attendance-tally-pill attendance-tally-pill--excused">
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--excused)' }} />
-            <span>Excused: {countExcused}</span>
-          </span>
-
           <span className="attendance-tally-pill attendance-tally-pill--unmarked">
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#64748b' }} />
             <span>Unmarked: {countUnmarked}</span>
@@ -895,7 +1626,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           <div className="attendance-rate-labels">
             <span className="attendance-rate-label">Attendance Rate</span>
             <span className="attendance-rate-subtext">
-              {isRecorded ? `${countPresent + countLate} / ${total} Pupils` : 'No Record'}
+              {isRecorded ? `${countPresent} / ${total} Pupils` : 'No Record'}
             </span>
           </div>
           <span
@@ -958,13 +1689,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           >
             Absentees ({countAbsent})
           </button>
-          <button
-            type="button"
-            onClick={() => setFilterView('late')}
-            className={`attendance-tab-btn attendance-tab-btn--late ${filterView === 'late' ? 'active' : ''}`}
-          >
-            Late ({countLate})
-          </button>
         </div>
       </div>
 
@@ -974,22 +1698,21 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           <table className="attendance-table data-table">
             <thead>
               <tr>
-                <th style={{ width: 65, textAlign: 'center' }}>Roll #</th>
+                <th style={{ width: 70, textAlign: 'center' }}>Roll #</th>
                 <th>Admission & Student Name</th>
-                <th style={{ width: 350, textAlign: 'center' }}>Attendance Status (Touch / Tap)</th>
-                <th>Remarks & Quick Reason</th>
+                <th style={{ width: 260, textAlign: 'center' }}>Attendance Status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} style={{ padding: '3.5rem 1rem' }}>
+                  <td colSpan={3} style={{ padding: '3.5rem 1rem' }}>
                     <LoadingState message="Loading class roster..." minHeight={120} />
                   </td>
                 </tr>
               ) : students.length === 0 ? null : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ padding: '2.5rem 1rem' }}>
+                  <td colSpan={3} style={{ padding: '2.5rem 1rem' }}>
                     <EmptyState
                       icon={<Users size={32} />}
                       title="No Matching Students"
@@ -1001,7 +1724,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
               ) : (
                 filteredStudents.map((st) => {
                   const currentStatus = attendanceMap[st.student_id]?.status || 'unmarked';
-                  const currentRemark = attendanceMap[st.student_id]?.remarks || '';
 
                   return (
                     <tr key={st.student_id}>
@@ -1033,6 +1755,24 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                               <span>{st.admission_no}</span>
                               <span>•</span>
                               <span style={{ fontWeight: 600 }}>{st.calling_name}</span>
+                              {currentStatus === 'absent' && (
+                                <>
+                                  <span>•</span>
+                                  <button
+                                    type="button"
+                                    className="table-absence-reason-badge"
+                                    onClick={() => handleOpenAbsentModal(st)}
+                                    title="Click to view or edit absence reason"
+                                  >
+                                    <span>
+                                      {attendanceMap[st.student_id]?.remarks
+                                        ? attendanceMap[st.student_id].remarks
+                                        : 'Absent · No reason'}
+                                    </span>
+                                    <Edit3 size={11} />
+                                  </button>
+                                </>
+                              )}
                               <span className="attendance-roll-badge" style={{ display: 'none' /* Handled by mobile media query */ }}>
                                 Roll #{st.roll_number || '-'}
                               </span>
@@ -1042,7 +1782,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                       </td>
 
                       <td style={{ textAlign: 'center' }}>
-                        {/* 4-Way Touch Segmented Control (Min 44px Touch Target) */}
+                        {/* Present vs Absent Segmented Control (Min 44px Touch Target) */}
                         <div className="attendance-btn-group" style={{ margin: '0 auto' }}>
                           <button
                             type="button"
@@ -1057,66 +1797,12 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                           <button
                             type="button"
                             className={`att-btn absent ${currentStatus === 'absent' ? 'active' : ''}`}
-                            onClick={() => handleStatusChange(st.student_id, 'absent')}
-                            title="Mark Absent"
+                            onClick={() => handleOpenAbsentModal(st)}
+                            title="Mark Absent & Record Reason"
                             aria-pressed={currentStatus === 'absent'}
                           >
                             A • Absent
                           </button>
-
-                          <button
-                            type="button"
-                            className={`att-btn late ${currentStatus === 'late' ? 'active' : ''}`}
-                            onClick={() => handleStatusChange(st.student_id, 'late')}
-                            title="Mark Late"
-                            aria-pressed={currentStatus === 'late'}
-                          >
-                            L • Late
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`att-btn excused ${currentStatus === 'excused' ? 'active' : ''}`}
-                            onClick={() => handleStatusChange(st.student_id, 'excused')}
-                            title="Mark Excused"
-                            aria-pressed={currentStatus === 'excused'}
-                          >
-                            E • Excused
-                          </button>
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="attendance-remarks-box">
-                          <input
-                            type="text"
-                            className="attendance-remarks-input"
-                            style={{
-                              backgroundColor: currentStatus === 'absent' ? 'var(--absent-bg)' : undefined,
-                              borderColor: currentStatus === 'absent' ? 'var(--absent-border)' : undefined
-                            }}
-                            placeholder={currentStatus === 'absent' ? 'Reason for absence...' : 'Optional remarks...'}
-                            value={currentRemark}
-                            onChange={(e) => handleRemarksChange(st.student_id, e.target.value)}
-                            aria-label={`Remarks for ${st.calling_name}`}
-                          />
-
-                          {/* Quick Reason Chips for Absentees / Late */}
-                          {(currentStatus === 'absent' || currentStatus === 'late' || currentStatus === 'excused') && (
-                            <div className="attendance-quick-chips">
-                              {['Medical', 'Sick Leave', 'Transport', 'Family Event', 'Official Duty'].map((tag) => (
-                                <button
-                                  key={tag}
-                                  type="button"
-                                  onClick={() => handleQuickRemark(st.student_id, tag)}
-                                  className="attendance-quick-chip-btn"
-                                  title={`Append reason: ${tag}`}
-                                >
-                                  +{tag}
-                                </button>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -1127,6 +1813,8 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Side-by-Side Student-by-Student Conflict Resolution Modal */}
       {conflictModal.isOpen && (
@@ -1424,6 +2112,127 @@ export const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           </div>
         </div>
       )}
+
+      {/* Absence Reason Modal for Table Mode (Strictly single-choice selection) */}
+      {absenceModalOpen && activeStudentForAbsence && (
+        <div className="msa-modal-backdrop" onClick={() => setAbsenceModalOpen(false)}>
+          <div
+            className="msa-modal-sheet"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="table-absence-modal-title"
+          >
+            <div className="msa-modal-header">
+              <div>
+                <h3 id="table-absence-modal-title" className="msa-modal-title">
+                  Record Absence Reason
+                </h3>
+                <p className="msa-modal-subtitle">
+                  {activeStudentForAbsence.calling_name || activeStudentForAbsence.full_name} (Index #{activeStudentForAbsence.admission_no})
+                </p>
+              </div>
+              <button
+                type="button"
+                className="msa-modal-close"
+                onClick={() => setAbsenceModalOpen(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Predefined Reason Chips: Strictly ONE reason selectable */}
+            <div className="msa-reasons-grid" role="radiogroup" aria-label="Absence reason selection">
+              {PREDEFINED_ABSENCE_REASONS.map((r) => {
+                const isSelected = selectedReason === r.label;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    className={`msa-reason-chip ${isSelected ? 'selected' : ''}`}
+                    onClick={() => handleToggleReason(r.label)}
+                  >
+                    <span className="msa-reason-icon">{r.icon}</span>
+                    <span>{r.label}</span>
+                    {isSelected && <Check size={16} className="msa-chip-check" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom Reason Input */}
+            <div className="msa-custom-reason-block">
+              <label htmlFor="table-custom-reason" className="msa-input-label">
+                Custom / Additional Note (Optional):
+              </label>
+              <input
+                id="table-custom-reason"
+                type="text"
+                className="msa-custom-input"
+                placeholder="e.g. Hospital admission, fever, religious holiday"
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value)}
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="msa-modal-actions">
+              <Button
+                variant="default"
+                size="md"
+                onClick={handleSkipReason}
+              >
+                Skip Reason
+              </Button>
+
+              <Button
+                color="red"
+                size="md"
+                onClick={handleConfirmAbsent}
+              >
+                Confirm Absent
+              </Button>
+            </div>
+
+            {/* If student was already marked absent, option to clear */}
+            {attendanceMap[activeStudentForAbsence.student_id]?.status === 'absent' && (
+              <div style={{ textAlign: 'center', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleClearAbsent}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#dc2626',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Reset this student to Unmarked
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Unsubmitted Attendance Exit Interception Modal */}
+      <UnsubmittedAttendanceModal
+        opened={leaveModalOpen}
+        classTitle={currentClass?.name ? `${currentClass.name} · Grade ${currentClass.grade}` : 'Selected Class'}
+        dateStr={selectedDate}
+        counts={counts}
+        saving={saving}
+        onClose={handleStayOnRegister}
+        onSubmitAndLeave={handleSubmitAndLeave}
+        onSaveDraftAndLeave={handleSaveDraftAndLeave}
+        onDiscardAndLeave={handleDiscardAndLeave}
+      />
     </div>
   );
 };

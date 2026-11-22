@@ -7,9 +7,16 @@ import {
   KeyRound,
   ArrowRight
 } from 'lucide-react';
+import { useForm, isNotEmpty } from '@mantine/form';
+import {
+  TextInput,
+  PasswordInput,
+  Button,
+  Alert,
+  Stack
+} from '@mantine/core';
 import { api, setAuthSession } from '../api/client';
 import { SCHOOL_PROFILE } from '../config/schoolConfig';
-import { Button, Input } from '../ui';
 import './login.css';
 
 interface LoginProps {
@@ -32,7 +39,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     username: 'admin',
     password: 'admin123',
     roleTag: 'Executive',
-    scope: 'School profile oversight, academic years, policy approvals & examination publishing'
+    scope: 'School profile oversight, academic years, sections & administrative settings'
   },
   {
     roleTitle: 'Vice Principal Academic',
@@ -40,7 +47,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     username: 'vp_academic',
     password: 'teacher123',
     roleTag: 'VP Academic',
-    scope: 'Academic policy, school-wide moderation & examination approvals'
+    scope: 'Academic leadership, school sections & teacher assignments'
   },
   {
     roleTitle: 'Section Head (Grades 6–9)',
@@ -48,7 +55,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     username: 'section_head_junior',
     password: 'teacher123',
     roleTag: 'Junior Head',
-    scope: 'Junior secondary moderation, marks endorsement & review'
+    scope: 'Junior secondary section walkthrough & classroom status monitoring'
   },
   {
     roleTitle: 'Section Head (Grades 10–13)',
@@ -56,7 +63,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     username: 'section_head_senior',
     password: 'teacher123',
     roleTag: 'Senior Head',
-    scope: 'G.C.E. O/L & A/L section moderation & marks endorsement'
+    scope: 'Senior secondary section walkthrough & classroom status monitoring'
   },
   {
     roleTitle: 'Class Teacher (Grade 8-A)',
@@ -72,7 +79,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     username: 'teacher_samantha',
     password: 'teacher123',
     roleTag: 'Maths',
-    scope: 'Grade 8-A & 11-A mathematics marks entry & term reports'
+    scope: 'Grade 8-A & 11-A mathematics instruction & classroom teaching'
   },
   {
     roleTitle: 'Science & ICT Teacher',
@@ -80,28 +87,34 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     username: 'teacher_priya',
     password: 'teacher123',
     roleTag: 'Science',
-    scope: 'Grade 8-A science & ICT marks entry & term reports'
+    scope: 'Grade 8-A science & ICT instruction & classroom teaching'
   }
 ];
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const isDemoEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true';
 
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filledFeedback, setFilledFeedback] = useState<string | null>(null);
 
-  const handleSubmit = async (e?: React.FormEvent, customUser?: string, customPass?: string) => {
-    if (e) e.preventDefault();
-    const u = customUser || username;
-    const p = customPass || password;
+  const form = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      username: '',
+      password: '',
+    },
+    validate: {
+      username: isNotEmpty('Username or Academic ID is required'),
+      password: isNotEmpty('Password is required'),
+    },
+  });
 
+  const performLogin = async (usernameVal: string, passwordVal: string) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await api.login(u, p);
+      const res = await api.login(usernameVal, passwordVal);
       setAuthSession(res.token, res.user);
       onLoginSuccess(res.user);
     } catch (err: any) {
@@ -111,18 +124,20 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleSubmit = form.onSubmit((values) => {
+    return performLogin(values.username, values.password);
+  });
+
   const handleFillCredentials = (u: string, p: string, roleName: string) => {
-    setUsername(u);
-    setPassword(p);
+    form.setValues({ username: u, password: p });
     setError(null);
     setFilledFeedback(`Loaded ${roleName} (${u})`);
     setTimeout(() => setFilledFeedback(null), 3000);
   };
 
   const handleQuickDemo = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    handleSubmit(undefined, u, p);
+    form.setValues({ username: u, password: p });
+    performLogin(u, p);
   };
 
   return (
@@ -147,58 +162,67 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         {/* Error Feedback */}
         {error && (
-          <div className="login-alert login-alert--error" role="alert">
-            <AlertCircle size={15} aria-hidden="true" />
-            <span>{error}</span>
-          </div>
+          <Alert
+            icon={<AlertCircle size={16} />}
+            color="red"
+            radius="md"
+            mb="sm"
+            role="alert"
+          >
+            {error}
+          </Alert>
         )}
 
         {/* Credential Fill Confirmation */}
         {filledFeedback && (
-          <div className="login-alert login-alert--success" role="status">
-            <CheckCircle2 size={15} aria-hidden="true" />
-            <span>{filledFeedback}</span>
-          </div>
+          <Alert
+            icon={<CheckCircle2 size={16} />}
+            color="statusGreen"
+            radius="md"
+            mb="sm"
+            role="status"
+          >
+            {filledFeedback}
+          </Alert>
         )}
 
-        {/* Clean Sign In Form */}
+        {/* Clean Sign In Form powered by @mantine/form */}
         <form onSubmit={handleSubmit} className="login-form">
-          <Input
-            label="Username or Academic ID"
-            name="username"
-            type="text"
-            placeholder="e.g. admin or teacher_nimali"
-            required
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            leftIcon={<User size={16} />}
-          />
+          <Stack gap="sm">
+            <TextInput
+              label="Username or Academic ID"
+              placeholder="e.g. admin or teacher_nimali"
+              required
+              autoComplete="username"
+              leftSection={<User size={16} />}
+              key={form.key('username')}
+              {...form.getInputProps('username')}
+            />
 
-          <Input
-            label="Password"
-            name="password"
-            type="password"
-            placeholder="••••••••"
-            required
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            leftIcon={<Lock size={16} />}
-            showPasswordToggle
-          />
+            <PasswordInput
+              label="Password"
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              leftSection={<Lock size={16} />}
+              key={form.key('password')}
+              {...form.getInputProps('password')}
+            />
 
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            fullWidth
-            isLoading={loading}
-            className="login-submit-btn"
-            rightIcon={<ArrowRight size={16} />}
-          >
-            Sign In
-          </Button>
+            <Button
+              type="submit"
+              variant="filled"
+              color="refinedBlue"
+              size="md"
+              fullWidth
+              loading={loading || form.submitting}
+              className="login-submit-btn"
+              rightSection={<ArrowRight size={16} />}
+              mt="xs"
+            >
+              Sign In
+            </Button>
+          </Stack>
         </form>
 
         {/* Testing & Demo Accounts (Minimalist Quick-Access) */}

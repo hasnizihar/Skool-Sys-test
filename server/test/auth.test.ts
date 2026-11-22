@@ -141,4 +141,149 @@ describe('2. Authentication and Authorization Baseline Tests', () => {
     assert.ok(Array.isArray(meBody.user.assignedClassIds));
     assert.ok(meBody.user.assignedClassIds.includes(fixtures.classTeacher.classId));
   });
+
+  describe('User Profile Section & Password Management Endpoints', () => {
+    let userToken: string;
+
+    before(async () => {
+      const loginRes = await server.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: fixtures.classTeacher.username,
+          password: fixtures.classTeacher.password
+        })
+      });
+      userToken = (await loginRes.json()).token;
+    });
+
+    it('PUT /api/auth/profile updates personal full name and email successfully', async () => {
+      const res = await server.request('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          full_name: 'Updated Faculty Member Name',
+          email: 'updated.faculty@kcc.local'
+        })
+      });
+
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.success, true);
+      assert.equal(data.user.full_name, 'Updated Faculty Member Name');
+      assert.equal(data.user.email, 'updated.faculty@kcc.local');
+    });
+
+    it('PUT /api/auth/profile rejects invalid email or missing name (400 Bad Request)', async () => {
+      const res = await server.request('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          full_name: '',
+          email: 'not-an-email'
+        })
+      });
+
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error);
+    });
+
+    it('PUT /api/auth/profile rejects email already in use by another user (400 Bad Request)', async () => {
+      const res = await server.request('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          full_name: 'Test Name',
+          email: fixtures.adminUser.username + '@test.local' // admin's email
+        })
+      });
+
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error.includes('already in use'));
+    });
+
+    it('PUT /api/auth/change-password rejects incorrect current password (400 Bad Request)', async () => {
+      const res = await server.request('/api/auth/change-password', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          currentPassword: 'WrongPassword123!',
+          newPassword: 'BrandNewPass123!'
+        })
+      });
+
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error.includes('does not match'));
+    });
+
+    it('PUT /api/auth/change-password rejects weak new password (400 Bad Request)', async () => {
+      const res = await server.request('/api/auth/change-password', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          currentPassword: fixtures.classTeacher.password,
+          newPassword: 'short'
+        })
+      });
+
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.ok(data.error.includes('at least 8 characters'));
+    });
+
+    it('PUT /api/auth/change-password successfully updates password and returns fresh JWT', async () => {
+      const freshPassword = 'SuperSecurePass2026!';
+      const res = await server.request('/api/auth/change-password', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          currentPassword: fixtures.classTeacher.password,
+          newPassword: freshPassword
+        })
+      });
+
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.success, true);
+      assert.ok(data.token, 'Must return new active JWT');
+
+      // Verify the new token authenticates /api/auth/me
+      const meRes = await server.request('/api/auth/me', {
+        headers: { Authorization: `Bearer ${data.token}` }
+      });
+      assert.equal(meRes.status, 200);
+
+      // Verify login with new password succeeds
+      const loginCheck = await server.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: fixtures.classTeacher.username,
+          password: freshPassword
+        })
+      });
+      assert.equal(loginCheck.status, 200);
+    });
+  });
 });

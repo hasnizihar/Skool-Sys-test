@@ -42,25 +42,25 @@ describe('Phase 2: Section Head Access Correction & Class Management Tests', () 
 
     // 2. Create Sections
     const sec1Res = db.prepare(`
-      INSERT INTO sections (code, name, description, grade_range)
-      VALUES ('SEC_JUNIOR_TEST', 'Junior Secondary Test', 'Grades 6-9', '6-9')
+      INSERT INTO sections (name, description, grade_range)
+      VALUES ('Junior Secondary Test', 'Grades 6-9', '6-9')
     `).run();
     section1Id = Number(sec1Res.lastInsertRowid);
 
     const sec2Res = db.prepare(`
-      INSERT INTO sections (code, name, description, grade_range)
-      VALUES ('SEC_SENIOR_TEST', 'Senior Secondary Test', 'Grades 10-11', '10-11')
+      INSERT INTO sections (name, description, grade_range)
+      VALUES ('Senior Secondary Test', 'Grades 10-11', '10-11')
     `).run();
     section2Id = Number(sec2Res.lastInsertRowid);
 
     // 3. Create Classes
     const insClass = db.prepare(`
-      INSERT INTO classes (grade, name, room_number, academic_year_id, section_id)
-      VALUES (?, ?, ?, 1, ?)
+      INSERT INTO classes (grade, name, academic_year_id, section_id)
+      VALUES (?, ?, 1, ?)
     `);
-    classInSec1Id = Number(insClass.run(8, 'Grade 8-X Test', 'Room 101', section1Id).lastInsertRowid);
-    classInSec2Id = Number(insClass.run(10, 'Grade 10-X Test', 'Room 201', section2Id).lastInsertRowid);
-    classDualAssignedId = Number(insClass.run(7, 'Grade 7-X Test', 'Room 102', section1Id).lastInsertRowid);
+    classInSec1Id = Number(insClass.run(8, 'Grade 8-X Test', section1Id).lastInsertRowid);
+    classInSec2Id = Number(insClass.run(10, 'Grade 10-X Test', section2Id).lastInsertRowid);
+    classDualAssignedId = Number(insClass.run(7, 'Grade 7-X Test', section1Id).lastInsertRowid);
 
     // 4. Create Users
     const salt = bcrypt.genSaltSync(8);
@@ -290,7 +290,6 @@ describe('Phase 2: Section Head Access Correction & Class Management Tests', () 
         body: JSON.stringify({
           grade: 8,
           name: 'Grade 8-B New',
-          room_number: 'Room 105',
           section_id: section1Id
         })
       });
@@ -304,7 +303,6 @@ describe('Phase 2: Section Head Access Correction & Class Management Tests', () 
       const row = db.prepare('SELECT * FROM classes WHERE id = ?').get(createdClassId) as any;
       assert.equal(row.grade, 8);
       assert.equal(row.name, 'Grade 8-B New');
-      assert.equal(row.room_number, 'Room 105');
       assert.equal(row.section_id, section1Id);
     });
 
@@ -388,7 +386,6 @@ describe('Phase 2: Section Head Access Correction & Class Management Tests', () 
         body: JSON.stringify({
           grade: 8,
           name: 'Grade 8-B Updated',
-          room_number: 'Room 205',
           section_id: section2Id
         })
       });
@@ -396,7 +393,6 @@ describe('Phase 2: Section Head Access Correction & Class Management Tests', () 
       assert.equal(res.status, 200);
       const data = await res.json();
       assert.equal(data.class.name, 'Grade 8-B Updated');
-      assert.equal(data.class.room_number, 'Room 205');
       assert.equal(data.class.section_id, section2Id);
     });
 
@@ -437,14 +433,14 @@ describe('Phase 2: Section Head Access Correction & Class Management Tests', () 
     before(() => {
       // Setup classes for deletion testing
       const insClass = db.prepare(`
-        INSERT INTO classes (grade, name, room_number, academic_year_id, section_id)
-        VALUES (?, ?, ?, 1, ?)
+        INSERT INTO classes (grade, name, academic_year_id, section_id)
+        VALUES (?, ?, 1, ?)
       `);
 
-      emptyClassId = Number(insClass.run(9, 'Grade 9-Empty', 'Room 301', section1Id).lastInsertRowid);
-      classWithStudentsId = Number(insClass.run(9, 'Grade 9-WithStudents', 'Room 302', section1Id).lastInsertRowid);
-      classWithAttendanceId = Number(insClass.run(9, 'Grade 9-WithAttendance', 'Room 303', section1Id).lastInsertRowid);
-      classWithPeriodStatusesId = Number(insClass.run(9, 'Grade 9-WithStatuses', 'Room 304', section1Id).lastInsertRowid);
+      emptyClassId = Number(insClass.run(9, 'Grade 9-Empty', section1Id).lastInsertRowid);
+      classWithStudentsId = Number(insClass.run(9, 'Grade 9-WithStudents', section1Id).lastInsertRowid);
+      classWithAttendanceId = Number(insClass.run(9, 'Grade 9-WithAttendance', section1Id).lastInsertRowid);
+      classWithPeriodStatusesId = Number(insClass.run(9, 'Grade 9-WithStatuses', section1Id).lastInsertRowid);
 
       // Add student to classWithStudentsId
       const insStudent = db.prepare(`

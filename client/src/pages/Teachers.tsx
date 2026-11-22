@@ -21,6 +21,19 @@ import {
   Eye,
   UserCheck
 } from 'lucide-react';
+import {
+  Modal,
+  TextInput,
+  PasswordInput,
+  Select,
+  Checkbox,
+  Button,
+  Stack,
+  Group,
+  Text,
+  Badge
+} from '@mantine/core';
+import { useForm, isNotEmpty, isEmail } from '@mantine/form';
 import { api } from '../api/client';
 import { useToast } from '../ui/useToast';
 import './teachers.css';
@@ -52,22 +65,52 @@ export const Teachers: React.FC<TeachersProps> = ({ user, onNavigate }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
 
-  // Form states
-  const [addForm, setAddForm] = useState({
-    full_name: '',
-    username: '',
-    email: '',
-    role: 'class_teacher',
-    password: '',
-    is_active: 1
+  // Form states powered by @mantine/form
+  const addTeacherForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      full_name: '',
+      username: '',
+      email: '',
+      role: 'class_teacher',
+      password: '',
+      is_active: true,
+    },
+    validate: {
+      full_name: isNotEmpty('Full name is required'),
+      username: isNotEmpty('Staff ID / Username is required'),
+      email: isEmail('Valid email address is required'),
+    },
+    transformValues: (values) => ({
+      full_name: values.full_name.trim(),
+      username: values.username.trim(),
+      email: values.email.trim(),
+      role: values.role,
+      password: values.password || undefined,
+      is_active: values.is_active ? 1 : 0,
+    }),
   });
 
-  const [editForm, setEditForm] = useState({
-    full_name: '',
-    email: '',
-    role: 'class_teacher',
-    is_active: 1,
-    newPassword: ''
+  const editTeacherForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      full_name: '',
+      email: '',
+      role: 'class_teacher',
+      is_active: true,
+      newPassword: '',
+    },
+    validate: {
+      full_name: isNotEmpty('Full name is required'),
+      email: isEmail('Valid email address is required'),
+    },
+    transformValues: (values) => ({
+      full_name: values.full_name.trim(),
+      email: values.email.trim(),
+      role: values.role,
+      is_active: values.is_active ? 1 : 0,
+      newPassword: values.newPassword || undefined,
+    }),
   });
 
   // Assignment Modal selection states
@@ -150,60 +193,45 @@ export const Teachers: React.FC<TeachersProps> = ({ user, onNavigate }) => {
     return { total, active, classTeachers, sectionHeads, pending };
   }, [teachers]);
 
-  // Handle Add Teacher
-  const handleAddTeacher = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!addForm.full_name.trim() || !addForm.username.trim() || !addForm.email.trim()) {
-      showError('Please fill in all required fields.');
-      return;
-    }
-
+  // Handle Add Teacher with @mantine/form
+  const handleAddTeacher = addTeacherForm.onSubmit(async (transformedValues) => {
     try {
-      await api.createTeacher(addForm);
-      showSuccess(`Teacher "${addForm.full_name}" created successfully.`);
+      await api.createTeacher(transformedValues);
+      showSuccess(`Teacher "${transformedValues.full_name}" created successfully.`);
       setShowAddModal(false);
-      setAddForm({
-        full_name: '',
-        username: '',
-        email: '',
-        role: 'class_teacher',
-        password: '',
-        is_active: 1
-      });
+      addTeacherForm.reset();
       loadTeachersData();
     } catch (err: any) {
       showError(err.message || 'Failed to create teacher record.');
     }
-  };
+  });
 
   // Open Edit Modal
   const openEditModal = (teacher: any) => {
     setSelectedTeacher(teacher);
-    setEditForm({
-      full_name: teacher.full_name,
-      email: teacher.email,
-      role: teacher.role,
-      is_active: teacher.is_active ? 1 : 0,
-      newPassword: ''
+    editTeacherForm.setValues({
+      full_name: teacher.full_name || '',
+      email: teacher.email || '',
+      role: teacher.role || 'class_teacher',
+      is_active: teacher.is_active === 1 || teacher.is_active === true,
+      newPassword: '',
     });
     setShowEditModal(true);
   };
 
-  // Handle Edit Teacher
-  const handleEditTeacher = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle Edit Teacher with @mantine/form
+  const handleEditTeacher = editTeacherForm.onSubmit(async (transformedValues) => {
     if (!selectedTeacher) return;
-
     try {
-      await api.updateTeacher(selectedTeacher.id, editForm);
-      showSuccess(`Teacher "${editForm.full_name}" updated successfully.`);
+      await api.updateTeacher(selectedTeacher.id, transformedValues);
+      showSuccess(`Teacher "${transformedValues.full_name}" updated successfully.`);
       setShowEditModal(false);
       setSelectedTeacher(null);
       loadTeachersData();
     } catch (err: any) {
       showError(err.message || 'Failed to update teacher.');
     }
-  };
+  });
 
   // Open Assignments Modal
   const openAssignmentsModal = (teacher: any) => {
@@ -562,206 +590,152 @@ export const Teachers: React.FC<TeachersProps> = ({ user, onNavigate }) => {
         )}
       </div>
 
-      {/* MODAL 1: ADD TEACHER */}
-      {showAddModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Add New Teacher</h2>
-              <button
-                type="button"
-                className="btn btn-secondary btn-icon"
-                onClick={() => setShowAddModal(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleAddTeacher}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    required
-                    placeholder="e.g. M. I. Mohamed Rifas"
-                    value={addForm.full_name}
-                    onChange={(e) => setAddForm({ ...addForm, full_name: e.target.value })}
-                  />
-                </div>
+      {/* MODAL 1: ADD TEACHER powered by @mantine/form */}
+      <Modal
+        opened={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title={
+          <Group gap="xs">
+            <UserPlus size={18} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Add New Teacher</Text>
+          </Group>
+        }
+        size="md"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleAddTeacher}>
+          <Stack gap="sm">
+            <TextInput
+              label="Full Name"
+              required
+              placeholder="e.g. M. I. Mohamed Rifas"
+              key={addTeacherForm.key('full_name')}
+              {...addTeacherForm.getInputProps('full_name')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Staff ID / Username *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    required
-                    placeholder="e.g. T042 or rifas"
-                    value={addForm.username}
-                    onChange={(e) => setAddForm({ ...addForm, username: e.target.value })}
-                  />
-                </div>
+            <TextInput
+              label="Staff ID / Username"
+              required
+              placeholder="e.g. T042 or rifas"
+              key={addTeacherForm.key('username')}
+              {...addTeacherForm.getInputProps('username')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Official Email Address *</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    required
-                    placeholder="e.g. rifas@kcc.lk"
-                    value={addForm.email}
-                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
-                  />
-                </div>
+            <TextInput
+              label="Official Email Address"
+              required
+              type="email"
+              placeholder="e.g. rifas@kcc.lk"
+              key={addTeacherForm.key('email')}
+              {...addTeacherForm.getInputProps('email')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Primary Role</label>
-                  <select
-                    className="form-input"
-                    value={addForm.role}
-                    onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
-                  >
-                    <option value="class_teacher">Class Teacher</option>
-                    <option value="subject_teacher">Subject Teacher</option>
-                    <option value="admin">Principal / School Administrator</option>
-                  </select>
-                </div>
+            <Select
+              label="Primary Role"
+              required
+              data={[
+                { value: 'class_teacher', label: 'Class Teacher' },
+                { value: 'subject_teacher', label: 'Subject Teacher' },
+                { value: 'admin', label: 'Principal / School Administrator' },
+              ]}
+              key={addTeacherForm.key('role')}
+              {...addTeacherForm.getInputProps('role')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Initial Password (Optional)</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder="Leave blank to create as pending activation"
-                    value={addForm.password}
-                    onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                  />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
-                    If omitted, the account will be created as inactive pending activation.
-                  </span>
-                </div>
+            <PasswordInput
+              label="Initial Password (Optional)"
+              placeholder="Leave blank to create as pending activation"
+              description="If omitted, the account will be created as inactive pending activation."
+              key={addTeacherForm.key('password')}
+              {...addTeacherForm.getInputProps('password')}
+            />
 
-                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 4 }}>
-                  <input
-                    type="checkbox"
-                    id="add-teacher-active"
-                    checked={addForm.is_active === 1}
-                    onChange={(e) => setAddForm({ ...addForm, is_active: e.target.checked ? 1 : 0 })}
-                  />
-                  <label htmlFor="add-teacher-active" style={{ fontSize: '0.875rem', cursor: 'pointer' }}>
-                    Activate user account immediately
-                  </label>
-                </div>
-              </div>
+            <Checkbox
+              label="Activate user account immediately"
+              key={addTeacherForm.key('is_active')}
+              {...addTeacherForm.getInputProps('is_active', { type: 'checkbox' })}
+            />
 
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowAddModal(false)}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Teacher Record
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowAddModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue" loading={addTeacherForm.submitting}>
+                Save Teacher Record
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
-      {/* MODAL 2: EDIT TEACHER */}
-      {showEditModal && selectedTeacher && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Edit Teacher Record</h2>
-              <button
-                type="button"
-                className="btn btn-secondary btn-icon"
-                onClick={() => setShowEditModal(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleEditTeacher}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    required
-                    value={editForm.full_name}
-                    onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
-                  />
-                </div>
+      {/* MODAL 2: EDIT TEACHER powered by @mantine/form */}
+      <Modal
+        opened={showEditModal && !!selectedTeacher}
+        onClose={() => setShowEditModal(false)}
+        title={
+          <Group gap="xs">
+            <Edit2 size={18} color="var(--primary, #2563eb)" />
+            <Text fw={650} size="md">Edit Teacher Record</Text>
+          </Group>
+        }
+        size="md"
+        radius="md"
+        centered
+      >
+        <form onSubmit={handleEditTeacher}>
+          <Stack gap="sm">
+            <TextInput
+              label="Full Name"
+              required
+              key={editTeacherForm.key('full_name')}
+              {...editTeacherForm.getInputProps('full_name')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Email Address *</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    required
-                    value={editForm.email}
-                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                  />
-                </div>
+            <TextInput
+              label="Email Address"
+              required
+              type="email"
+              key={editTeacherForm.key('email')}
+              {...editTeacherForm.getInputProps('email')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Primary Role</label>
-                  <select
-                    className="form-input"
-                    value={editForm.role}
-                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                  >
-                    <option value="class_teacher">Class Teacher</option>
-                    <option value="subject_teacher">Subject Teacher</option>
-                    <option value="admin">Principal / Administrator</option>
-                  </select>
-                </div>
+            <Select
+              label="Primary Role"
+              required
+              data={[
+                { value: 'class_teacher', label: 'Class Teacher' },
+                { value: 'subject_teacher', label: 'Subject Teacher' },
+                { value: 'admin', label: 'Principal / Administrator' },
+              ]}
+              key={editTeacherForm.key('role')}
+              {...editTeacherForm.getInputProps('role')}
+            />
 
-                <div className="form-group">
-                  <label className="form-label">Reset Password (Optional)</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder="Enter new password (min 8 chars, letters + numbers)"
-                    value={editForm.newPassword}
-                    onChange={(e) => setEditForm({ ...editForm, newPassword: e.target.value })}
-                  />
-                </div>
+            <PasswordInput
+              label="Reset Password (Optional)"
+              placeholder="Enter new password (min 8 chars, letters + numbers)"
+              key={editTeacherForm.key('newPassword')}
+              {...editTeacherForm.getInputProps('newPassword')}
+            />
 
-                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 4 }}>
-                  <input
-                    type="checkbox"
-                    id="edit-teacher-active"
-                    checked={editForm.is_active === 1}
-                    onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked ? 1 : 0 })}
-                  />
-                  <label htmlFor="edit-teacher-active" style={{ fontSize: '0.875rem', cursor: 'pointer' }}>
-                    Active login account
-                  </label>
-                </div>
-              </div>
+            <Checkbox
+              label="Active login account"
+              key={editTeacherForm.key('is_active')}
+              {...editTeacherForm.getInputProps('is_active', { type: 'checkbox' })}
+            />
 
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowEditModal(false)}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Update Teacher
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <Group justify="flex-end" gap="sm" mt="md">
+              <Button variant="default" onClick={() => setShowEditModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="refinedBlue" loading={editTeacherForm.submitting}>
+                Update Teacher
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* MODAL 3: MANAGE ASSIGNMENTS (Multi-role, sections & classes) */}
       {showAssignmentsModal && selectedTeacher && (
@@ -841,7 +815,7 @@ export const Teachers: React.FC<TeachersProps> = ({ user, onNavigate }) => {
                     <option value="">-- Select section to assign --</option>
                     {sections.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
+                        {s.name}
                       </option>
                     ))}
                   </select>

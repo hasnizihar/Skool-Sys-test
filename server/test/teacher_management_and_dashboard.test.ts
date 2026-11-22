@@ -64,8 +64,8 @@ describe('Phase 4: Teacher Management, Bulk Import, Role Management & Dashboard 
 
     // Create a Section
     const secRes = db.prepare(`
-      INSERT INTO sections (name, code, description, grade_range)
-      VALUES ('Senior Secondary', 'SEC_SENIOR', 'Grades 10 and 11', 'Grades 10–11')
+      INSERT INTO sections (name, description, grade_range)
+      VALUES ('Senior Secondary', 'Grades 10 and 11', 'Grades 10–11')
     `).run();
     sectionId = Number(secRes.lastInsertRowid);
 

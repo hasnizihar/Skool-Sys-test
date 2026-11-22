@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Printer,
-  Award,
   Edit3,
   Phone,
   Mail,
@@ -13,7 +12,9 @@ import {
   CheckCircle2,
   School,
   X,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import {
   Modal,
@@ -28,12 +29,355 @@ import {
   Alert,
   Badge,
   Button,
-  ScrollArea
+  ScrollArea,
+  TextInput,
+  Select,
+  Tooltip
 } from '@mantine/core';
+import { useForm, isNotEmpty } from '@mantine/form';
 import { api } from '../api/client';
-import { StudentReportCard } from './StudentReportCard';
 import { LoadingState, ErrorState } from '../ui/mantine';
 import './studentFullView.css';
+
+interface HeatmapProps {
+  history: Array<{ status: string; remarks?: string | null; date: string; class_name?: string }>;
+  academicYear?: string;
+  stats?: {
+    total_days?: number;
+    present_days?: number;
+    absent_days?: number;
+    late_days?: number;
+    excused_days?: number;
+    attendanceRate?: number;
+  };
+}
+
+const AttendanceContributionHeatmap: React.FC<HeatmapProps> = ({
+  history = [],
+  academicYear = '2026',
+  stats
+}) => {
+  const [showTable, setShowTable] = useState(false);
+  const year = parseInt(academicYear, 10) || 2026;
+
+  // Build attendance map keyed by date 'YYYY-MM-DD'
+  const attendanceMap = useMemo(() => {
+    const map = new Map<string, { status: string; remarks?: string | null; class_name?: string }>();
+    (history || []).forEach((h) => {
+      if (h.date) {
+        map.set(h.date, h);
+      }
+    });
+    return map;
+  }, [history]);
+
+  // Compute 53 calendar weeks for the year (Sunday to Saturday rows)
+  const { weeks, monthLabels } = useMemo(() => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startDate = new Date(year, 0, 1);
+    const firstDayOfWeek = startDate.getDay(); // 0 is Sunday
+    const gridStart = new Date(year, 0, 1 - firstDayOfWeek);
+    const endDate = new Date(year, 11, 31);
+
+    const generatedWeeks: Array<Array<{
+      dateStr: string;
+      inYear: boolean;
+      month: number;
+      dayOfMonth: number;
+      dayOfWeek: number;
+      dateObj: Date;
+    }>> = [];
+
+    let curr = new Date(gridStart);
+
+    while (curr <= endDate || curr.getDay() !== 0) {
+      const dateStr = `${curr.getFullYear()}-${pad(curr.getMonth() + 1)}-${pad(curr.getDate())}`;
+      const inYear = curr.getFullYear() === year;
+      const month = curr.getMonth();
+      const dayOfMonth = curr.getDate();
+      const dayOfWeek = curr.getDay();
+
+      if (dayOfWeek === 0) {
+        generatedWeeks.push([]);
+      }
+
+      generatedWeeks[generatedWeeks.length - 1].push({
+        dateStr,
+        inYear,
+        month,
+        dayOfMonth,
+        dayOfWeek,
+        dateObj: new Date(curr)
+      });
+
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    const labels: Array<{ name: string; colIdx: number }> = [];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    for (let m = 0; m < 12; m++) {
+      const colIdx = generatedWeeks.findIndex((w) =>
+        w.some((d) => d.inYear && d.month === m && d.dayOfMonth <= 7)
+      );
+      if (colIdx !== -1) {
+        labels.push({ name: monthNames[m], colIdx });
+      }
+    }
+
+    return { weeks: generatedWeeks, monthLabels: labels };
+  }, [year]);
+
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }, []);
+
+  return (
+    <div className="att-contrib-card card" style={{ padding: 0 }}>
+      {/* Header */}
+      <div className="att-contrib-header">
+        <div>
+          <h3 style={{ fontSize: '1.05rem', margin: 0, fontWeight: 700 }}>Daily Attendance History Log</h3>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
+            Annual roll-call contribution for Academic Year {academicYear} &middot; Green: Present &middot; Red: Absent
+          </p>
+        </div>
+
+        <Group gap="xs">
+          <Badge color="green" variant="light" size="sm">
+            {stats?.present_days ?? history.filter((h) => h.status === 'present').length} Present
+          </Badge>
+          <Badge color="red" variant="light" size="sm">
+            {stats?.absent_days ?? history.filter((h) => h.status === 'absent').length} Absent
+          </Badge>
+          {((stats?.late_days ?? 0) > 0 || history.some((h) => h.status === 'late')) && (
+            <Badge color="yellow" variant="light" size="sm">
+              {stats?.late_days ?? history.filter((h) => h.status === 'late').length} Late
+            </Badge>
+          )}
+          <Badge color="blue" variant="outline" size="sm">
+            {stats?.attendanceRate ?? 100}% Rate
+          </Badge>
+        </Group>
+      </div>
+
+      {/* Heatmap Area */}
+      <div className="att-contrib-body">
+        <div className="att-contrib-scroll-wrapper">
+          <div className="att-contrib-graph">
+            {/* Month Headers */}
+            <div className="att-contrib-months">
+              {monthLabels.map((m) => (
+                <span
+                  key={m.name}
+                  className="att-contrib-month-label"
+                  style={{ left: `${m.colIdx * 14}px` }}
+                >
+                  {m.name}
+                </span>
+              ))}
+            </div>
+
+            {/* Main Day Graph */}
+            <div className="att-contrib-main">
+              {/* Day Axis (Sun to Sat) */}
+              <div className="att-contrib-days-axis" aria-hidden="true">
+                <span className="att-contrib-day-label" />
+                <span className="att-contrib-day-label">Mon</span>
+                <span className="att-contrib-day-label" />
+                <span className="att-contrib-day-label">Wed</span>
+                <span className="att-contrib-day-label" />
+                <span className="att-contrib-day-label">Fri</span>
+                <span className="att-contrib-day-label" />
+              </div>
+
+              {/* 53 Week Columns */}
+              <div className="att-contrib-weeks" role="grid" aria-label="Annual Attendance Contribution Heatmap">
+                {weeks.map((week, wIdx) => (
+                  <div key={wIdx} className="att-contrib-week-col" role="row">
+                    {week.map((cell) => {
+                      const record = attendanceMap.get(cell.dateStr);
+                      const isWeekend = cell.dayOfWeek === 0 || cell.dayOfWeek === 6;
+                      const isFuture = cell.dateStr > todayStr;
+
+                      let cellStatusClass = 'empty';
+                      if (!cell.inYear) {
+                        cellStatusClass = 'out-of-year';
+                      } else if (record) {
+                        cellStatusClass = record.status; // 'present', 'absent', 'late', 'excused'
+                      } else if (isWeekend) {
+                        cellStatusClass = 'weekend';
+                      }
+
+                      const dateFormatted = cell.dateObj.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      });
+
+                      const tooltipContent = (
+                        <div style={{ fontSize: '0.75rem', lineHeight: 1.4, textAlign: 'left' }}>
+                          <div style={{ fontWeight: 700 }}>{dateFormatted}</div>
+                          {record ? (
+                            <>
+                              <div
+                                style={{
+                                  color:
+                                    record.status === 'present'
+                                      ? '#4ade80'
+                                      : record.status === 'absent'
+                                      ? '#f87171'
+                                      : record.status === 'late'
+                                      ? '#fbbf24'
+                                      : '#c084fc',
+                                  fontWeight: 600,
+                                  textTransform: 'capitalize'
+                                }}
+                              >
+                                {record.status} {record.class_name ? `• ${record.class_name}` : ''}
+                              </div>
+                              {record.remarks && (
+                                <div style={{ color: 'var(--text-muted, #94a3b8)', fontStyle: 'italic', fontSize: '0.7rem' }}>
+                                  &ldquo;{record.remarks}&rdquo;
+                                </div>
+                              )}
+                            </>
+                          ) : isWeekend ? (
+                            <div style={{ color: 'var(--text-muted, #94a3b8)' }}>Weekend (No School)</div>
+                          ) : isFuture ? (
+                            <div style={{ color: 'var(--text-muted, #94a3b8)' }}>Future Date</div>
+                          ) : (
+                            <div style={{ color: 'var(--text-muted, #94a3b8)' }}>No session recorded</div>
+                          )}
+                        </div>
+                      );
+
+                      if (!cell.inYear) {
+                        return (
+                          <div
+                            key={cell.dateStr}
+                            className={`att-contrib-cell ${cellStatusClass}`}
+                            aria-hidden="true"
+                          />
+                        );
+                      }
+
+                      return (
+                        <Tooltip
+                          key={cell.dateStr}
+                          label={tooltipContent}
+                          withArrow
+                          position="top"
+                          openDelay={80}
+                        >
+                          <div
+                            className={`att-contrib-cell ${cellStatusClass}`}
+                            tabIndex={0}
+                            role="gridcell"
+                            aria-label={`${cell.dateStr}: ${record?.status || (isWeekend ? 'weekend' : 'no session')}`}
+                          />
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer / Legend */}
+      <div className="att-contrib-footer">
+        <Text size="xs" c="dimmed">
+          Tracked across {stats?.total_days || history.length} school days in {academicYear}
+        </Text>
+
+        <div className="att-contrib-legend">
+          <span>Less</span>
+          <span className="att-contrib-legend-item">
+            <span
+              className="att-contrib-legend-chip"
+              style={{ background: 'var(--contrib-empty, #e2e8f0)', border: '1px solid var(--contrib-border, #cbd5e1)' }}
+            />
+          </span>
+          <span className="att-contrib-legend-item">
+            <span className="att-contrib-legend-chip" style={{ background: '#f59e0b' }} />
+            <span>Late</span>
+          </span>
+          <span className="att-contrib-legend-item">
+            <span className="att-contrib-legend-chip" style={{ background: '#ef4444' }} />
+            <span>Absent</span>
+          </span>
+          <span className="att-contrib-legend-item">
+            <span className="att-contrib-legend-chip" style={{ background: '#22c55e' }} />
+            <span>Present</span>
+          </span>
+          <span>More</span>
+        </div>
+      </div>
+
+      {/* Optional Detailed Roll-Call Table Toggle */}
+      {history.length > 0 && (
+        <div style={{ borderTop: '1px solid var(--border-color)', padding: '0.65rem 1.25rem', background: 'var(--bg-card)' }}>
+          <Group justify="space-between" align="center">
+            <Text size="xs" c="dimmed">
+              Need individual teacher remarks or timestamp logs?
+            </Text>
+            <Button
+              variant="subtle"
+              size="xs"
+              onClick={() => setShowTable((prev) => !prev)}
+              leftSection={showTable ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            >
+              {showTable ? 'Hide Detailed Table' : `View Detailed Table (${history.length} Entries)`}
+            </Button>
+          </Group>
+
+          {showTable && (
+            <div className="table-responsive" style={{ maxHeight: '240px', marginTop: '0.75rem' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Class</th>
+                    <th>Attendance Status</th>
+                    <th>Reason / Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((h: any, idx: number) => {
+                    let badge = 'badge-present';
+                    if (h.status === 'absent') badge = 'badge-absent';
+                    if (h.status === 'late') badge = 'badge-late';
+                    if (h.status === 'excused') badge = 'badge-excused';
+
+                    return (
+                      <tr key={idx}>
+                        <td><strong>{h.date}</strong></td>
+                        <td>{h.class_name}</td>
+                        <td>
+                          <span className={`badge ${badge}`} style={{ textTransform: 'capitalize', fontWeight: 600 }}>
+                            {h.status}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+                          {h.remarks || 'Normal attendance'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface StudentFullViewProps {
   studentId: number;
@@ -52,16 +396,51 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Edit Modal State
+  // Edit Modal State powered by @mantine/form
   const [showEditModal, setShowEditModal] = useState(false);
   const [classes, setClasses] = useState<any[]>([]);
-  const [editFormData, setEditFormData] = useState<any>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Report Card Modal State
-  const [showReportCard, setShowReportCard] = useState(false);
-  const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
+  const editStudentForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      full_name: '',
+      calling_name: '',
+      dob: '',
+      gender: 'Male',
+      address: '',
+      class_id: '',
+      roll_number: '',
+      guardian: {
+        name: '',
+        relation: 'Father',
+        phone: '',
+        email: '',
+      },
+    },
+    validate: {
+      full_name: isNotEmpty('Full name is required'),
+      calling_name: isNotEmpty('Calling name is required'),
+      dob: isNotEmpty('Date of birth is required'),
+      'guardian.name': isNotEmpty('Guardian name is required'),
+      'guardian.relation': isNotEmpty('Guardian relation is required'),
+      'guardian.phone': isNotEmpty('Guardian phone is required'),
+    },
+    transformValues: (values) => ({
+      full_name: values.full_name.trim(),
+      calling_name: values.calling_name.trim(),
+      dob: values.dob,
+      gender: values.gender,
+      address: values.address.trim(),
+      class_id: values.class_id ? Number(values.class_id) : null,
+      roll_number: values.roll_number ? Number(values.roll_number) : null,
+      guardian_name: values.guardian.name.trim(),
+      guardian_relation: values.guardian.relation.trim(),
+      guardian_phone: values.guardian.phone.trim(),
+      guardian_email: values.guardian.email.trim(),
+    }),
+  });
 
   useEffect(() => {
     loadStudent();
@@ -74,34 +453,21 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
       setError(null);
       const res = await api.getStudent(studentId);
       setData(res);
-      setEditFormData({
-        full_name: res.student.full_name,
-        calling_name: res.student.calling_name,
-        dob: res.student.dob,
-        gender: res.student.gender,
+      editStudentForm.setValues({
+        full_name: res.student.full_name || '',
+        calling_name: res.student.calling_name || '',
+        dob: res.student.dob || '',
+        gender: res.student.gender || 'Male',
         address: res.student.address || '',
-        guardian_name: res.student.guardian_name,
-        guardian_relation: res.student.guardian_relation,
-        guardian_phone: res.student.guardian_phone,
-        guardian_email: res.student.guardian_email || '',
-        guardian_nic: res.student.guardian_nic || '',
-        emergency_contact: res.student.emergency_contact || '',
-        status: res.student.status,
         class_id: res.student.class_id ? String(res.student.class_id) : '',
-        roll_number: res.student.roll_number ? String(res.student.roll_number) : ''
+        roll_number: res.student.roll_number ? String(res.student.roll_number) : '',
+        guardian: {
+          name: res.student.guardian_name || '',
+          relation: res.student.guardian_relation || 'Father',
+          phone: res.student.guardian_phone || '',
+          email: res.student.guardian_email || '',
+        },
       });
-      // Set default exam for report card if marks exist
-      if (res.marks && res.marks.length > 0) {
-        setSelectedExamId(res.marks[0].examination_id);
-      } else {
-        try {
-          const exRes = await api.getExaminations();
-          const pubExam = (exRes.examinations || []).find((e: any) => e.is_published === 1) || exRes.examinations?.[0];
-          setSelectedExamId(pubExam?.id || null);
-        } catch {
-          setSelectedExamId(null);
-        }
-      }
     } catch (err: any) {
       setError(err.message || 'Failed to load student record details.');
     } finally {
@@ -118,12 +484,11 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
     }
   };
 
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEditSubmit = editStudentForm.onSubmit(async (transformedValues) => {
     try {
       setSavingEdit(true);
       setEditError(null);
-      await api.updateStudent(studentId, editFormData);
+      await api.updateStudent(studentId, transformedValues);
       setShowEditModal(false);
       await loadStudent();
       if (onStudentUpdated) onStudentUpdated();
@@ -132,7 +497,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
     } finally {
       setSavingEdit(false);
     }
-  };
+  });
 
   const calculateAge = (dobString: string) => {
     if (!dobString) return '';
@@ -170,7 +535,7 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
     );
   }
 
-  const { student, attendance, marks } = data;
+  const { student, attendance } = data;
   const attRate = attendance?.attendanceRate !== undefined ? attendance.attendanceRate : 100;
   const isFemale = student.gender === 'Female';
 
@@ -196,16 +561,6 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
           >
             <Printer size={15} />
             <span>Print Student Dossier</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowReportCard(true)}
-            className="btn btn-secondary btn-sm"
-            style={{ color: 'var(--primary)', borderColor: 'var(--primary-light)' }}
-          >
-            <Award size={15} />
-            <span>Terminal Report Card</span>
           </button>
 
           {user?.role === 'admin' && (
@@ -444,11 +799,6 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
             </div>
 
             <div className="dossier-data-row">
-              <span className="dossier-data-label">Classroom Location:</span>
-              <span className="dossier-data-value">{student.room_number || 'Main School Block'}</span>
-            </div>
-
-            <div className="dossier-data-row">
               <span className="dossier-data-label">Class Teacher:</span>
               <strong className="dossier-data-value">{student.class_teacher_name || 'Mrs. Nimali Jayasinghe'}</strong>
             </div>
@@ -525,119 +875,14 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
         </div>
       </div>
 
-      {/* Recent Attendance Register History */}
-      {attendance?.history && attendance.history.length > 0 && (
-        <div className="dossier-table-card card" style={{ padding: 0 }}>
-          <div className="dossier-table-header">
-            <div>
-              <h3 style={{ fontSize: '1.05rem', margin: 0, fontWeight: 700 }}>Daily Attendance History Log</h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
-                Recent roll-call entries recorded for this student
-              </p>
-            </div>
-          </div>
+      {/* Daily Attendance History Log: Annual Contribution Heatmap (like GitHub) */}
+      <AttendanceContributionHeatmap
+        history={attendance?.history || []}
+        academicYear={student?.academic_year_name || '2026'}
+        stats={attendance}
+      />
 
-          <div className="table-responsive" style={{ maxHeight: '240px' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Class</th>
-                  <th>Attendance Status</th>
-                  <th>Reason / Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attendance.history.map((h: any, idx: number) => {
-                  let badge = 'badge-present';
-                  if (h.status === 'absent') badge = 'badge-absent';
-                  if (h.status === 'late') badge = 'badge-late';
-                  if (h.status === 'excused') badge = 'badge-excused';
-
-                  return (
-                    <tr key={idx}>
-                      <td><strong>{h.date}</strong></td>
-                      <td>{h.class_name}</td>
-                      <td>
-                        <span className={`badge ${badge}`} style={{ textTransform: 'capitalize', fontWeight: 600 }}>
-                          {h.status}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
-                        {h.remarks || 'Normal attendance'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Examination Performance & Marks Table */}
-      <div className="dossier-table-card card" style={{ padding: 0 }}>
-        <div className="dossier-table-header">
-          <div>
-            <h3 style={{ fontSize: '1.05rem', margin: 0, fontWeight: 700 }}>Examination Marks & Academic Performance</h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
-              Official examination marks, subject assignments (Mathematics, Science), and grade allocations
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowReportCard(true)}
-            className="btn btn-primary btn-sm btn-no-print"
-          >
-            <Award size={15} />
-            <span>View Full Report Card</span>
-          </button>
-        </div>
-
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Examination</th>
-                <th>Subject Code</th>
-                <th>Subject Name</th>
-                <th style={{ textAlign: 'center' }}>Term</th>
-                <th style={{ textAlign: 'center' }}>Score / Result</th>
-                <th style={{ textAlign: 'center' }}>Grade</th>
-              </tr>
-            </thead>
-            <tbody>
-              {marks && marks.length > 0 ? (
-                marks.map((m: any) => (
-                  <tr key={m.id}>
-                    <td><strong>{m.examination_name}</strong></td>
-                    <td><code>{m.subject_code}</code></td>
-                    <td>{m.subject_name}</td>
-                    <td style={{ textAlign: 'center' }}>Term {m.term}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <strong>{m.is_absent ? 'ABSENT' : m.score}</strong>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span className={`grade-badge grade-${m.grade_letter?.toLowerCase() || 's'}`}>
-                        {m.grade_letter}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-                    No examination records submitted for this student yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Edit Student Modal */}
+      {/* Edit Student Modal powered by @mantine/form */}
       <Modal
         opened={showEditModal}
         onClose={() => setShowEditModal(false)}
@@ -660,160 +905,121 @@ export const StudentFullView: React.FC<StudentFullViewProps> = ({
             )}
 
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Calling Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editFormData.calling_name || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, calling_name: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Full Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editFormData.full_name || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
-                  required
-                />
-              </div>
-            </SimpleGrid>
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Date of Birth *</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={editFormData.dob || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, dob: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Gender *</label>
-                <select
-                  className="form-select"
-                  value={editFormData.gender || 'Male'}
-                  onChange={(e) => setEditFormData({ ...editFormData, gender: e.target.value })}
-                >
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-            </SimpleGrid>
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Class Assignment</label>
-                <select
-                  className="form-select"
-                  value={editFormData.class_id || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, class_id: e.target.value })}
-                >
-                  <option value="">Select Class</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Roll Number</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={editFormData.roll_number || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, roll_number: e.target.value })}
-                />
-              </div>
-            </SimpleGrid>
-
-            <div className="form-group">
-              <label className="form-label">Residential Address</label>
-              <input
-                type="text"
-                className="form-input"
-                value={editFormData.address || ''}
-                onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+              <TextInput
+                label="Calling Name"
+                placeholder="e.g. Kasun"
+                required
+                key={editStudentForm.key('calling_name')}
+                {...editStudentForm.getInputProps('calling_name')}
               />
-            </div>
 
-            <Divider my="xs" label="Guardian Contacts" labelPosition="left" />
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Guardian Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editFormData.guardian_name || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, guardian_name: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Relation *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editFormData.guardian_relation || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, guardian_relation: e.target.value })}
-                  required
-                />
-              </div>
+              <TextInput
+                label="Full Name"
+                placeholder="e.g. Kasun Malinda Ranasinghe"
+                required
+                key={editStudentForm.key('full_name')}
+                {...editStudentForm.getInputProps('full_name')}
+              />
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Guardian Phone *</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  value={editFormData.guardian_phone || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, guardian_phone: e.target.value })}
-                  required
-                />
-              </div>
+              <TextInput
+                type="date"
+                label="Date of Birth"
+                required
+                key={editStudentForm.key('dob')}
+                {...editStudentForm.getInputProps('dob')}
+              />
 
-              <div className="form-group">
-                <label className="form-label">Guardian Email</label>
-                <input
-                  type="email"
-                  className="form-input"
-                  value={editFormData.guardian_email || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, guardian_email: e.target.value })}
-                />
-              </div>
+              <Select
+                label="Gender"
+                required
+                data={[
+                  { value: 'Male', label: 'Male' },
+                  { value: 'Female', label: 'Female' },
+                  { value: 'Other', label: 'Other' },
+                ]}
+                key={editStudentForm.key('gender')}
+                {...editStudentForm.getInputProps('gender')}
+              />
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <Select
+                label="Class Assignment"
+                placeholder="Select Class"
+                clearable
+                data={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+                key={editStudentForm.key('class_id')}
+                {...editStudentForm.getInputProps('class_id')}
+              />
+
+              <TextInput
+                type="number"
+                label="Roll Number"
+                placeholder="e.g. 21"
+                key={editStudentForm.key('roll_number')}
+                {...editStudentForm.getInputProps('roll_number')}
+              />
+            </SimpleGrid>
+
+            <TextInput
+              label="Residential Address"
+              placeholder="Home address"
+              key={editStudentForm.key('address')}
+              {...editStudentForm.getInputProps('address')}
+            />
+
+            <Divider my="xs" label="Guardian Contacts (Nested Fields)" labelPosition="left" />
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <TextInput
+                label="Guardian Name"
+                placeholder="Parent / Guardian name"
+                required
+                key={editStudentForm.key('guardian.name')}
+                {...editStudentForm.getInputProps('guardian.name')}
+              />
+
+              <TextInput
+                label="Relation"
+                placeholder="Father / Mother / Guardian"
+                required
+                key={editStudentForm.key('guardian.relation')}
+                {...editStudentForm.getInputProps('guardian.relation')}
+              />
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <TextInput
+                type="tel"
+                label="Guardian Phone"
+                placeholder="e.g. 0771234567"
+                required
+                key={editStudentForm.key('guardian.phone')}
+                {...editStudentForm.getInputProps('guardian.phone')}
+              />
+
+              <TextInput
+                type="email"
+                label="Guardian Email"
+                placeholder="guardian@example.com"
+                key={editStudentForm.key('guardian.email')}
+                {...editStudentForm.getInputProps('guardian.email')}
+              />
             </SimpleGrid>
 
             <Group justify="flex-end" gap="sm" mt="md">
               <Button variant="default" onClick={() => setShowEditModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" color="refinedBlue" loading={savingEdit}>
+              <Button type="submit" color="refinedBlue" loading={savingEdit || editStudentForm.submitting}>
                 Save Updates
               </Button>
             </Group>
           </Stack>
         </form>
       </Modal>
-
-      {/* Terminal Report Card Modal */}
-      {showReportCard && (
-        <StudentReportCard
-          studentId={studentId}
-          examId={selectedExamId || 1}
-          onClose={() => setShowReportCard(false)}
-        />
-      )}
     </div>
   );
 };

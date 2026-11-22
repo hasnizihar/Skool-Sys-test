@@ -1,220 +1,314 @@
 /* ==========================================================================
    Mobile Sequential Student Attendance Styling
+   Dedicated Smartphone Roll-Call Interface
    Kattankudy Central College — SkoolSys Modern Mantine Design System
    ========================================================================== */
 
+/* Outer Mobile Container (Centered on desktop/tablet, 100% on phones) */
 .msa-container {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 640px;
+  max-width: 440px;
   margin: 0 auto;
-  min-height: calc(100vh - 120px);
-  padding: 12px 16px 80px 16px;
+  min-height: 100vh;
+  padding: 12px 14px 40px 14px;
   box-sizing: border-box;
+  background-color: #f8fafc;
   font-family: inherit;
   gap: 12px;
 }
 
-/* 1. Header & Controls */
-.msa-top-bar {
+/* Accessible Screen Reader Hide */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   1. Compact Mobile Header
+   ========================================================================== */
+.msa-mobile-header {
   display: flex;
   flex-direction: column;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   gap: 10px;
 }
 
-.msa-top-meta {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.msa-class-selector-wrapper {
-  flex: 1.5;
-}
-
-.msa-select {
-  width: 100%;
-  padding: 10px 12px;
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--text-main, #0f172a);
-  background-color: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.msa-select:focus {
-  border-color: var(--primary, #2563eb);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-}
-
-.msa-date-wrapper {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  position: relative;
-  background-color: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
-  padding: 0 10px;
-  transition: border-color 0.15s ease;
-}
-
-.msa-date-wrapper:focus-within {
-  border-color: var(--primary, #2563eb);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-}
-
-.msa-date-icon {
-  color: var(--text-muted, #64748b);
-  margin-right: 6px;
-  flex-shrink: 0;
-}
-
-.msa-date-input {
-  width: 100%;
-  border: none;
-  background: transparent;
-  font-size: 0.88rem;
-  font-weight: 500;
-  color: var(--text-main, #0f172a);
-  outline: none;
-  padding: 8px 0;
-}
-
-.msa-view-actions {
+/* Row 1: Back to Classes & Tools */
+.msa-header-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.msa-offline-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #b45309;
-  background: #fef3c7;
-  padding: 4px 8px;
-  border-radius: 999px;
-}
-
-.msa-btn-subtle {
+.msa-back-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: none;
-  border: 1px solid var(--border-color, #cbd5e1);
-  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   padding: 6px 10px;
   font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--text-muted, #475569);
-  cursor: pointer;
-}
-
-.msa-btn-subtle:hover {
-  background-color: var(--bg-subtle, #f1f5f9);
-}
-
-.msa-mode-pill {
-  background: var(--primary, #2563eb);
-  color: #ffffff;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 0.82rem;
   font-weight: 600;
+  color: #334155;
   cursor: pointer;
   transition: background 0.15s ease;
+  white-space: nowrap;
 }
 
-.msa-mode-pill:hover {
-  background: #1d4ed8;
+.msa-back-btn:hover {
+  background: #e2e8f0;
 }
 
-/* Session Status Banner */
-.msa-session-banner {
+.msa-header-tools {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 0.82rem;
-}
-
-.msa-session-banner.submitted {
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  color: #065f46;
-}
-
-.msa-session-banner.draft {
-  background: #fefce8;
-  border: 1px solid #fef08a;
-  color: #854d0e;
-}
-
-.msa-submitted-tag {
-  background: #059669;
-  color: white;
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-/* Progress Ribbon */
-.msa-progress-ribbon {
-  display: flex;
-  flex-direction: column;
   gap: 6px;
 }
 
-.msa-progress-info {
+.msa-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.msa-tool-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.msa-tool-btn--roster {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.msa-tool-btn--roster:hover {
+  background: #dbeafe;
+}
+
+/* Row 2: Identity & Session Status */
+.msa-header-identity-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.msa-class-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msa-tracker-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  line-height: 1;
+}
+
+.msa-class-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.msa-class-current-text {
+  font-size: 1.25rem;
+  font-weight: 850;
+  color: #0f172a;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.msa-class-chevron {
+  color: #64748b;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.msa-class-dropdown-wrap:hover .msa-class-chevron {
+  color: #2563eb;
+}
+
+.msa-class-native-select {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.msa-header-status-block {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Row 3: Date Selector */
+.msa-header-date-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 6px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.msa-date-pill-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e293b;
+  transition: border-color 0.15s ease;
+}
+
+.msa-date-pill-wrapper:hover {
+  border-color: #cbd5e1;
+}
+
+.msa-calendar-icon {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.msa-formatted-date {
+  line-height: 1;
+}
+
+.msa-mobile-date-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.msa-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.msa-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.msa-badge--completed {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.msa-badge--draft {
+  background: #fefce8;
+  color: #854d0e;
+  border: 1px solid #fef08a;
+}
+
+.msa-badge--progress {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.msa-badge--not-recorded {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.msa-badge--offline {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+/* ==========================================================================
+   2. Progress Section
+   ========================================================================== */
+.msa-progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+.msa-progress-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 0.84rem;
 }
 
-.msa-progress-count {
-  font-weight: 700;
-  color: var(--text-main, #0f172a);
+.msa-progress-step {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #475569;
+  text-transform: uppercase;
 }
 
-.msa-progress-stats {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--text-muted, #475569);
-}
-
-.msa-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.msa-dot--green { background-color: #10b981; }
-.msa-dot--red { background-color: #ef4444; }
-
-.msa-unrecorded-badge {
-  background: #fee2e2;
-  color: #991b1b;
+.msa-progress-marked {
   font-size: 0.72rem;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 999px;
+  color: #2563eb;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .msa-progress-track {
@@ -227,11 +321,14 @@
 
 .msa-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #10b981, #059669);
+  background: linear-gradient(90deg, #2563eb, #10b981);
   transition: width 0.25s ease-out;
+  border-radius: 999px;
 }
 
-/* 2. Sequential Student Card */
+/* ==========================================================================
+   3. Focused Student Identity Card
+   ========================================================================== */
 .msa-card-stage {
   display: flex;
   flex-direction: column;
@@ -241,648 +338,483 @@
 .msa-student-card {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 22px 18px 20px 18px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   gap: 16px;
-  position: relative;
 }
 
-.msa-card-badges {
+.msa-avatar-mobile {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.msa-roll-badge {
-  background: var(--primary, #2563eb);
+  justify-content: center;
+  font-size: 1.7rem;
+  font-weight: 800;
   color: #ffffff;
-  font-size: 0.76rem;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
 }
 
-.msa-adm-badge {
-  background: var(--bg-subtle, #f1f5f9);
-  color: var(--text-muted, #334155);
-  font-size: 0.76rem;
+.avatar-m {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.avatar-f {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+}
+
+.msa-identity-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.msa-student-calling-name {
+  margin: 0;
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.msa-student-full-name {
+  margin: 4px 0 0 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.35;
+  max-width: 90%;
+  word-break: break-word;
+}
+
+.msa-student-identifiers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.msa-roll-number {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.msa-id-divider {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.msa-admission-number {
+  font-size: 0.82rem;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 4px;
+  color: #64748b;
   font-family: monospace;
+  letter-spacing: 0.02em;
 }
 
-.msa-status-pill {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  text-transform: uppercase;
-  margin-left: auto;
+/* Marked Status Banner inside card */
+.msa-current-status-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-sizing: border-box;
 }
 
-.msa-status-pill.present {
+.msa-status-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.msa-marked-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.msa-marked-pill--present {
   background: #dcfce7;
   color: #15803d;
   border: 1px solid #86efac;
 }
 
-.msa-status-pill.absent {
+.msa-marked-pill--absent {
   background: #fee2e2;
   color: #b91c1c;
   border: 1px solid #fca5a5;
 }
 
-.msa-status-pill.late {
-  background: #fef3c7;
-  color: #b45309;
-  border: 1px solid #fde68a;
-}
-
-/* Card Avatar Row */
-.msa-card-avatar-row {
+.msa-status-action-btns {
   display: flex;
   align-items: center;
-  gap: 14px;
-}
-
-.msa-avatar {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #ffffff;
+  gap: 6px;
   flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.avatar-m {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-}
-
-.avatar-f {
-  background: linear-gradient(135deg, #0284c7, #0369a1);
-}
-
-.msa-name-block {
-  flex: 1;
-  overflow: hidden;
-}
-
-.msa-calling-name {
-  margin: 0;
-  font-size: 1.45rem;
-  font-weight: 800;
-  color: var(--text-main, #0f172a);
-  line-height: 1.2;
-}
-
-.msa-full-name {
-  margin: 4px 0 0 0;
-  font-size: 0.85rem;
-  color: var(--text-muted, #64748b);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.msa-jump-trigger-row {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.msa-jump-btn {
-  background: none;
-  border: none;
-  color: var(--primary, #2563eb);
-  font-size: 0.8rem;
-  font-weight: 600;
+.msa-mini-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.msa-jump-btn:hover {
-  text-decoration: underline;
-}
-
-/* Big Action Buttons (PRESENT / ABSENT) - Minimum 64px for touch ergonomics */
-.msa-action-buttons-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 4px;
-}
-
-.msa-big-action-btn {
-  height: 68px;
-  min-height: 64px;
-  border-radius: 12px;
-  border: 2px solid transparent;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  cursor: pointer;
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  transition: transform 0.1s ease, box-shadow 0.15s ease;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.msa-big-action-btn:active {
-  transform: scale(0.97);
-}
-
-.msa-btn--present {
-  background: #059669;
-  color: #ffffff;
-  border-color: #047857;
-  box-shadow: 0 4px 6px rgba(5, 150, 105, 0.2);
-}
-
-.msa-btn--present.selected {
-  outline: 4px solid rgba(5, 150, 105, 0.4);
-}
-
-.msa-btn--absent {
-  background: #dc2626;
-  color: #ffffff;
-  border-color: #b91c1c;
-  box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);
-}
-
-.msa-btn--absent.selected {
-  outline: 4px solid rgba(220, 38, 38, 0.4);
-}
-
-/* Secondary Actions */
-.msa-secondary-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid var(--border-color, #e2e8f0);
-  padding-top: 12px;
-  margin-top: 4px;
-}
-
-.msa-subtle-btn {
-  background: var(--bg-subtle, #f8fafc);
-  border: 1px solid var(--border-color, #cbd5e1);
+  gap: 3px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted, #475569);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.msa-subtle-btn--clear {
-  color: #b91c1c;
-  border-color: #fca5a5;
-  background: #fff5f5;
-}
-
-/* Stepper Navigation Footer */
-.msa-stepper-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.msa-nav-btn {
-  flex: 1;
-  height: 48px;
-  background-color: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-color, #cbd5e1);
-  border-radius: 8px;
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: var(--text-main, #0f172a);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.msa-nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.msa-summary-trigger-btn {
-  flex: 1.4;
-  height: 48px;
-  background-color: var(--primary, #2563eb);
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* 3. Summary Review Screen */
-.msa-summary-stage {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.msa-summary-header h2,
-.msa-summary-header h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: var(--text-main, #0f172a);
-}
-
-.msa-summary-header p {
-  margin: 4px 0 0 0;
-  font-size: 0.85rem;
-  color: var(--text-muted, #64748b);
-}
-
-.msa-summary-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.msa-sum-card {
-  padding: 12px 6px;
-  border-radius: 8px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.msa-sum-card--present { background: #dcfce7; color: #166534; }
-.msa-sum-card--absent { background: #fee2e2; color: #991b1b; }
-.msa-sum-card--unrecorded { background: #fef3c7; color: #92400e; }
-.msa-sum-card--rate { background: #e0e7ff; color: #3730a3; }
-
-.msa-sum-num {
-  font-size: 1.35rem;
-  font-weight: 800;
-}
-
-.msa-sum-label {
+  padding: 3px 8px;
   font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.msa-absent-breakdown h3 {
-  margin: 0 0 10px 0;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-main, #0f172a);
-}
-
-.msa-no-absent {
-  font-size: 0.85rem;
-  color: #059669;
   font-weight: 600;
-  margin: 0;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
-.msa-absent-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 240px;
-  overflow-y: auto;
+.msa-mini-action-btn:hover {
+  background: #f1f5f9;
 }
 
-.msa-absent-item {
+.msa-mini-action-btn--reason {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.msa-mini-action-btn--reason:hover {
+  background: #dbeafe;
+}
+
+.msa-mini-action-btn--clear {
+  color: #dc2626;
+  border-color: #fca5a5;
+  background: #ffffff;
+}
+
+.msa-mini-action-btn--clear:hover {
+  background: #fef2f2;
+}
+
+.msa-status-reason-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--bg-subtle, #f8fafc);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
+  gap: 6px;
+  font-size: 0.78rem;
+  background: #ffffff;
+  border: 1px solid #fee2e2;
+  border-radius: 6px;
+  padding: 5px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  line-height: 1.3;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 
-.msa-absent-item:hover {
-  background: #fee2e2;
+.msa-status-reason-row:hover {
+  background: #fef2f2;
 }
 
-.msa-absent-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.msa-absent-info strong {
-  font-size: 0.9rem;
-  color: var(--text-main, #0f172a);
-}
-
-.msa-absent-adm {
-  font-size: 0.75rem;
-  color: var(--text-muted, #64748b);
-  font-family: monospace;
-}
-
-.msa-absent-reason {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
+.msa-reason-label {
+  font-weight: 700;
   color: #991b1b;
+  flex-shrink: 0;
 }
 
-.msa-no-reason {
+.msa-reason-value {
+  font-weight: 600;
+  color: #7f1d1d;
+  word-break: break-word;
+}
+
+.msa-reason-value--empty {
+  font-weight: 500;
   color: #94a3b8;
   font-style: italic;
-  font-weight: 400;
 }
 
-.msa-edit-icon {
-  color: #94a3b8;
-}
-
-.msa-unrecorded-alert {
+/* ==========================================================================
+   4. Attendance Actions: ONLY PRESENT AND ABSENT
+   ========================================================================== */
+.msa-action-buttons-stack {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  color: #991b1b;
-  font-size: 0.85rem;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
 }
 
-.msa-unrecorded-alert p {
-  margin: 2px 0 0 0;
-  font-size: 0.8rem;
+.msa-action-btn {
+  width: 100%;
+  height: 80px;
+  min-height: 75px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 16px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  text-align: left;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  box-sizing: border-box;
 }
 
-.msa-final-actions-bar {
-  display: grid;
-  grid-template-columns: 1fr 1.6fr;
-  gap: 10px;
-  margin-top: 14px;
+.msa-action-btn:active {
+  transform: scale(0.98);
 }
 
-.msa-btn-secondary {
-  height: 48px;
-  background: var(--bg-subtle, #f1f5f9);
-  border: 1px solid var(--border-color, #cbd5e1);
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 0.9rem;
-  color: var(--text-main, #0f172a);
+.msa-action-icon-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.msa-btn-primary {
-  height: 48px;
-  background: var(--primary, #2563eb);
-  border: none;
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 0.92rem;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.22);
   color: #ffffff;
+}
+
+.msa-action-content {
   display: flex;
+  flex-direction: column;
+}
+
+.msa-action-title {
+  font-size: 1.25rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  line-height: 1.15;
+}
+
+.msa-action-subtitle {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+  margin-top: 2px;
+}
+
+/* PRESENT: Emerald Green */
+.msa-action-btn--present {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-color: #047857;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.28);
+}
+
+.msa-action-btn--present:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 6px 18px rgba(5, 150, 105, 0.36);
+}
+
+.msa-action-btn--present.active {
+  outline: 4px solid rgba(5, 150, 105, 0.45);
+}
+
+/* ABSENT: Crimson Red */
+.msa-action-btn--absent {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-color: #b91c1c;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.28);
+}
+
+.msa-action-btn--absent:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.36);
+}
+
+.msa-action-btn--absent.active {
+  outline: 4px solid rgba(220, 38, 38, 0.45);
+}
+
+.msa-instruction-text {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* ==========================================================================
+   5. Bottom Navigation Controls
+   ========================================================================== */
+.msa-bottom-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.msa-stepper-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.msa-step-btn {
+  height: 48px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+  transition: all 0.15s ease;
+  user-select: none;
+  border: 1px solid transparent;
 }
 
-.msa-btn-primary:disabled {
-  opacity: 0.5;
+.msa-step-btn:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
-/* 4. Absence Reason Modal / Action Sheet */
+.msa-step-btn--prev {
+  flex: 1;
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.msa-step-btn--prev:not(:disabled):hover {
+  background: #f1f5f9;
+}
+
+.msa-step-btn--summary {
+  flex: 1.3;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.msa-step-btn--summary:hover {
+  background: #dbeafe;
+}
+
+.msa-summary-count-badge {
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
+
+.msa-step-btn--next {
+  flex: 1;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.msa-step-btn--next:not(:disabled):hover {
+  background: #1d4ed8;
+}
+
+.msa-view-roster-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.15s ease;
+}
+
+.msa-view-roster-link:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   6. Quick Jump Roster Drawer
+   ========================================================================== */
 .msa-modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.6);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
   z-index: 9999;
   display: flex;
   align-items: flex-end;
   justify-content: center;
 }
 
-@media (min-width: 640px) {
-  .msa-modal-backdrop {
-    align-items: center;
-  }
-}
-
-.msa-modal-sheet {
-  background: var(--bg-card, #ffffff);
+.msa-drawer {
+  background: #ffffff;
   width: 100%;
-  max-width: 520px;
-  border-radius: 20px 20px 0 0;
-  padding: 20px 20px 28px 20px;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15);
+  max-width: 440px;
+  max-height: 80vh;
+  border-radius: 18px 18px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  animation: slideUp 0.2s ease-out;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  animation: msaSlideUp 0.2s ease-out;
 }
 
-@media (min-width: 640px) {
-  .msa-modal-sheet {
-    border-radius: 16px;
-    padding: 24px;
-    animation: fadeIn 0.2s ease-out;
-  }
-}
-
-@keyframes slideUp {
+@keyframes msaSlideUp {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.msa-modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.msa-modal-header h3 {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 800;
-  color: var(--text-main, #0f172a);
-}
-
-.msa-modal-subtitle {
-  margin: 3px 0 0 0;
-  font-size: 0.85rem;
-  color: var(--text-muted, #64748b);
-}
-
-.msa-modal-close {
-  background: none;
-  border: none;
-  color: var(--text-muted, #64748b);
-  cursor: pointer;
-  padding: 4px;
-}
-
-.msa-reasons-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.msa-reason-chip {
-  padding: 10px 12px;
-  background: var(--bg-subtle, #f8fafc);
-  border: 1px solid var(--border-color, #cbd5e1);
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-main, #0f172a);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.msa-reason-chip.selected {
-  background: #fee2e2;
-  border-color: #dc2626;
-  color: #991b1b;
-}
-
-.msa-chip-check {
-  margin-left: auto;
-  color: #dc2626;
-}
-
-.msa-custom-reason-block {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.msa-input-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted, #475569);
-}
-
-.msa-custom-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color, #cbd5e1);
-  border-radius: 8px;
-  font-size: 0.88rem;
-  color: var(--text-main, #0f172a);
-  outline: none;
-  box-sizing: border-box;
-}
-
-.msa-custom-input:focus {
-  border-color: #dc2626;
-}
-
-.msa-modal-actions {
-  display: grid;
-  grid-template-columns: 1fr 1.5fr;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.msa-modal-btn {
-  height: 48px;
-  border-radius: 8px;
-  font-size: 0.92rem;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-}
-
-.msa-modal-btn--secondary {
-  background: var(--bg-subtle, #f1f5f9);
-  color: var(--text-main, #0f172a);
-  border: 1px solid var(--border-color, #cbd5e1);
-}
-
-.msa-modal-btn--primary {
-  background: #dc2626;
-  color: white;
-}
-
-/* 5. Quick Jump Drawer */
-.msa-drawer {
-  background: var(--bg-card, #ffffff);
-  width: 85%;
-  max-width: 380px;
-  height: 100%;
-  margin-left: auto;
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
-  display: flex;
-  flex-direction: column;
 }
 
 .msa-drawer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.msa-drawer-header h3,
-.msa-drawer-header h4 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: var(--text-main, #0f172a);
+.msa-modal-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
 }
 
 .msa-drawer-list {
-  flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 10px 14px 24px 14px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .msa-drawer-item {
@@ -890,44 +822,441 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
   cursor: pointer;
   text-align: left;
+  transition: all 0.15s ease;
 }
 
 .msa-drawer-item:hover {
-  background: var(--bg-subtle, #f1f5f9);
+  background: #f8fafc;
 }
 
 .msa-drawer-item.current {
+  border-color: #2563eb;
   background: #eff6ff;
-  border-color: #bfdbfe;
 }
 
 .msa-drawer-roll {
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--text-muted, #64748b);
-  width: 28px;
+  color: #1e40af;
+  min-width: 26px;
 }
 
 .msa-drawer-name {
   flex: 1;
   font-size: 0.88rem;
   font-weight: 600;
-  color: var(--text-main, #0f172a);
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .msa-drawer-status-pill {
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 800;
   padding: 2px 6px;
   border-radius: 4px;
 }
 
-.msa-drawer-status-pill.present { background: #dcfce7; color: #15803d; }
-.msa-drawer-status-pill.absent { background: #fee2e2; color: #b91c1c; }
-.msa-drawer-status-pill.late { background: #fef3c7; color: #b45309; }
-.msa-drawer-status-pill.unmarked { background: #f1f5f9; color: #94a3b8; }
+.msa-drawer-status-pill.present {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.msa-drawer-status-pill.absent {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.msa-drawer-status-pill.unmarked {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* ==========================================================================
+   7. Summary Review Stage
+   ========================================================================== */
+.msa-summary-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.msa-summary-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.msa-summary-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.msa-summary-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.msa-summary-mode-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #dbeafe;
+  text-transform: uppercase;
+}
+
+.msa-summary-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msa-summary-title {
+  margin: 0;
+  font-size: 1.22rem;
+  font-weight: 850;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.msa-summary-subtitle {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+/* Key Metric Counters (2x2 Dedicated Mobile Grid) */
+.msa-summary-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.msa-summary-metric-card {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.msa-metric-card--present {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.msa-metric-card--present .msa-metric-value {
+  color: #047857;
+}
+
+.msa-metric-card--absent {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.msa-metric-card--absent .msa-metric-value {
+  color: #b91c1c;
+}
+
+.msa-metric-card--unrecorded {
+  background: #fefce8;
+  border-color: #fef08a;
+  color: #854d0e;
+}
+.msa-metric-card--unrecorded .msa-metric-value {
+  color: #a16207;
+}
+
+.msa-metric-card--rate {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+.msa-metric-card--rate .msa-metric-value {
+  color: #1d4ed8;
+}
+
+.msa-metric-label {
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.msa-metric-value {
+  font-size: 1.65rem;
+  font-weight: 850;
+  line-height: 1.1;
+  margin-top: 4px;
+}
+
+/* Section Title */
+.msa-summary-section-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+/* Absent Student Row */
+.msa-absent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #fee2e2;
+  background: #fff5f5;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.msa-absent-item:hover {
+  background: #fef2f2;
+}
+
+.msa-absent-reason-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: #b91c1c;
+  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid #fecaca;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.msa-absent-student-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.msa-absent-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msa-absent-admission {
+  font-size: 0.76rem;
+  color: #64748b;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+/* Action Bar */
+.msa-final-actions-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.msa-summary-action-btn {
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   8. Absence Reason Modal Sheet
+   ========================================================================== */
+.msa-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+  animation: msaFadeIn 0.15s ease-out;
+}
+
+.msa-modal-sheet {
+  background: #ffffff;
+  width: 100%;
+  max-width: 440px;
+  border-radius: 18px 18px 0 0;
+  padding: 18px;
+  box-sizing: border-box;
+  animation: msaSlideUp 0.2s ease-out;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+@media (min-width: 600px) {
+  .msa-modal-backdrop {
+    align-items: center;
+    padding: 20px;
+  }
+  .msa-modal-sheet {
+    border-radius: 18px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  }
+}
+
+@keyframes msaFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes msaSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.msa-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.msa-modal-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 850;
+  color: #0f172a;
+}
+
+.msa-modal-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.msa-modal-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.msa-modal-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.msa-reasons-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.msa-reason-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.msa-reason-chip:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.msa-reason-chip.selected {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.msa-reason-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.msa-chip-check {
+  margin-left: auto;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.msa-custom-reason-block {
+  margin-top: 10px;
+}
+
+.msa-input-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 5px;
+}
+
+.msa-custom-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.86rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.msa-custom-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.msa-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 10px;
+  margin-top: 16px;
+}

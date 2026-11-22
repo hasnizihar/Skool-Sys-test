@@ -6,7 +6,8 @@ import { getColomboCivilDate, isValidCivilDate } from '../utils/dateUtils.js';
 import {
   resolveActivePeriodContext,
   getTimetableConfig,
-  updateTimetableConfig
+  updateTimetableConfig,
+  matchPeriodByTime
 } from '../services/timetableService.js';
 
 const router = Router();
@@ -23,6 +24,9 @@ router.get('/context', requireAuth, (req, res) => {
     const customTime = time ? String(time) : undefined;
 
     const context = resolveActivePeriodContext(overrideDate, overridePeriod, customTime);
+    if (!context.periodNumber && overridePeriod === undefined && context.availablePeriods.length > 0) {
+      context.autoSelectedPeriod = matchPeriodByTime(context.currentTime, context.availablePeriods);
+    }
     res.json({ context });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to resolve period context.' });
@@ -43,11 +47,33 @@ router.get('/overview', requireAuth, (req, res) => {
 
     const context = resolveActivePeriodContext(overrideDate, overridePeriod, customTime);
     const activeDate = context.schoolDate;
-    const activePeriod = context.periodNumber;
+
+    const isSchoolEnded = context.state === 'after_school' || context.state === 'weekend';
+
+    // Period auto-selection according to current civil time:
+    // Only teaching periods can be tracked for classroom status
+    let activePeriod = context.periodNumber;
+    if (!activePeriod && context.availablePeriods && context.availablePeriods.length > 0) {
+      const teachingPeriods = context.availablePeriods.filter((p) => p.isTeaching !== false);
+      if (overridePeriod !== undefined) {
+        activePeriod = overridePeriod;
+      } else if (!isSchoolEnded) {
+        activePeriod = context.autoSelectedPeriod || matchPeriodByTime(context.currentTime, teachingPeriods);
+      }
+      if (activePeriod) {
+        context.periodNumber = activePeriod;
+        const matched = teachingPeriods.find((p) => p.periodNumber === activePeriod);
+        if (matched) {
+          context.periodName = matched.name;
+          context.startTime = matched.startTime;
+          context.endTime = matched.endTime;
+        }
+      }
+    }
 
     // Fetch accessible sections
     const allSections = db.prepare(`
-      SELECT id, name, code, description, grade_range
+      SELECT id, name, description, grade_range
       FROM sections
       ORDER BY name ASC
     `).all() as any[];
@@ -61,10 +87,11 @@ router.get('/overview', requireAuth, (req, res) => {
     let notTeachingCount = 0;
     let otherActivityCount = 0;
     let pendingCount = 0;
+    let schoolEndedCount = 0;
 
     const sectionsWithClasses = visibleSections.map((sec: any) => {
       const classes = db.prepare(`
-        SELECT c.id, c.name, c.grade, c.room_number, c.class_teacher_id,
+        SELECT c.id, c.name, c.grade, c.class_teacher_id,
                u.full_name as class_teacher_name
         FROM classes c
         LEFT JOIN users u ON c.class_teacher_id = u.id
@@ -86,18 +113,22 @@ router.get('/overview', requireAuth, (req, res) => {
           `).get(cls.id, activeDate, activePeriod) as any;
         }
 
-        const displayStatus = statusRecord ? statusRecord.status : 'pending';
+        const displayStatus = statusRecord
+          ? statusRecord.status
+          : (isSchoolEnded && overridePeriod === undefined)
+          ? 'school_ended'
+          : 'pending';
 
         if (displayStatus === 'teaching') teachingCount++;
         else if (displayStatus === 'not_teaching') notTeachingCount++;
         else if (displayStatus === 'other_activity') otherActivityCount++;
+        else if (displayStatus === 'school_ended') schoolEndedCount++;
         else pendingCount++;
 
         return {
           id: cls.id,
           name: cls.name,
           grade: cls.grade,
-          roomNumber: cls.room_number,
           classTeacherId: cls.class_teacher_id,
           classTeacherName: cls.class_teacher_name,
           status: displayStatus,
@@ -112,7 +143,6 @@ router.get('/overview', requireAuth, (req, res) => {
       return {
         id: sec.id,
         name: sec.name,
-        code: sec.code,
         description: sec.description,
         gradeRange: sec.grade_range,
         classes: classesWithStatus
@@ -123,7 +153,7 @@ router.get('/overview', requireAuth, (req, res) => {
     let unassignedClasses: any[] = [];
     if (user.role === 'admin') {
       const unassigned = db.prepare(`
-        SELECT c.id, c.name, c.grade, c.room_number, c.class_teacher_id,
+        SELECT c.id, c.name, c.grade, c.class_teacher_id,
                u.full_name as class_teacher_name
         FROM classes c
         LEFT JOIN users u ON c.class_teacher_id = u.id
@@ -147,7 +177,6 @@ router.get('/overview', requireAuth, (req, res) => {
           id: cls.id,
           name: cls.name,
           grade: cls.grade,
-          roomNumber: cls.room_number,
           classTeacherId: cls.class_teacher_id,
           classTeacherName: cls.class_teacher_name,
           status: statusRecord ? statusRecord.status : 'pending',
@@ -169,7 +198,8 @@ router.get('/overview', requireAuth, (req, res) => {
         teaching: teachingCount,
         notTeaching: notTeachingCount,
         otherActivity: otherActivityCount,
-        pending: pendingCount
+        pending: pendingCount,
+        schoolEnded: schoolEndedCount
       }
     });
   } catch (err: any) {
@@ -237,15 +267,26 @@ router.post('/record', requireAuth, (req, res) => {
   let targetPeriod = periodNumber ? Number(periodNumber) : null;
   if (!targetPeriod || isNaN(targetPeriod)) {
     const activeCtx = resolveActivePeriodContext(targetDate);
-    if (!activeCtx.periodNumber) {
+    if (!activeCtx.periodNumber || activeCtx.isBreak) {
       res.status(400).json({
-        error: activeCtx.message || 'No active school period currently in progress.',
+        error: activeCtx.message || 'No active teaching period currently in progress.',
         code: 'NO_ACTIVE_PERIOD',
         context: activeCtx
       });
       return;
     }
     targetPeriod = activeCtx.periodNumber;
+  }
+
+  // Enforce: ONLY teaching periods can have status recorded
+  const periodCtx = resolveActivePeriodContext(targetDate, targetPeriod);
+  const targetPeriodInfo = periodCtx.availablePeriods.find((p) => p.periodNumber === targetPeriod);
+  if (targetPeriodInfo && targetPeriodInfo.isTeaching === false) {
+    res.status(400).json({
+      error: `"${targetPeriodInfo.name}" is classified as ${targetPeriodInfo.periodType || 'non-teaching'}. Only teaching periods can be tracked for classroom status.`,
+      code: 'NOT_A_TEACHING_PERIOD'
+    });
+    return;
   }
 
   if (targetPeriod < 1 || targetPeriod > 9) {

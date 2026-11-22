@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { db } from '../db/database.js';
 import { requireAuth, getUserAssignments, getJwtSecret } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
+import { validatePasswordStrength } from './admin.js';
 
 const router = Router();
 
@@ -161,6 +162,101 @@ router.get('/me', requireAuth, (req, res) => {
       ...user,
       ...assignments
     }
+  });
+});
+
+// Update Personal Profile (Full Name, Email)
+router.put('/profile', requireAuth, (req, res) => {
+  const userId = req.user!.id;
+  const { full_name, email } = req.body;
+
+  if (!full_name || typeof full_name !== 'string' || !full_name.trim()) {
+    res.status(400).json({ error: 'Full name is required.' });
+    return;
+  }
+
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    res.status(400).json({ error: 'A valid email address is required.' });
+    return;
+  }
+
+  // Ensure email is not already taken by another user
+  const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email.trim(), userId) as any;
+  if (existing) {
+    res.status(400).json({ error: 'This email address is already in use by another user.' });
+    return;
+  }
+
+  db.prepare(`
+    UPDATE users SET full_name = ?, email = ? WHERE id = ?
+  `).run(full_name.trim(), email.trim(), userId);
+
+  logAudit(userId, req.user!.username, 'USER_PROFILE_UPDATE', 'users', userId, { full_name: full_name.trim(), email: email.trim() }, req.ip);
+
+  const updated = db.prepare('SELECT id, username, email, full_name, role, is_active, created_at FROM users WHERE id = ?').get(userId) as any;
+  const assignments = getUserAssignments(userId);
+
+  res.json({
+    success: true,
+    message: 'Profile details updated successfully.',
+    user: {
+      ...updated,
+      ...assignments
+    }
+  });
+});
+
+// Change Password for Logged-In User
+router.put('/change-password', requireAuth, (req, res) => {
+  const userId = req.user!.id;
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ error: 'Both current password and new password are required.' });
+    return;
+  }
+
+  const user = db.prepare('SELECT id, username, email, password_hash, full_name, role, token_version FROM users WHERE id = ?').get(userId) as any;
+  if (!user) {
+    res.status(404).json({ error: 'User not found.' });
+    return;
+  }
+
+  const isValid = bcrypt.compareSync(currentPassword, user.password_hash);
+  if (!isValid) {
+    res.status(400).json({ error: 'Current password does not match.' });
+    return;
+  }
+
+  const passCheck = validatePasswordStrength(newPassword);
+  if (!passCheck.valid) {
+    res.status(400).json({ error: passCheck.error });
+    return;
+  }
+
+  const salt = bcrypt.genSaltSync(10);
+  const newHash = bcrypt.hashSync(newPassword, salt);
+  const nextVersion = (user.token_version || 1) + 1;
+
+  db.prepare('UPDATE users SET password_hash = ?, token_version = ? WHERE id = ?').run(newHash, nextVersion, userId);
+
+  // Sign fresh token for uninterrupted session
+  const payload = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    full_name: user.full_name,
+    role: user.role,
+    token_version: nextVersion
+  };
+  const newToken = jwt.sign(payload, getJwtSecret(), { expiresIn: '24h' });
+
+  logAudit(userId, user.username, 'PASSWORD_CHANGE', 'users', userId, { message: 'Password changed by user' }, req.ip);
+
+  res.json({
+    success: true,
+    message: 'Password changed successfully.',
+    token: newToken
   });
 });
 

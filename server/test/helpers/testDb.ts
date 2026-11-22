@@ -54,7 +54,6 @@ export function setupIsolatedTestDb(): TestFixtureData {
 
     CREATE TABLE IF NOT EXISTS sections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
       grade_range TEXT,
@@ -75,7 +74,6 @@ export function setupIsolatedTestDb(): TestFixtureData {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       grade INTEGER NOT NULL CHECK(grade >= 6 AND grade <= 13),
       name TEXT NOT NULL,
-      room_number TEXT,
       academic_year_id INTEGER REFERENCES academic_years(id),
       class_teacher_id INTEGER REFERENCES users(id),
       section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL
@@ -158,33 +156,6 @@ export function setupIsolatedTestDb(): TestFixtureData {
       UNIQUE(session_id, student_id)
     );
 
-    CREATE TABLE examinations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      term INTEGER NOT NULL CHECK(term IN (1, 2, 3)),
-      academic_year_id INTEGER REFERENCES academic_years(id),
-      start_date TEXT,
-      end_date TEXT,
-      is_published INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE marks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      examination_id INTEGER NOT NULL REFERENCES examinations(id) ON DELETE CASCADE,
-      class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-      subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-      score REAL,
-      is_absent INTEGER DEFAULT 0,
-      is_exempt INTEGER DEFAULT 0,
-      max_score REAL DEFAULT 100,
-      grade_letter TEXT,
-      status TEXT DEFAULT 'submitted' CHECK(status IN ('draft', 'submitted', 'published')),
-      entered_by_user_id INTEGER REFERENCES users(id),
-      updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(examination_id, subject_id, student_id)
-    );
-
     CREATE TABLE audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER REFERENCES users(id),
@@ -229,6 +200,50 @@ export function setupIsolatedTestDb(): TestFixtureData {
       updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(class_id, school_date, period_number)
     );
+
+    CREATE TABLE IF NOT EXISTS school_information (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      school_name_en TEXT NOT NULL,
+      school_name_ta TEXT,
+      school_name_si TEXT,
+      secondary_title TEXT,
+      census_no TEXT NOT NULL,
+      school_type TEXT NOT NULL,
+      address_line1 TEXT NOT NULL,
+      address_line2 TEXT,
+      district TEXT NOT NULL,
+      province TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT 'Sri Lanka',
+      postal_code TEXT,
+      zone TEXT NOT NULL,
+      division TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT NOT NULL,
+      principal_name TEXT NOT NULL,
+      principal_notes TEXT,
+      founded_year INTEGER,
+      student_category TEXT DEFAULT 'Boys',
+      medium TEXT DEFAULT 'Tamil / English',
+      supported_grades TEXT DEFAULT 'Grades 6–13',
+      emblem_status TEXT DEFAULT 'verified',
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by_user_id INTEGER REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS school_daily_period_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_of_week TEXT NOT NULL CHECK(day_of_week IN ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')),
+      period_number INTEGER NOT NULL CHECK(period_number >= 1 AND period_number <= 12),
+      name TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      period_type TEXT NOT NULL DEFAULT 'teaching' CHECK(period_type IN ('assembly', 'teaching', 'interval', 'prayer', 'extra_curricular', 'other')),
+      is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+      sort_order INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(day_of_week, period_number)
+    );
   `);
 
   // Seed strictly synthetic test fixtures
@@ -260,11 +275,11 @@ export function setupIsolatedTestDb(): TestFixtureData {
 
   // Classes
   const insertClass = testDb.prepare(`
-    INSERT INTO classes (grade, name, room_number, academic_year_id, class_teacher_id)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO classes (grade, name, academic_year_id, class_teacher_id)
+    VALUES (?, ?, ?, ?)
   `);
-  const classARes = insertClass.run(8, 'Grade 8-A Test', 'Room 101', yearId, classTeacherId);
-  const classBRes = insertClass.run(8, 'Grade 8-B Test', 'Room 102', yearId, null);
+  const classARes = insertClass.run(8, 'Grade 8-A Test', yearId, classTeacherId);
+  const classBRes = insertClass.run(8, 'Grade 8-B Test', yearId, null);
   const classAId = Number(classARes.lastInsertRowid);
   const classBId = Number(classBRes.lastInsertRowid);
 
@@ -311,8 +326,38 @@ export function setupIsolatedTestDb(): TestFixtureData {
     VALUES (?, ?, ?, ?, 'enrolled')
   `).run(stuBId, classBId, yearId, 2);
 
-  // Subject Enrollments (PR-005 synthetic test compatibility)
+  // Subject Enrollments & Academic Authorizations (synthetic test compatibility)
   testDb.exec(`
+    CREATE TABLE IF NOT EXISTS academic_terms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+      term_number INTEGER NOT NULL CHECK(term_number IN (1, 2, 3)),
+      name TEXT NOT NULL,
+      start_date TEXT,
+      end_date TEXT,
+      is_verified INTEGER NOT NULL DEFAULT 0 CHECK(is_verified IN (0, 1)),
+      UNIQUE(academic_year_id, term_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS academic_staff_authorizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+      auth_role TEXT NOT NULL CHECK(auth_role IN (
+        'principal',
+        'vice_principal_academic',
+        'section_head'
+      )),
+      grade_band TEXT NOT NULL CHECK(grade_band IN ('junior_6_9', 'ol_10_11', 'al_12_13', 'all')),
+      is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+      granted_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      granted_at TEXT DEFAULT (datetime('now')),
+      revoked_by_user_id INTEGER REFERENCES users(id),
+      revoked_at TEXT,
+      revocation_reason TEXT,
+      UNIQUE(user_id, academic_year_id, auth_role, grade_band)
+    );
+
     CREATE TABLE IF NOT EXISTS student_subject_enrollments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -337,11 +382,6 @@ export function setupIsolatedTestDb(): TestFixtureData {
     INSERT INTO student_subject_enrollments (student_id, subject_id, class_id, academic_year_id, enrollment_status, enrollment_category, verified_by_user_id, verified_at)
     VALUES (?, ?, ?, ?, 'confirmed', 'core_compulsory', ?, datetime('now'))
   `).run(stuAId, subjectId, classAId, yearId, adminId);
-
-  testDb.prepare(`
-    INSERT INTO examinations (name, term, academic_year_id, start_date, end_date, is_published)
-    VALUES ('Term 1 Test Exam', 1, ?, '2026-03-01', '2026-03-15', 1)
-  `).run(yearId);
 
   // Stamp verified disposable fixture marker
   testDb.exec(`

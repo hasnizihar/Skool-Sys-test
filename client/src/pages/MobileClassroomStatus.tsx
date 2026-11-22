@@ -10,7 +10,8 @@ import {
   ShieldAlert,
   ArrowRight,
   ChevronLeft,
-  Activity
+  Activity,
+  Moon
 } from 'lucide-react';
 import {
   Paper,
@@ -95,6 +96,15 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
 
   const handleSaveStatus = async (goToNext = false) => {
     if (!selectedClass) return;
+
+    if (context?.isBreak) {
+      addToast({
+        title: 'Break in Progress',
+        message: `Classroom status can only be recorded during teaching periods (${context.periodName || 'Break'}).`,
+        type: 'warning'
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -219,7 +229,7 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
             >
               {data.sections.map((s: any) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} ({s.code})
+                  {s.name}
                 </option>
               ))}
             </select>
@@ -286,18 +296,19 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
             >
               <div>
                 <div className="mcs-card-name">{cls.name}</div>
-                {cls.roomNumber && <div className="mcs-card-room">Room {cls.roomNumber}</div>}
               </div>
 
               <div className="mcs-card-badge">
                 {cls.status === 'teaching' && <CheckCircle2 size={12} aria-hidden="true" />}
                 {cls.status === 'not_teaching' && <XCircle size={12} aria-hidden="true" />}
                 {cls.status === 'other_activity' && <AlertTriangle size={12} aria-hidden="true" />}
+                {cls.status === 'school_ended' && <Moon size={12} aria-hidden="true" />}
                 {cls.status === 'pending' && <HelpCircle size={12} aria-hidden="true" />}
                 <span>
                   {cls.status === 'teaching' && 'Teaching'}
                   {cls.status === 'not_teaching' && 'Not Teaching'}
                   {cls.status === 'other_activity' && 'Other Activity'}
+                  {cls.status === 'school_ended' && 'School Ended'}
                   {cls.status === 'pending' && 'Tap to Record'}
                 </span>
               </div>
@@ -320,7 +331,6 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
               <div className="mcs-sheet-title">
                 <h2 id="sheet-class-title">{selectedClass.name}</h2>
                 <p>
-                  {selectedClass.roomNumber ? `Room ${selectedClass.roomNumber} · ` : ''}
                   Period {context?.periodNumber || 'Active'}
                 </p>
               </div>
@@ -386,7 +396,7 @@ export const MobileClassroomStatus: React.FC<Props> = ({ user, onNavigate }) => 
                   onChange={(e) => setActivityNote(e.target.value)}
                 />
                 <div className="mcs-quick-tags">
-                  {['Substitute Teacher', 'School Event', 'Library Period', 'Exam Preparation'].map((tag) => (
+                  {['Substitute Teacher', 'School Event', 'Library Period', 'Group Study'].map((tag) => (
                     <button
                       key={tag}
                       type="button"

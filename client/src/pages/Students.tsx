@@ -33,8 +33,11 @@ import {
   Alert,
   Tooltip,
   ScrollArea,
-  Button
+  Button,
+  TextInput,
+  Select
 } from '@mantine/core';
+import { useForm, isNotEmpty } from '@mantine/form';
 import { api } from '../api/client';
 import { StudentFullView } from './StudentFullView';
 import { EmptyState, LoadingState } from '../ui/mantine';
@@ -66,20 +69,48 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentDetails, setStudentDetails] = useState<any | null>(null);
 
-  // Add Student Form State
-  const [formData, setFormData] = useState({
-    admission_no: '',
-    full_name: '',
-    calling_name: '',
-    dob: '2012-05-15',
-    gender: 'Male',
-    address: '',
-    guardian_name: '',
-    guardian_relation: 'Father',
-    guardian_phone: '',
-    guardian_email: '',
-    class_id: '',
-    roll_number: ''
+  // Add Student Form State powered by @mantine/form with nested guardian fields
+  const addStudentForm = useForm({
+    mode: 'uncontrolled',
+    initialValues: {
+      admission_no: '',
+      full_name: '',
+      calling_name: '',
+      dob: '2012-05-15',
+      gender: 'Male',
+      address: '',
+      class_id: '',
+      roll_number: '',
+      guardian: {
+        name: '',
+        relation: 'Father',
+        phone: '',
+        email: '',
+      },
+    },
+    validate: {
+      admission_no: isNotEmpty('Admission number is required'),
+      full_name: isNotEmpty('Full name is required'),
+      calling_name: isNotEmpty('Calling name is required'),
+      dob: isNotEmpty('Date of birth is required'),
+      'guardian.name': isNotEmpty('Guardian name is required'),
+      'guardian.relation': isNotEmpty('Guardian relation is required'),
+      'guardian.phone': isNotEmpty('Guardian phone is required'),
+    },
+    transformValues: (values) => ({
+      admission_no: values.admission_no.trim(),
+      full_name: values.full_name.trim(),
+      calling_name: values.calling_name.trim(),
+      dob: values.dob,
+      gender: values.gender,
+      address: values.address.trim(),
+      class_id: values.class_id ? Number(values.class_id) : undefined,
+      roll_number: values.roll_number ? Number(values.roll_number) : undefined,
+      guardian_name: values.guardian.name.trim(),
+      guardian_relation: values.guardian.relation.trim(),
+      guardian_phone: values.guardian.phone.trim(),
+      guardian_email: values.guardian.email.trim(),
+    }),
   });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -137,31 +168,17 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
     }
   };
 
-  const handleAddSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddSubmit = addStudentForm.onSubmit(async (transformedValues) => {
     try {
       setFormError(null);
-      await api.createStudent(formData);
+      await api.createStudent(transformedValues);
       setShowAddModal(false);
-      setFormData({
-        admission_no: '',
-        full_name: '',
-        calling_name: '',
-        dob: '2012-05-15',
-        gender: 'Male',
-        address: '',
-        guardian_name: '',
-        guardian_relation: 'Father',
-        guardian_phone: '',
-        guardian_email: '',
-        class_id: '',
-        roll_number: ''
-      });
+      addStudentForm.reset();
       fetchStudents();
     } catch (err: any) {
       setFormError(err.message || 'Failed to create student record.');
     }
-  };
+  });
 
   const handleCsvPreview = async () => {
     if (!csvText.trim()) return;
@@ -733,7 +750,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
         </ScrollArea>
       </Paper>
 
-      {/* Add Student Modal */}
+      {/* Add Student Modal powered by @mantine/form */}
       <Modal
         opened={showAddModal}
         onClose={() => setShowAddModal(false)}
@@ -756,165 +773,123 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
             )}
 
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Admission Number *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.admission_no}
-                  onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
-                  placeholder="e.g. SCH-2026-031"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Calling Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.calling_name}
-                  onChange={(e) => setFormData({ ...formData, calling_name: e.target.value })}
-                  placeholder="e.g. Kasun"
-                  required
-                />
-              </div>
-            </SimpleGrid>
-
-            <div className="form-group">
-              <label className="form-label">Full Name *</label>
-              <input
-                type="text"
-                className="form-input"
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                placeholder="e.g. Kasun Malinda Ranasinghe"
+              <TextInput
+                label="Admission Number"
+                placeholder="e.g. SCH-2026-031"
                 required
+                key={addStudentForm.key('admission_no')}
+                {...addStudentForm.getInputProps('admission_no')}
               />
-            </div>
 
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Date of Birth *</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={formData.dob}
-                  onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Gender *</label>
-                <select
-                  className="form-select"
-                  value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                >
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-            </SimpleGrid>
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Class Assignment</label>
-                <select
-                  className="form-select"
-                  value={formData.class_id}
-                  onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
-                >
-                  <option value="">Select Class</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Roll Number</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={formData.roll_number}
-                  onChange={(e) => setFormData({ ...formData, roll_number: e.target.value })}
-                  placeholder="e.g. 21"
-                />
-              </div>
-            </SimpleGrid>
-
-            <div className="form-group">
-              <label className="form-label">Residential Address</label>
-              <input
-                type="text"
-                className="form-input"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Home address"
+              <TextInput
+                label="Calling Name"
+                placeholder="e.g. Kasun"
+                required
+                key={addStudentForm.key('calling_name')}
+                {...addStudentForm.getInputProps('calling_name')}
               />
-            </div>
+            </SimpleGrid>
 
-            <Divider my="xs" label="Guardian & Emergency Contact" labelPosition="left" />
+            <TextInput
+              label="Full Name"
+              placeholder="e.g. Kasun Malinda Ranasinghe"
+              required
+              key={addStudentForm.key('full_name')}
+              {...addStudentForm.getInputProps('full_name')}
+            />
 
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Guardian Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.guardian_name}
-                  onChange={(e) => setFormData({ ...formData, guardian_name: e.target.value })}
-                  placeholder="Parent / Guardian name"
-                  required
-                />
-              </div>
+              <TextInput
+                type="date"
+                label="Date of Birth"
+                required
+                key={addStudentForm.key('dob')}
+                {...addStudentForm.getInputProps('dob')}
+              />
 
-              <div className="form-group">
-                <label className="form-label">Relation *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.guardian_relation}
-                  onChange={(e) => setFormData({ ...formData, guardian_relation: e.target.value })}
-                  placeholder="Father / Mother / Guardian"
-                  required
-                />
-              </div>
+              <Select
+                label="Gender"
+                required
+                data={[
+                  { value: 'Male', label: 'Male' },
+                  { value: 'Female', label: 'Female' },
+                  { value: 'Other', label: 'Other' },
+                ]}
+                key={addStudentForm.key('gender')}
+                {...addStudentForm.getInputProps('gender')}
+              />
             </SimpleGrid>
 
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <div className="form-group">
-                <label className="form-label">Guardian Phone Number *</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  value={formData.guardian_phone}
-                  onChange={(e) => setFormData({ ...formData, guardian_phone: e.target.value })}
-                  placeholder="e.g. 0771234567"
-                  required
-                />
-              </div>
+              <Select
+                label="Class Assignment"
+                placeholder="Select Class"
+                clearable
+                data={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+                key={addStudentForm.key('class_id')}
+                {...addStudentForm.getInputProps('class_id')}
+              />
 
-              <div className="form-group">
-                <label className="form-label">Guardian Email</label>
-                <input
-                  type="email"
-                  className="form-input"
-                  value={formData.guardian_email}
-                  onChange={(e) => setFormData({ ...formData, guardian_email: e.target.value })}
-                  placeholder="guardian@example.com"
-                />
-              </div>
+              <TextInput
+                type="number"
+                label="Roll Number"
+                placeholder="e.g. 21"
+                key={addStudentForm.key('roll_number')}
+                {...addStudentForm.getInputProps('roll_number')}
+              />
+            </SimpleGrid>
+
+            <TextInput
+              label="Residential Address"
+              placeholder="Home address"
+              key={addStudentForm.key('address')}
+              {...addStudentForm.getInputProps('address')}
+            />
+
+            <Divider my="xs" label="Guardian & Emergency Contact (Nested Fields)" labelPosition="left" />
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <TextInput
+                label="Guardian Name"
+                placeholder="Parent / Guardian name"
+                required
+                key={addStudentForm.key('guardian.name')}
+                {...addStudentForm.getInputProps('guardian.name')}
+              />
+
+              <TextInput
+                label="Relation"
+                placeholder="Father / Mother / Guardian"
+                required
+                key={addStudentForm.key('guardian.relation')}
+                {...addStudentForm.getInputProps('guardian.relation')}
+              />
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <TextInput
+                type="tel"
+                label="Guardian Phone Number"
+                placeholder="e.g. 0771234567"
+                required
+                key={addStudentForm.key('guardian.phone')}
+                {...addStudentForm.getInputProps('guardian.phone')}
+              />
+
+              <TextInput
+                type="email"
+                label="Guardian Email"
+                placeholder="guardian@example.com"
+                key={addStudentForm.key('guardian.email')}
+                {...addStudentForm.getInputProps('guardian.email')}
+              />
             </SimpleGrid>
 
             <Group justify="flex-end" gap="sm" mt="md">
               <Button variant="default" onClick={() => setShowAddModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" color="refinedBlue">
+              <Button type="submit" color="refinedBlue" loading={addStudentForm.submitting}>
                 Save Admission Record
               </Button>
             </Group>
@@ -1008,45 +983,6 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                     </Box>
                   </SimpleGrid>
                 </Paper>
-
-                {/* Academic Marks History */}
-                <Box>
-                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em" mb="xs">
-                    Term Examination Marks
-                  </Text>
-                  {studentDetails.marks && studentDetails.marks.length > 0 ? (
-                    <ScrollArea mah={160}>
-                      <table className="data-table" style={{ fontSize: '0.825rem' }}>
-                        <thead>
-                          <tr>
-                            <th>Exam</th>
-                            <th>Subject</th>
-                            <th>Score</th>
-                            <th>Grade</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {studentDetails.marks.map((m: any) => (
-                            <tr key={m.id}>
-                              <td>{m.examination_name}</td>
-                              <td>{m.subject_name}</td>
-                              <td><strong>{m.is_absent ? 'AB' : m.score}</strong></td>
-                              <td>
-                                <span className={`grade-badge grade-${m.grade_letter?.toLowerCase() || 's'}`}>
-                                  {m.grade_letter}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </ScrollArea>
-                  ) : (
-                    <Text size="sm" c="dimmed">
-                      No examination marks submitted for this student yet.
-                    </Text>
-                  )}
-                </Box>
               </>
             ) : (
               <LoadingState message="Loading full profile details..." minHeight={120} />

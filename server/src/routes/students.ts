@@ -70,7 +70,7 @@ router.get('/:id', requireAuth, (req, res) => {
   const studentId = Number(req.params.id);
 
   const student = db.prepare(`
-    SELECT s.*, c.id as class_id, c.name as class_name, c.grade, c.room_number,
+    SELECT s.*, c.id as class_id, c.name as class_name, c.grade,
            e.roll_number, ay.name as academic_year,
            u.full_name as class_teacher_name
     FROM students s
@@ -112,7 +112,7 @@ router.get('/:id', requireAuth, (req, res) => {
   const late = Number(attendanceStats?.late_days || 0);
   const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 100) : 100;
 
-  // Recent detailed attendance logs for student
+  // Detailed attendance logs for student across the academic year
   const attendanceHistory = db.prepare(`
     SELECT ar.status, ar.remarks, sess.date, c.name as class_name
     FROM attendance_records ar
@@ -120,17 +120,6 @@ router.get('/:id', requireAuth, (req, res) => {
     JOIN classes c ON sess.class_id = c.id
     WHERE ar.student_id = ?
     ORDER BY sess.date DESC
-    LIMIT 30
-  `).all(studentId);
-
-  // Recent Exam Marks
-  const marks = db.prepare(`
-    SELECT m.*, sub.name as subject_name, sub.code as subject_code, ex.name as examination_name, ex.term
-    FROM marks m
-    JOIN subjects sub ON m.subject_id = sub.id
-    JOIN examinations ex ON m.examination_id = ex.id
-    WHERE m.student_id = ?
-    ORDER BY ex.term DESC, sub.name ASC
   `).all(studentId);
 
   res.json({
@@ -139,8 +128,7 @@ router.get('/:id', requireAuth, (req, res) => {
       ...attendanceStats,
       attendanceRate,
       history: attendanceHistory
-    },
-    marks
+    }
   });
 });
 

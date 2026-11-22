@@ -4,7 +4,6 @@ import {
   Users,
   CalendarCheck,
   FileSpreadsheet,
-  GraduationCap,
   ShieldCheck,
   History,
   LogOut,
@@ -12,14 +11,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
-  Smartphone,
-  UserCheck,
   Layers,
-  School
+  School,
+  Settings,
+  User
 } from 'lucide-react';
 import { Tooltip } from '@mantine/core';
 import { isUserSectionHead, isUserClassTeacher } from '../utils/authUtils';
-import { MVP_CONFIG } from '../config/mvpConfig';
 import './sidebar.css';
 
 interface SidebarProps {
@@ -107,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div className="brand-info">
               <h2>Kattankudy Central College</h2>
-              <p>National School — Census 07166</p>
+              <p>National School</p>
             </div>
           </div>
 
@@ -257,6 +255,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <button
                 type="button"
+                className={navClass('settings')}
+                onClick={() => handleNav('settings')}
+                aria-current={currentTab === 'settings' ? 'page' : undefined}
+                data-tooltip="School Settings"
+                title={isCollapsed ? 'School Settings' : undefined}
+              >
+                <Settings size={18} aria-hidden="true" />
+                <span className="nav-item-label">School Settings</span>
+              </button>
+
+              <button
+                type="button"
                 className={navClass('admin')}
                 onClick={() => handleNav('admin')}
                 aria-current={currentTab === 'admin' ? 'page' : undefined}
@@ -284,9 +294,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Profile & Sign Out Footer */}
         <div className="sidebar-footer">
-          <div className="user-snippet">
+          <div
+            className={`user-snippet ${currentTab === 'profile' ? 'user-snippet--active' : ''}`}
+            onClick={() => handleNav('profile')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                handleNav('profile');
+              }
+            }}
+            aria-label="View user profile & settings"
+            title="View personal profile and security settings"
+          >
             <Tooltip
-              label={`${cleanFullName} (${roleDisplay})`}
+              label={`Profile: ${cleanFullName} (${roleDisplay})`}
               position="right"
               disabled={!isCollapsed}
               withArrow

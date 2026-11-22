@@ -263,63 +263,7 @@ describe('KCC SkoolSys 2.0 — Principal Demonstration Walkthrough Rehearsal (Br
     assert.ok(reportsText?.includes('Attendance') || reportsText?.includes('Register') || reportsText?.includes('Report'));
   });
 
-  it('Step 9 & 10: Examination Management Workspace & Moderation Lifecycle', async (t) => {
-    if (!browser) return t.skip('Browser unavailable');
-
-    const marksNav = page.locator('.nav-item').filter({ hasText: 'Marks Management' });
-    await marksNav.click();
-    await page.waitForSelector('h2:has-text("Examination Management Workspace")', { timeout: 10000 });
-
-    const header = await page.locator('h2:has-text("Examination Management Workspace")').textContent();
-    assert.ok(header?.includes('Examination Management Workspace'));
-
-    const workspaceText = await page.textContent('.app-container');
-    assert.ok(workspaceText?.includes('Term 1 Assessment 2026'), 'Must display Term 1 published exam');
-    assert.ok(workspaceText?.includes('Mid-Year Examination 2026'), 'Must display Mid-Year scheduled exam');
-  });
-
-  it('Step 11 & 12: Published Student Report Card & Canonical Demonstration Notice', async (t) => {
-    if (!browser) return t.skip('Browser unavailable');
-
-    const studentsNav = page.locator('.nav-item').filter({ hasText: 'Student Records' });
-    await studentsNav.click();
-    await page.waitForSelector('.data-table', { timeout: 10000 });
-
-    const searchInput = page.locator('input[placeholder*="Search"]').first();
-    await searchInput.fill('Kasun');
-    await page.waitForTimeout(600);
-
-    const fullViewBtn = page.locator('tr:has-text("Kasun Malinda Ranasinghe") button:has-text("Full View")').first();
-    await fullViewBtn.click();
-    await page.waitForSelector('button:has-text("View Full Report Card")', { timeout: 10000 });
-
-    const viewReportBtn = page.locator('button:has-text("View Full Report Card")').first();
-    await viewReportBtn.click();
-
-    // Wait for Report Card side panel modal
-    await page.waitForSelector('.side-panel-right button:has-text("Print (A4)")', { timeout: 10000 });
-
-    const modalText = await page.textContent('.side-panel-right');
-    assert.ok(modalText?.includes('Kattankudy Central College'), 'Report card must display KCC');
-    assert.ok(modalText?.includes('காத்தான்குடி மத்திய கல்லூரி'), 'Report card must display Tamil school name');
-    assert.ok(modalText?.includes('Kasun Malinda Ranasinghe'), 'Report card must display student name');
-    assert.ok(modalText?.includes('DEMONSTRATION — NOT AN OFFICIAL SCHOOL RESULT'), 'Report card must carry demonstration watermark');
-    assert.ok(modalText?.includes('Mathematics'), 'Report card must contain Mathematics');
-    assert.ok(modalText?.includes('Principal'), 'Report card must contain Principal signature section');
-  });
-
-  it('Step 13: Printable A4 Card Layout Verification', async (t) => {
-    if (!browser) return t.skip('Browser unavailable');
-
-    const printBtn = page.locator('.side-panel-right button:has-text("Print (A4)")');
-    assert.ok((await printBtn.count()) > 0, 'Print (A4) button must be present in report card modal');
-
-    // Close panel
-    const closeBtn = page.locator('.side-panel-right button:has-text("Close Panel")');
-    await closeBtn.click();
-  });
-
-  it('Step 14: Sign Out & Session Security Protection', async (t) => {
+  it('Step 9: Sign Out & Session Security Protection', async (t) => {
     if (!browser) return t.skip('Browser unavailable');
 
     const logoutBtn = page.locator('button[title="Sign Out"], button[aria-label="Sign Out"]').first();

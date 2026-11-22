@@ -294,7 +294,7 @@ describe('PR-002: Authentication & Session Security Tests', () => {
     });
 
     it('POST /api/admin/reset-seed fails closed with HTTP 503 and preserves all tables', async () => {
-      const markCountBefore = (db.prepare('SELECT count(*) as count FROM marks').get() as any).count;
+      const recordCountBefore = (db.prepare('SELECT count(*) as count FROM attendance_records').get() as any).count;
 
       const res = await server.request('/api/admin/reset-seed', {
         method: 'POST',
@@ -308,8 +308,8 @@ describe('PR-002: Authentication & Session Security Tests', () => {
       const data = await res.json();
       assert.ok(data.error.includes('disabled') && data.error.includes('safety'));
 
-      const markCountAfter = (db.prepare('SELECT count(*) as count FROM marks').get() as any).count;
-      assert.equal(markCountAfter, markCountBefore, 'Mark records must remain completely intact');
+      const recordCountAfter = (db.prepare('SELECT count(*) as count FROM attendance_records').get() as any).count;
+      assert.equal(recordCountAfter, recordCountBefore, 'Attendance records must remain completely intact');
     });
   });
 });

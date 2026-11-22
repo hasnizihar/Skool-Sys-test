@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentUser, clearAuthSession, api } from './api/client';
 import { Login } from './pages/Login';
 import { Sidebar } from './components/Sidebar';
@@ -8,8 +8,9 @@ import { Dashboard } from './pages/Dashboard';
 import { Students } from './pages/Students';
 import { Attendance } from './pages/Attendance';
 import { AttendanceReports } from './pages/AttendanceReports';
-import { MarksEntry } from './pages/MarksEntry';
 import { AdminSettings } from './pages/AdminSettings';
+import { SchoolSettings } from './pages/SchoolSettings';
+import { UserProfile } from './pages/UserProfile';
 import { AuditLogs } from './pages/AuditLogs';
 import { ClassroomStatusMonitoring } from './pages/ClassroomStatusMonitoring';
 import { MobileClassroomStatus } from './pages/MobileClassroomStatus';
@@ -29,10 +30,11 @@ const VALID_TABS = [
   'attendance',
   'mobile-attendance',
   'attendance-reports',
-  'marks',
   'classroom-status',
   'mobile-classroom-status',
   'admin',
+  'settings',
+  'profile',
   'audit'
 ];
 
@@ -52,6 +54,22 @@ export function App() {
     return (localStorage.getItem('skoolsys_theme') as 'light' | 'dark') || 'light';
   });
 
+  // Navigation guard reference for unsubmitted attendance pop-up
+  const navGuardRef = useRef<((targetTab: string) => boolean) | null>(null);
+
+  const handleNavigate = (targetTab: string) => {
+    if (targetTab === currentTab) return;
+    if (navGuardRef.current) {
+      const allow = navGuardRef.current(targetTab);
+      if (!allow) {
+        // Navigation was intercepted by unsubmitted register pop-up
+        window.location.hash = `/${currentTab}`;
+        return;
+      }
+    }
+    setCurrentTab(targetTab);
+  };
+
   const toggleSidebarCollapsed = () => {
     setIsSidebarCollapsed((prev) => {
       const next = !prev;
@@ -68,12 +86,12 @@ export function App() {
     const handleHash = () => {
       const hash = window.location.hash.replace('#/', '').replace('#', '').trim();
       if (VALID_TABS.includes(hash)) {
-        setCurrentTab(hash);
+        handleNavigate(hash);
       }
     };
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
+  }, [currentTab]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -151,10 +169,11 @@ export function App() {
       case 'attendance': return 'Daily Attendance Register';
       case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
       case 'attendance-reports': return 'Attendance Reports & Registry';
-      case 'marks': return 'Examination Marks & Reports';
       case 'classroom-status': return 'Live Classroom Status Monitoring';
       case 'mobile-classroom-status': return 'Section Head Walkthrough';
       case 'admin': return 'School Administration & Security';
+      case 'settings': return 'School Settings & Configuration';
+      case 'profile': return 'User Profile & Account Security';
       case 'audit': return 'System Audit Trail';
       default: return 'SkoolSys Management Portal';
     }
@@ -165,7 +184,7 @@ export function App() {
       <div className="app-container">
         <Sidebar
           currentTab={currentTab}
-          setCurrentTab={setCurrentTab}
+          setCurrentTab={handleNavigate}
           user={user}
           onLogout={handleLogout}
           isOpen={sidebarOpen}
@@ -183,7 +202,7 @@ export function App() {
             onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
             title={getPageTitle()}
             currentTab={currentTab}
-            onNavigate={setCurrentTab}
+            onNavigate={handleNavigate}
             user={user}
             theme={theme}
             toggleTheme={toggleTheme}
@@ -191,20 +210,20 @@ export function App() {
 
           <main className="page-container">
             {currentTab === 'dashboard' && (
-              <Dashboard onNavigate={setCurrentTab} user={user} />
+              <Dashboard onNavigate={handleNavigate} user={user} />
             )}
             {currentTab === 'students' && (
               <Students user={user} />
             )}
             {currentTab === 'teachers' && (
               user.role === 'admin' ? (
-                <Teachers user={user} onNavigate={setCurrentTab} />
+                <Teachers user={user} onNavigate={handleNavigate} />
               ) : (
                 <PageContainer>
                   <ErrorState
                     title="Administrative Access Required"
                     message="The comprehensive Faculty and Teachers Directory is restricted to authorized school administrators."
-                    onRetry={() => setCurrentTab('dashboard')}
+                    onRetry={() => handleNavigate('dashboard')}
                     retryLabel="Return to Dashboard"
                   />
                 </PageContainer>
@@ -214,29 +233,34 @@ export function App() {
               <AdminSettings initialTab="sections" />
             )}
             {currentTab === 'attendance' && (
-              <Attendance user={user} />
+              <Attendance
+                user={user}
+                onNavigate={handleNavigate}
+                registerNavGuard={(guard) => { navGuardRef.current = guard; }}
+              />
             )}
             {currentTab === 'mobile-attendance' && (
-              <MobileSequentialAttendance user={user} onNavigate={setCurrentTab} />
+              <MobileSequentialAttendance
+                user={user}
+                onNavigate={handleNavigate}
+                registerNavGuard={(guard) => { navGuardRef.current = guard; }}
+              />
             )}
             {currentTab === 'attendance-reports' && (
               <AttendanceReports />
             )}
-            {currentTab === 'marks' && (
-              <MarksEntry user={user} />
-            )}
             {currentTab === 'classroom-status' && (
-              <ClassroomStatusMonitoring user={user} onNavigate={setCurrentTab} />
+              <ClassroomStatusMonitoring user={user} onNavigate={handleNavigate} />
             )}
             {currentTab === 'mobile-classroom-status' && (
               isUserSectionHead(user) ? (
-                <MobileClassroomStatus user={user} onNavigate={setCurrentTab} />
+                <MobileClassroomStatus user={user} onNavigate={handleNavigate} />
               ) : (
                 <PageContainer>
                   <ErrorState
                     title="Section Head Access Restricted"
                     message="You do not currently have assigned school sections. The Section Walkthrough tool is restricted to assigned Section Heads and the Principal."
-                    onRetry={() => setCurrentTab('dashboard')}
+                    onRetry={() => handleNavigate('dashboard')}
                     retryLabel="Return to Dashboard"
                   />
                 </PageContainer>
@@ -245,6 +269,23 @@ export function App() {
             {currentTab === 'admin' && user.role === 'admin' && (
               <AdminSettings />
             )}
+            {currentTab === 'settings' && (
+              user.role === 'admin' ? (
+                <SchoolSettings user={user} onNavigate={handleNavigate} />
+              ) : (
+                <PageContainer>
+                  <ErrorState
+                    title="Administrative Access Required"
+                    message="Institutional school settings, Ministry of Education metadata, and daily timetable schedules are restricted to authorized school administrators."
+                    onRetry={() => handleNavigate('dashboard')}
+                    retryLabel="Return to Dashboard"
+                  />
+                </PageContainer>
+              )
+            )}
+            {currentTab === 'profile' && (
+              <UserProfile user={user} onUpdateUser={setUser} onNavigate={handleNavigate} />
+            )}
             {currentTab === 'audit' && user.role === 'admin' && (
               <AuditLogs />
             )}
@@ -252,7 +293,7 @@ export function App() {
 
           <MobileBottomNav
             currentTab={currentTab}
-            onNavigate={setCurrentTab}
+            onNavigate={handleNavigate}
             onOpenMore={() => setSidebarOpen(true)}
             user={user}
           />

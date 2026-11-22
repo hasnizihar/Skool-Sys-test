@@ -34,12 +34,15 @@ export interface ActivePeriodContext {
   currentTime: string; // HH:MM
   isBreak: boolean;
   message: string;
+  autoSelectedPeriod?: number;
   availablePeriods: Array<{
     periodNumber: number;
     name: string;
     startTime: string;
     endTime: string;
     isActive: boolean;
+    periodType?: string;
+    isTeaching?: boolean;
   }>;
   breakInfo?: {
     afterPeriod: number;
@@ -126,6 +129,61 @@ export function getTimetableConfig(targetDb: DatabaseSync = db): TimetableConfig
 }
 
 /**
+ * Automatically determines the appropriate period (1..9) according to civil time 'HH:MM'.
+ * Matches active period start/end times, interval (preceding period),
+ * early morning (Period 1), or after school / evening (Period 9 / last period).
+ */
+export function matchPeriodByTime(
+  currentTime: string,
+  periods: Array<{ period_number?: number; periodNumber?: number; start_time?: string; startTime?: string; end_time?: string; endTime?: string }>
+): number {
+  if (!periods || periods.length === 0) return 1;
+
+  const toMins = (t?: string) => {
+    if (!t) return 0;
+    const [h, m] = t.split(':').map((v) => parseInt(v, 10));
+    return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+  };
+
+  const currentMins = toMins(currentTime);
+  const getStart = (p: any) => p.startTime || p.start_time || '';
+  const getEnd = (p: any) => p.endTime || p.end_time || '';
+  const getNum = (p: any) => Number(p.periodNumber || p.period_number || 1);
+
+  const sorted = [...periods].sort((a, b) => toMins(getStart(a)) - toMins(getStart(b)));
+
+  // 1. Direct active interval match
+  for (const p of sorted) {
+    const s = toMins(getStart(p));
+    const e = toMins(getEnd(p));
+    if (currentMins >= s && currentMins < e) {
+      return getNum(p);
+    }
+  }
+
+  // 2. Before first period (early morning) -> Period 1
+  if (sorted.length > 0 && currentMins < toMins(getStart(sorted[0]))) {
+    return getNum(sorted[0]);
+  }
+
+  // 3. Between periods (e.g. interval) -> period before the interval
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const cEnd = toMins(getEnd(sorted[i]));
+    const nStart = toMins(getStart(sorted[i + 1]));
+    if (currentMins >= cEnd && currentMins <= nStart) {
+      return getNum(sorted[i]);
+    }
+  }
+
+  // 4. After last period (evening/night) -> last period
+  if (sorted.length > 0 && currentMins >= toMins(getEnd(sorted[sorted.length - 1]))) {
+    return getNum(sorted[sorted.length - 1]);
+  }
+
+  return 1;
+}
+
+/**
  * Resolves active period context in the Sri Lankan civil timezone.
  *
  * Supports optional simulation/review overrides:
@@ -144,12 +202,29 @@ export function resolveActivePeriodContext(
   const currentTime = customTime || getColomboCivilTime();
   const dayOfWeek = getColomboDayOfWeek();
 
-  const availablePeriods = config.periods.map((p) => ({
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayName = dayNames[dayOfWeek];
+
+  let dailyPeriods: any[] = [];
+  try {
+    dailyPeriods = targetDb.prepare(`
+      SELECT period_number, name, start_time, end_time, period_type, is_active
+      FROM school_daily_period_schedules
+      WHERE day_of_week = ? AND is_active = 1
+      ORDER BY period_number ASC
+    `).all(dayName) as any[];
+  } catch {
+    dailyPeriods = [];
+  }
+
+  const availablePeriods = (dailyPeriods.length > 0 ? dailyPeriods : config.periods).map((p: any) => ({
     periodNumber: p.period_number,
     name: p.name,
     startTime: p.start_time,
     endTime: p.end_time,
-    isActive: Boolean(p.is_active)
+    isActive: Boolean(p.is_active),
+    periodType: p.period_type || 'teaching',
+    isTeaching: (p.period_type || 'teaching') === 'teaching'
   }));
 
   const breakInfo = config.breakStartTime && config.breakEndTime ? {
@@ -159,19 +234,23 @@ export function resolveActivePeriodContext(
     endTime: config.breakEndTime
   } : undefined;
 
+  const teachingPeriods = availablePeriods.filter((p) => p.isTeaching !== false);
+  const autoSelectedPeriod = matchPeriodByTime(currentTime, teachingPeriods);
+
   // 1. Unconfigured State
-  if (!config.isConfigured || config.periods.length === 0) {
+  if (!config.isConfigured || availablePeriods.length === 0) {
     return {
       configured: false,
       state: 'unconfigured',
-      periodNumber: overridePeriod && overridePeriod >= 1 && overridePeriod <= 9 ? overridePeriod : null,
+      periodNumber: overridePeriod && overridePeriod >= 1 && overridePeriod <= 12 ? overridePeriod : null,
       periodName: overridePeriod ? `Period ${overridePeriod}` : null,
       startTime: null,
       endTime: null,
       schoolDate,
       currentTime,
       isBreak: false,
-      message: 'Official school timetable configuration is pending. The Principal must configure the 9 periods in settings.',
+      message: 'Official school timetable configuration is pending. The Principal must configure the periods in settings.',
+      autoSelectedPeriod,
       availablePeriods,
       breakInfo
     };
@@ -180,19 +259,23 @@ export function resolveActivePeriodContext(
   // 2. Explicit Period Override (for reviewing historical/specific periods)
   if (overridePeriod !== undefined && overridePeriod !== null) {
     const pNum = Number(overridePeriod);
-    const selected = config.periods.find((p) => p.period_number === pNum);
+    const selected = availablePeriods.find((p) => p.periodNumber === pNum);
     if (selected) {
+      const isTeaching = selected.isTeaching !== false;
       return {
         configured: true,
-        state: 'active',
-        periodNumber: selected.period_number,
+        state: isTeaching ? 'active' : 'break',
+        periodNumber: isTeaching ? selected.periodNumber : null,
         periodName: selected.name,
-        startTime: selected.start_time,
-        endTime: selected.end_time,
+        startTime: selected.startTime,
+        endTime: selected.endTime,
         schoolDate,
         currentTime,
-        isBreak: false,
-        message: `${selected.name} (${selected.start_time} - ${selected.end_time})`,
+        isBreak: !isTeaching,
+        message: isTeaching
+          ? `${selected.name} (${selected.startTime} - ${selected.endTime})`
+          : `${selected.name} is classified as ${selected.periodType || 'non-teaching'}. Only teaching periods can be tracked for classroom status.`,
+        autoSelectedPeriod,
         availablePeriods,
         breakInfo
       };
@@ -212,6 +295,7 @@ export function resolveActivePeriodContext(
       currentTime,
       isBreak: false,
       message: 'Outside active school days (Weekend)',
+      autoSelectedPeriod,
       availablePeriods,
       breakInfo
     };
@@ -219,7 +303,34 @@ export function resolveActivePeriodContext(
 
   const currentMins = timeToMinutes(currentTime);
 
-  // 4. Break check
+  // 4a. Check if current time falls within any non-teaching interval (Interval, Prayer, Assembly)
+  const activeNonTeaching = availablePeriods.find(
+    (p) => !p.isTeaching && currentMins >= timeToMinutes(p.startTime) && currentMins < timeToMinutes(p.endTime)
+  );
+  if (activeNonTeaching) {
+    return {
+      configured: true,
+      state: 'break',
+      periodNumber: null,
+      periodName: activeNonTeaching.name,
+      startTime: activeNonTeaching.startTime,
+      endTime: activeNonTeaching.endTime,
+      schoolDate,
+      currentTime,
+      isBreak: true,
+      message: `${activeNonTeaching.name} in progress (${activeNonTeaching.startTime} - ${activeNonTeaching.endTime}). No teaching periods are active during this interval.`,
+      autoSelectedPeriod,
+      availablePeriods,
+      breakInfo: {
+        afterPeriod: activeNonTeaching.periodNumber,
+        name: activeNonTeaching.name,
+        startTime: activeNonTeaching.startTime,
+        endTime: activeNonTeaching.endTime
+      }
+    };
+  }
+
+  // 4b. Break check (from legacy settings if configured)
   if (config.breakStartTime && config.breakEndTime) {
     const bStart = timeToMinutes(config.breakStartTime);
     const bEnd = timeToMinutes(config.breakEndTime);
@@ -235,18 +346,19 @@ export function resolveActivePeriodContext(
         currentTime,
         isBreak: true,
         message: `${config.breakName} in progress (${config.breakStartTime} - ${config.breakEndTime})`,
+        autoSelectedPeriod,
         availablePeriods,
         breakInfo
       };
     }
   }
 
-  // 5. Sorted period boundary check
-  const sorted = [...config.periods].sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
-  const firstPeriod = sorted[0];
-  const lastPeriod = sorted[sorted.length - 1];
+  // 5. Sorted teaching period boundary check
+  const sortedTeaching = [...teachingPeriods].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+  const firstPeriod = sortedTeaching[0];
+  const lastPeriod = sortedTeaching[sortedTeaching.length - 1];
 
-  if (firstPeriod && currentMins < timeToMinutes(firstPeriod.start_time)) {
+  if (firstPeriod && currentMins < timeToMinutes(firstPeriod.startTime)) {
     return {
       configured: true,
       state: 'before_school',
@@ -257,13 +369,14 @@ export function resolveActivePeriodContext(
       schoolDate,
       currentTime,
       isBreak: false,
-      message: `Before school hours. Period 1 commences at ${firstPeriod.start_time}.`,
+      message: `Before school hours. Period 1 commences at ${firstPeriod.startTime}.`,
+      autoSelectedPeriod,
       availablePeriods,
       breakInfo
     };
   }
 
-  if (lastPeriod && currentMins >= timeToMinutes(lastPeriod.end_time)) {
+  if (lastPeriod && currentMins >= timeToMinutes(lastPeriod.endTime)) {
     return {
       configured: true,
       state: 'after_school',
@@ -274,46 +387,49 @@ export function resolveActivePeriodContext(
       schoolDate,
       currentTime,
       isBreak: false,
-      message: `School day concluded at ${lastPeriod.end_time}.`,
+      message: `School day concluded at ${lastPeriod.endTime}.`,
+      autoSelectedPeriod,
       availablePeriods,
       breakInfo
     };
   }
 
-  // 6. Match active period
-  for (const p of sorted) {
-    const pStart = timeToMinutes(p.start_time);
-    const pEnd = timeToMinutes(p.end_time);
+  // 6. Match active teaching period
+  for (const p of sortedTeaching) {
+    const pStart = timeToMinutes(p.startTime);
+    const pEnd = timeToMinutes(p.endTime);
     if (currentMins >= pStart && currentMins < pEnd) {
       return {
         configured: true,
         state: 'active',
-        periodNumber: p.period_number,
+        periodNumber: p.periodNumber,
         periodName: p.name,
-        startTime: p.start_time,
-        endTime: p.end_time,
+        startTime: p.startTime,
+        endTime: p.endTime,
         schoolDate,
         currentTime,
         isBreak: false,
-        message: `${p.name} in progress (${p.start_time} - ${p.end_time})`,
+        message: `${p.name} in progress (${p.startTime} - ${p.endTime})`,
+        autoSelectedPeriod,
         availablePeriods,
         breakInfo
       };
     }
   }
 
-  // Fallback if between periods
+  // Fallback to first teaching period if transition
   return {
     configured: true,
     state: 'active',
-    periodNumber: sorted[0]?.period_number || 1,
-    periodName: sorted[0]?.name || 'Period 1',
-    startTime: sorted[0]?.start_time || null,
-    endTime: sorted[0]?.end_time || null,
+    periodNumber: sortedTeaching[0]?.periodNumber || 1,
+    periodName: sortedTeaching[0]?.name || 'Period 1',
+    startTime: sortedTeaching[0]?.startTime || null,
+    endTime: sortedTeaching[0]?.endTime || null,
     schoolDate,
     currentTime,
     isBreak: false,
     message: 'Period transition interval',
+    autoSelectedPeriod,
     availablePeriods,
     breakInfo
   };

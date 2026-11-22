@@ -5,9 +5,9 @@ import authRoutes from './routes/auth.js';
 import academicRoutes from './routes/academic.js';
 import studentRoutes from './routes/students.js';
 import attendanceRoutes from './routes/attendance.js';
-import marksRoutes from './routes/marks.js';
 import adminRoutes from './routes/admin.js';
 import classroomStatusRoutes from './routes/classroomStatus.js';
+import settingsRoutes from './routes/settings.js';
 
 export function createApp(): express.Application {
   const app = express();
@@ -37,7 +37,8 @@ export function createApp(): express.Application {
   app.use('/api/academic', academicRoutes);
   app.use('/api/students', studentRoutes);
   app.use('/api/attendance', attendanceRoutes);
-  app.use('/api/marks', marksRoutes);
+  app.use('/api/admin/settings', settingsRoutes);
+  app.use('/api/settings', settingsRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/classroom-status', classroomStatusRoutes);
 

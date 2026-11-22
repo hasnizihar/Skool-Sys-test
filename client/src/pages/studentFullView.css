@@ -301,3 +301,192 @@
     display: none !important;
   }
 }
+
+
+/* ============================================================================
+   GitHub-style Attendance Contribution Heatmap
+   ============================================================================ */
+
+:root {
+  --contrib-empty: #e2e8f0;
+  --contrib-weekend: #f1f5f9;
+  --contrib-border: #cbd5e1;
+}
+
+[data-mantine-color-scheme='dark'] {
+  --contrib-empty: #27272a;
+  --contrib-weekend: #18181b;
+  --contrib-border: #3f3f46;
+}
+
+.att-contrib-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.att-contrib-header {
+  padding: 1.15rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.att-contrib-body {
+  padding: 1.25rem 1.5rem 1rem;
+}
+
+.att-contrib-scroll-wrapper {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.att-contrib-graph {
+  display: flex;
+  flex-direction: column;
+  min-width: 820px;
+  user-select: none;
+}
+
+.att-contrib-months {
+  position: relative;
+  height: 20px;
+  margin-left: 34px;
+  margin-bottom: 4px;
+}
+
+.att-contrib-month-label {
+  position: absolute;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  transform: translateX(-50%);
+}
+
+.att-contrib-main {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.att-contrib-days-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 30px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.att-contrib-day-label {
+  height: 11px;
+  font-size: 0.65rem;
+  line-height: 11px;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+}
+
+.att-contrib-weeks {
+  display: flex;
+  gap: 3px;
+}
+
+.att-contrib-week-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.att-contrib-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  transition: transform 0.12s ease, filter 0.12s ease;
+  cursor: pointer;
+}
+
+.att-contrib-cell:hover {
+  transform: scale(1.35);
+  z-index: 10;
+  filter: brightness(1.1);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Status colors matching GitHub Contribution aesthetic */
+.att-contrib-cell.present {
+  background-color: #22c55e !important; /* Vibrant Green */
+  border-color: #16a34a !important;
+}
+
+.att-contrib-cell.absent {
+  background-color: #ef4444 !important; /* Vibrant Red */
+  border-color: #dc2626 !important;
+}
+
+.att-contrib-cell.late {
+  background-color: #f59e0b !important; /* Amber */
+  border-color: #d97706 !important;
+}
+
+.att-contrib-cell.excused {
+  background-color: #8b5cf6 !important; /* Purple */
+  border-color: #7c3aed !important;
+}
+
+.att-contrib-cell.empty {
+  background-color: var(--contrib-empty, #e2e8f0);
+  border-color: var(--contrib-border, #cbd5e1);
+}
+
+.att-contrib-cell.weekend {
+  background-color: var(--contrib-weekend, #f1f5f9);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.att-contrib-cell.out-of-year {
+  visibility: hidden;
+}
+
+/* Footer / Legend */
+.att-contrib-footer {
+  padding: 0.85rem 1.5rem;
+  background: var(--bg-subtle, #f8fafc);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.775rem;
+}
+
+.att-contrib-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.725rem;
+  color: var(--text-muted, #64748b);
+}
+
+.att-contrib-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.35rem;
+}
+
+.att-contrib-legend-chip {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}

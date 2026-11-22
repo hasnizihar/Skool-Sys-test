@@ -3,11 +3,9 @@ import {
   LayoutDashboard,
   Users,
   CalendarCheck,
-  GraduationCap,
   Activity,
   Menu
 } from 'lucide-react';
-import { MVP_CONFIG } from '../config/mvpConfig';
 import './mobileBottomNav.css';
 
 interface MobileBottomNavProps {
@@ -63,31 +61,19 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <span>Register</span>
       </button>
 
-      {MVP_CONFIG.ENABLE_EXAM_MARKS_NAV ? (
-        <button
-          type="button"
-          className={`mobile-nav-btn ${currentTab === 'marks' ? 'active' : ''}`}
-          onClick={() => onNavigate('marks')}
-          aria-current={currentTab === 'marks' ? 'page' : undefined}
-        >
-          <GraduationCap size={20} aria-hidden="true" />
-          <span>Marks</span>
-        </button>
-      ) : (
-        <button
-          type="button"
-          className={`mobile-nav-btn ${isStatusActive ? 'active' : ''}`}
-          onClick={() => onNavigate(statusTarget)}
-          aria-current={isStatusActive ? 'page' : undefined}
-        >
-          <Activity size={20} aria-hidden="true" />
-          <span>Live Status</span>
-        </button>
-      )}
+      <button
+        type="button"
+        className={`mobile-nav-btn ${isStatusActive ? 'active' : ''}`}
+        onClick={() => onNavigate(statusTarget)}
+        aria-current={isStatusActive ? 'page' : undefined}
+      >
+        <Activity size={20} aria-hidden="true" />
+        <span>Live Status</span>
+      </button>
 
       <button
         type="button"
-        className={`mobile-nav-btn ${['admin', 'audit', 'teachers', 'sections'].includes(currentTab) ? 'active' : ''}`}
+        className={`mobile-nav-btn ${['admin', 'settings', 'audit', 'teachers', 'sections'].includes(currentTab) ? 'active' : ''}`}
         onClick={onOpenMore}
         aria-label="More navigation options"
       >
