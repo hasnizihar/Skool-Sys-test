@@ -223,7 +223,8 @@ router.get('/reports/daily', requireAuth, (req, res) => {
 
   const classSummaries = db.prepare(`
     SELECT 
-      c.id as class_id, c.name as class_name, c.grade,
+      c.id as class_id, c.name as class_name, c.grade, c.section_id,
+      sec.name as section_name,
       u.full_name as class_teacher_name,
       sess.id as session_id, sess.status as session_status, sess.updated_at as submitted_at,
       COUNT(DISTINCT CASE WHEN e.status = 'enrolled' AND s.status = 'Active' THEN e.student_id END) as enrolled_count,
@@ -232,6 +233,7 @@ router.get('/reports/daily', requireAuth, (req, res) => {
       COUNT(DISTINCT CASE WHEN ar.status = 'late' THEN ar.student_id END) as late_count,
       COUNT(DISTINCT CASE WHEN ar.status = 'excused' THEN ar.student_id END) as excused_count
     FROM classes c
+    LEFT JOIN sections sec ON c.section_id = sec.id
     LEFT JOIN users u ON c.class_teacher_id = u.id
     LEFT JOIN enrollments e ON e.class_id = c.id AND e.academic_year_id = c.academic_year_id AND e.status = 'enrolled'
     LEFT JOIN students s ON e.student_id = s.id AND s.status = 'Active'
@@ -245,11 +247,12 @@ router.get('/reports/daily', requireAuth, (req, res) => {
   const absentStudents = db.prepare(`
     SELECT 
       s.id, s.admission_no, s.full_name, s.guardian_name, s.guardian_phone,
-      c.name as class_name, ar.remarks
+      c.id as class_id, c.name as class_name, c.grade, c.section_id, sec.name as section_name, ar.remarks
     FROM attendance_records ar
     JOIN attendance_sessions sess ON ar.session_id = sess.id
     JOIN students s ON ar.student_id = s.id
     JOIN classes c ON sess.class_id = c.id
+    LEFT JOIN sections sec ON c.section_id = sec.id
     WHERE sess.date = ? AND ar.status = 'absent'
     ORDER BY c.grade ASC, c.name ASC, s.admission_no ASC
   `).all(dt);
@@ -273,6 +276,7 @@ router.get('/reports/daily', requireAuth, (req, res) => {
   res.json({
     date: dt,
     classes,
+    summaries: classes,
     absentStudents: absents
   });
 });

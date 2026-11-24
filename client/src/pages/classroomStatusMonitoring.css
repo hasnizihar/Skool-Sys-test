@@ -157,6 +157,14 @@
   box-shadow: 0 2px 4px rgba(217, 119, 6, 0.25);
 }
 
+/* Live button when active & before school */
+.csm-live-btn.active.before {
+  background-color: #475569;
+  color: #ffffff;
+  border-color: #334155;
+  box-shadow: 0 2px 4px rgba(71, 85, 105, 0.25);
+}
+
 .csm-ribbon-divider {
   width: 1px;
   height: 20px;
@@ -195,6 +203,26 @@
   border-color: var(--primary, #2563eb);
   background-color: var(--bg-subtle, #f8fafc);
   color: var(--primary, #2563eb);
+}
+
+.csm-period-btn.is-live-period {
+  border: 2px solid #16a34a;
+  color: #15803d;
+  font-weight: 700;
+  background-color: #f0fdf4;
+}
+
+.csm-period-btn.is-live-period:hover {
+  border-color: #15803d;
+  background-color: #dcfce7;
+  color: #14532d;
+}
+
+.csm-period-btn.is-live-period.active {
+  background-color: #16a34a;
+  color: #ffffff;
+  border-color: #15803d;
+  box-shadow: 0 2px 4px rgba(22, 163, 74, 0.25);
 }
 
 .csm-period-btn.active {
@@ -290,19 +318,14 @@
 
 /* KPI Variants */
 .csm-kpi-green .csm-kpi-icon { background-color: #dcfce7; color: #15803d; }
-.csm-kpi-green { border-left: 4px solid #16a34a; }
 
 .csm-kpi-red .csm-kpi-icon { background-color: #fee2e2; color: #b91c1c; }
-.csm-kpi-red { border-left: 4px solid #dc2626; }
 
 .csm-kpi-yellow .csm-kpi-icon { background-color: #fef3c7; color: #b45309; }
-.csm-kpi-yellow { border-left: 4px solid #d97706; }
 
 .csm-kpi-white .csm-kpi-icon { background-color: #f1f5f9; color: #475569; }
-.csm-kpi-white { border-left: 4px solid #94a3b8; }
 
 .csm-kpi-grey .csm-kpi-icon { background-color: #e2e8f0; color: #334155; }
-.csm-kpi-grey { border-left: 4px solid #64748b; }
 
 /* Status Color Legend */
 .csm-legend {
@@ -450,7 +473,6 @@
   gap: 0.25rem;
   min-height: 46px;
   border: 1px solid var(--border-color, #e2e8f0);
-  border-left-width: 4px;
   background: #ffffff;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   position: relative;
@@ -465,38 +487,32 @@
 .csm-class-box.teaching {
   background-color: #f0fdf4;
   border-color: #bbf7d0;
-  border-left-color: #16a34a;
 }
 
 .csm-class-box.not_teaching {
   background-color: #fef2f2;
   border-color: #fecaca;
-  border-left-color: #dc2626;
 }
 
 .csm-class-box.other_activity {
   background-color: #fffbeb;
   border-color: #fef3c7;
-  border-left-color: #d97706;
 }
 
 .csm-class-box.pending {
   background-color: #ffffff;
   border-color: #e2e8f0;
-  border-left-color: #94a3b8;
 }
 
 .csm-class-box.school_ended {
   background-color: #f1f5f9;
   border-color: #cbd5e1;
-  border-left-color: #64748b;
   opacity: 0.95;
 }
 
 [data-mantine-color-scheme='dark'] .csm-class-box.school_ended {
   background-color: #1e293b;
   border-color: #334155;
-  border-left-color: #64748b;
 }
 
 .csm-box-top {

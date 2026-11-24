@@ -148,7 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, user }) => {
         try {
           const usersRes = await api.getUsers();
           const activeFaculty = (usersRes.users || []).filter(
-            (u: any) => u.is_active && (u.role === 'class_teacher' || u.role === 'subject_teacher' || u.role === 'admin')
+            (u: any) => u.is_active && (u.role === 'class_teacher' || u.role === 'admin')
           );
           facultyCount = activeFaculty.length;
         } catch {

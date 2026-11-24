@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -16,7 +16,6 @@ import {
   School,
   WifiOff,
   Users,
-  Building2,
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
@@ -38,7 +37,8 @@ import {
   Box,
   Alert,
   Tooltip,
-  SegmentedControl
+  SegmentedControl,
+  Modal
 } from '@mantine/core';
 import { api, HttpError } from '../api/client';
 import { MobileSequentialAttendance, PREDEFINED_ABSENCE_REASONS } from './MobileSequentialAttendance';
@@ -122,6 +122,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
   const isBypassingGuardRef = React.useRef<boolean>(false);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   // Real-time Counts
   const counts = useMemo(() => {
@@ -204,6 +205,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
         const act = pendingLeaveAction;
         setPendingLeaveAction(null);
         act();
+      } else {
+        setSelectedClassId(null);
+        refreshDailySummaries(selectedDate);
       }
     }
   };
@@ -248,26 +252,31 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
     };
   }, []);
 
-  // When date changes, refresh daily report summaries
-  useEffect(() => {
-    api.getDailyAttendanceReport(selectedDate)
-      .then((res) => {
-        if (res?.summaries) {
-          const sumMap: Record<number, any> = {};
-          res.summaries.forEach((s: any) => {
-            sumMap[s.class_id] = s;
-          });
-          setDailySummaries(sumMap);
-        }
-      })
-      .catch(() => {});
+  // Reusable refresh for daily report summaries
+  const refreshDailySummaries = useCallback(async (dateStr: string = selectedDate) => {
+    try {
+      const res = await api.getDailyAttendanceReport(dateStr);
+      const reportList = res?.summaries || res?.classes || [];
+      const sumMap: Record<number, any> = {};
+      reportList.forEach((s: any) => {
+        sumMap[s.class_id] = s;
+      });
+      setDailySummaries(sumMap);
+    } catch {
+      // ignore
+    }
   }, [selectedDate]);
 
+  // When date changes, refresh daily report summaries
   useEffect(() => {
-    if (selectedClassId && selectedDate) {
+    refreshDailySummaries(selectedDate);
+  }, [selectedDate, refreshDailySummaries]);
+
+  useEffect(() => {
+    if (selectedClassId && selectedDate && displayMode === 'table') {
       loadAttendanceSession(selectedClassId, selectedDate);
     }
-  }, [selectedClassId, selectedDate]);
+  }, [selectedClassId, selectedDate, displayMode]);
 
   // Auto-sync selectedSectionId if selectedClassId is set
   useEffect(() => {
@@ -304,11 +313,10 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
 
       // Map daily summaries by class_id
       const sumMap: Record<number, any> = {};
-      if (dailyRes?.summaries) {
-        dailyRes.summaries.forEach((s: any) => {
-          sumMap[s.class_id] = s;
-        });
-      }
+      const reportList = dailyRes?.summaries || dailyRes?.classes || [];
+      reportList.forEach((s: any) => {
+        sumMap[s.class_id] = s;
+      });
       setDailySummaries(sumMap);
 
       // Build sections list enriched with accessible classes
@@ -633,7 +641,10 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
     const y = dt.getUTCFullYear();
     const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
     const d = String(dt.getUTCDate()).padStart(2, '0');
-    setSelectedDate(`${y}-${m}-${d}`);
+    const nextDate = `${y}-${m}-${d}`;
+    const today = getColomboCivilDate();
+    if (offset > 0 && nextDate > today) return;
+    setSelectedDate(nextDate);
   };
 
   const handleGoToday = () => {
@@ -729,6 +740,18 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
 
         setSaveSuccessMsg(successText);
         toast.showSuccess(mode === 'submitted' ? 'Final register submitted.' : 'Draft saved to server.');
+
+        setDailySummaries((prev) => ({
+          ...prev,
+          [selectedClassId]: {
+            class_id: selectedClassId,
+            session_status: mode,
+            present_count: Object.values(attendanceMap).filter((r: any) => r.status === 'present').length,
+            enrolled_count: students.length,
+            absent_count: Object.values(attendanceMap).filter((r: any) => r.status === 'absent').length
+          }
+        }));
+        refreshDailySummaries(selectedDate);
       } else {
         // Offline: enqueue in IndexedDB v2
         await queueOfflineAttendance(mutationPayload);
@@ -771,6 +794,19 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
     } finally {
       setSaving(false);
     }
+  };
+
+  // Seamless switch between Table and Card mode with auto-save
+  const handleDisplayModeChange = async (newMode: 'card' | 'table') => {
+    if (newMode === displayMode) return;
+    if (selectedClassId && (hasMarksRecorded || isDirty)) {
+      try {
+        await handleSaveAttendance('draft');
+      } catch (err) {
+        console.warn('Auto-save draft on switch to card mode:', err);
+      }
+    }
+    setDisplayMode(newMode);
   };
 
   // Student-by-Student Concurrency Conflict Reconciliation
@@ -1008,7 +1044,20 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
         initialClassId={selectedClassId}
         initialDate={selectedDate}
         onSwitchToTableMode={() => setDisplayMode('table')}
-        onBackToClasses={() => setSelectedClassId(null)}
+        onBackToClasses={() => {
+          setSelectedClassId(null);
+          refreshDailySummaries(selectedDate);
+        }}
+        onAttendanceSaved={(classId, status, summary) => {
+          setDailySummaries((prev) => ({
+            ...prev,
+            [classId]: {
+              ...(prev[classId] || {}),
+              ...summary
+            }
+          }));
+          refreshDailySummaries(selectedDate);
+        }}
         onNavigate={onNavigate}
         registerNavGuard={registerNavGuard}
       />
@@ -1061,8 +1110,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                 size="sm"
                 px={8}
                 style={{ height: 36 }}
+                disabled={selectedDate >= getColomboCivilDate()}
                 onClick={() => handleAttemptLeave(() => handleShiftDate(1))}
-                title="Next Day"
+                title={selectedDate >= getColomboCivilDate() ? 'Future dates cannot be recorded' : 'Next Day'}
                 aria-label="Next Day"
               >
                 <ChevronRight size={15} />
@@ -1075,9 +1125,11 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                 type="date"
                 className="attendance-date-input"
                 value={selectedDate}
+                max={getColomboCivilDate()}
                 onChange={(e) => {
                   const nextDate = e.target.value;
-                  if (nextDate === selectedDate) return;
+                  if (!nextDate || nextDate === selectedDate) return;
+                  if (nextDate > getColomboCivilDate()) return;
                   handleAttemptLeave(() => setSelectedDate(nextDate));
                 }}
                 aria-label="Attendance Date"
@@ -1088,10 +1140,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
           {/* Clear Toggle for Table / Card Mode */}
           <SegmentedControl
             value={displayMode}
-            onChange={(val: any) => {
-              if (val === displayMode) return;
-              handleAttemptLeave(() => setDisplayMode(val));
-            }}
+            onChange={(val: any) => handleDisplayModeChange(val)}
             data={[
               {
                 value: 'table',
@@ -1132,7 +1181,13 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
 
               <button
                 type="button"
-                onClick={() => handleSaveAttendance('submitted')}
+                onClick={async () => {
+                  const success = await handleSaveAttendance('submitted');
+                  if (success) {
+                    setSelectedClassId(null);
+                    refreshDailySummaries(selectedDate);
+                  }
+                }}
                 disabled={saving || students.length === 0}
                 className="btn btn-primary"
                 style={{ minWidth: '175px' }}
@@ -1159,15 +1214,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
         <div className="att-hierarchy-container">
           <Paper p="xs" radius="md" withBorder className="att-guidance-card">
             <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-              <Group gap="xs" align="center">
-                <Building2 size={16} color="#2563eb" />
-                <Text fw={700} size="sm" c="#0f172a">
-                  School Sections
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Select a section below to view classrooms and record attendance
-                </Text>
-              </Group>
+              <Text fw={700} size="sm" c="#0f172a">
+                School Sections
+              </Text>
 
               <Badge color="blue" variant="light" size="sm">
                 {sections.length} Section{sections.length !== 1 ? 's' : ''} Accessible
@@ -1222,12 +1271,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                           }}
                         >
                           <Group justify="space-between" align="center" mb="xs">
-                            <Group gap={6} align="center">
-                              <Building2 size={16} color="#2563eb" />
-                              <Text fw={750} size="md" c="#0f172a">
-                                {sec.name}
-                              </Text>
-                            </Group>
+                            <Text fw={750} size="md" c="#0f172a">
+                              {sec.name}
+                            </Text>
                             {sec.grade_range && (
                               <Badge variant="light" color="blue" size="xs">
                                 Grades {sec.grade_range}
@@ -1242,12 +1288,12 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                           <div className="att-card-footer">
                             <div>
                               {isAllSubmitted ? (
-                                <Badge color="green" variant="light" size="xs">
-                                  All {sec.classCount} Submitted
+                                <Badge color="green" variant="filled" size="xs">
+                                  {sec.classCount}/{sec.classCount} Classes Submitted
                                 </Badge>
                               ) : submittedCount > 0 ? (
-                                <Badge color="blue" variant="light" size="xs">
-                                  {submittedCount} of {sec.classCount} Submitted
+                                <Badge color="green" variant="light" size="xs">
+                                  {submittedCount}/{sec.classCount} Classes Submitted
                                 </Badge>
                               ) : draftCount > 0 ? (
                                 <Badge color="yellow" variant="light" size="xs">
@@ -1255,7 +1301,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                                 </Badge>
                               ) : (
                                 <Badge color="gray" variant="light" size="xs">
-                                  Pending Roll-Call
+                                  0/{sec.classCount} Classes Submitted
                                 </Badge>
                               )}
                             </div>
@@ -1274,7 +1320,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                 <div>
                   <Group justify="space-between" align="center" mb={8}>
                     <Text fw={700} size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.04em' }}>
-                      Collegiate Division &middot; Grades 12&ndash;13 (A/L)
+                      A/L Division &middot; Grades 12&ndash;13
                     </Text>
                     <Text size="xs" c="dimmed">
                       {collegiateSections.length} Sections
@@ -1308,12 +1354,9 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                           }}
                         >
                           <Group justify="space-between" align="center" mb="xs">
-                            <Group gap={6} align="center">
-                              <Building2 size={16} color="#2563eb" />
-                              <Text fw={750} size="md" c="#0f172a">
-                                {sec.name}
-                              </Text>
-                            </Group>
+                            <Text fw={750} size="md" c="#0f172a">
+                              {sec.name}
+                            </Text>
                             {sec.grade_range && (
                               <Badge variant="light" color="blue" size="xs">
                                 Grades {sec.grade_range}
@@ -1328,12 +1371,12 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                           <div className="att-card-footer">
                             <div>
                               {isAllSubmitted ? (
-                                <Badge color="green" variant="light" size="xs">
-                                  All {sec.classCount} Submitted
+                                <Badge color="green" variant="filled" size="xs">
+                                  {sec.classCount}/{sec.classCount} Classes Submitted
                                 </Badge>
                               ) : submittedCount > 0 ? (
-                                <Badge color="blue" variant="light" size="xs">
-                                  {submittedCount} of {sec.classCount} Submitted
+                                <Badge color="green" variant="light" size="xs">
+                                  {submittedCount}/{sec.classCount} Classes Submitted
                                 </Badge>
                               ) : draftCount > 0 ? (
                                 <Badge color="yellow" variant="light" size="xs">
@@ -1341,7 +1384,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                                 </Badge>
                               ) : (
                                 <Badge color="gray" variant="light" size="xs">
-                                  Pending Roll-Call
+                                  0/{sec.classCount} Classes Submitted
                                 </Badge>
                               )}
                             </div>
@@ -1379,7 +1422,6 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                 </Button>
                 <ChevronRight size={14} color="#94a3b8" />
                 <Group gap={6} align="center">
-                  <Building2 size={16} color="#2563eb" />
                   <Text fw={700} size="sm" c="#0f172a">
                     {currentSection?.name || 'Section Classes'}
                   </Text>
@@ -1391,8 +1433,23 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                 </Group>
               </Group>
 
-              <Badge color="blue" variant="light" size="sm">
-                {activeClassesInCurrentSection.length} Class{activeClassesInCurrentSection.length !== 1 ? 'es' : ''}
+              <Badge
+                color={
+                  activeClassesInCurrentSection.filter((c: any) => dailySummaries[c.id]?.session_status === 'submitted').length > 0
+                    ? 'green'
+                    : 'gray'
+                }
+                variant={
+                  activeClassesInCurrentSection.length > 0 &&
+                  activeClassesInCurrentSection.filter((c: any) => dailySummaries[c.id]?.session_status === 'submitted').length ===
+                    activeClassesInCurrentSection.length
+                    ? 'filled'
+                    : 'light'
+                }
+                size="sm"
+              >
+                {activeClassesInCurrentSection.filter((c: any) => dailySummaries[c.id]?.session_status === 'submitted').length}/
+                {activeClassesInCurrentSection.length} Classes Submitted
               </Badge>
             </Group>
           </Paper>
@@ -1418,7 +1475,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                     p="lg"
                     radius="md"
                     withBorder
-                    className="att-class-card"
+                    className={`att-class-card ${isSubmitted ? 'submitted' : isDraft ? 'draft' : ''}`}
                     onClick={() => setSelectedClassId(cls.id)}
                     role="button"
                     tabIndex={0}
@@ -1432,7 +1489,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                       <Text fw={750} size="lg" c="#0f172a">
                         {cls.name}
                       </Text>
-                      <Badge variant="light" color="blue" size="sm">
+                      <Badge variant="light" color={isSubmitted ? 'green' : 'blue'} size="sm">
                         Grade {cls.grade}
                       </Badge>
                     </Group>
@@ -1450,7 +1507,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                       <div>
                         {isSubmitted ? (
                           <Badge color="green" variant="light" size="xs">
-                            ✓ Submitted ({summary.present_count}/{summary.enrolled_count})
+                            ✓ Submitted ({summary.present_count ?? 0}/{summary.enrolled_count ?? cls.student_count ?? 0})
                           </Badge>
                         ) : isDraft ? (
                           <Badge color="yellow" variant="light" size="xs">
@@ -1463,7 +1520,7 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                         )}
                       </div>
                       <span className="att-card-arrow">
-                        {displayMode === 'card' ? 'Roll-Call' : 'Open Register'} &rarr;
+                        {isSubmitted ? 'Review Register' : (displayMode === 'card' ? 'Roll-Call' : 'Open Register')} &rarr;
                       </span>
                     </div>
                   </Paper>
@@ -1552,33 +1609,21 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
                     size="xs"
                     variant="default"
                     leftSection={<RotateCcw size={13} />}
-                    onClick={handleClearAll}
+                    onClick={() => {
+                      const hasMarks = Object.values(attendanceMap).some(
+                        (r: any) => r?.status === 'present' || r?.status === 'absent'
+                      );
+                      if (hasMarks) {
+                        setClearConfirmOpen(true);
+                      } else {
+                        toast.showInfo('All students are already unmarked.');
+                      }
+                    }}
                     title="Reset all students to Unmarked"
                   >
                     Clear
                   </Button>
                 </Button.Group>
-
-                {activeClassesInCurrentSection.length > 1 && (
-                  <Group gap={4} align="center">
-                    <Text size="xs" c="dimmed">Class:</Text>
-                    <select
-                      className="attendance-select-compact"
-                      value={selectedClassId}
-                      onChange={(e) => {
-                        const nextId = Number(e.target.value);
-                        if (nextId === selectedClassId) return;
-                        handleAttemptLeave(() => setSelectedClassId(nextId));
-                      }}
-                    >
-                      {activeClassesInCurrentSection.map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Group>
-                )}
               </Group>
             </Group>
           </Paper>
@@ -2220,6 +2265,44 @@ export const Attendance: React.FC<AttendanceProps> = ({ user, onNavigate, regist
           </div>
         </div>
       )}
+
+      {/* Clear Attendance Confirmation Modal */}
+      <Modal
+        opened={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        title={
+          <Group gap={8}>
+            <AlertTriangle size={18} color="#d97706" />
+            <Text fw={700} size="sm">Clear Attendance?</Text>
+          </Group>
+        }
+        centered
+        radius="md"
+        size="sm"
+        overlayProps={{ backgroundOpacity: 0.45, blur: 2 }}
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Are you sure you want to clear attendance for <strong>{currentClass?.name ? `${currentClass.name} · Grade ${currentClass.grade}` : 'this class'}</strong>? All present and absent records will be reset to unmarked.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" size="sm" onClick={() => setClearConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              size="sm"
+              leftSection={<RotateCcw size={14} />}
+              onClick={() => {
+                setClearConfirmOpen(false);
+                handleClearAll();
+              }}
+            >
+              Clear Attendance
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Unsubmitted Attendance Exit Interception Modal */}
       <UnsubmittedAttendanceModal

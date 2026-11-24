@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar,
   Phone,
@@ -12,7 +12,10 @@ import {
   FileSpreadsheet,
   Users,
   Search,
-  Filter
+  Filter,
+  RotateCcw,
+  CalendarCheck,
+  X
 } from 'lucide-react';
 import {
   Paper,
@@ -41,6 +44,11 @@ export const AttendanceReports: React.FC = () => {
   const [dailyData, setDailyData] = useState<any | null>(null);
   const [loadingDaily, setLoadingDaily] = useState(false);
 
+  // Section & Grade Filter State
+  const [sections, setSections] = useState<any[]>([]);
+  const [selectedSection, setSelectedSection] = useState<string>('all');
+  const [selectedGrade, setSelectedGrade] = useState<string>('all');
+
   // Monthly Report State
   const [classes, setClasses] = useState<any[]>([]);
   const [monthlyClassId, setMonthlyClassId] = useState<number | null>(null);
@@ -51,7 +59,19 @@ export const AttendanceReports: React.FC = () => {
 
   useEffect(() => {
     loadClasses();
+    loadSections();
   }, []);
+
+  const loadSections = async () => {
+    try {
+      const res = await api.getSections();
+      if (res?.sections) {
+        setSections(res.sections);
+      }
+    } catch (err) {
+      console.error('Failed to load sections:', err);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'daily') {
@@ -105,7 +125,10 @@ export const AttendanceReports: React.FC = () => {
   const shiftDate = (days: number) => {
     const [y, m, d] = selectedDate.split('-').map(Number);
     const dt = new Date(Date.UTC(y, m - 1, d + days));
-    setSelectedDate(dt.toISOString().slice(0, 10));
+    const target = dt.toISOString().slice(0, 10);
+    const today = getColomboCivilDate();
+    if (days > 0 && target > today) return;
+    setSelectedDate(target);
   };
 
   const jumpToToday = () => {
@@ -114,24 +137,117 @@ export const AttendanceReports: React.FC = () => {
 
   const isToday = selectedDate === getColomboCivilDate();
 
-  // Calculate daily totals
+  // Dynamic list of unique grades derived from classes
+  const availableGrades = useMemo(() => {
+    const gradeSet = new Set<number>();
+    const targetClasses =
+      selectedSection === 'all'
+        ? classes
+        : classes.filter((c) => String(c.section_id) === String(selectedSection));
+
+    targetClasses.forEach((c) => {
+      if (c.grade !== undefined && c.grade !== null) {
+        gradeSet.add(Number(c.grade));
+      }
+    });
+
+    if (dailyData?.classes) {
+      dailyData.classes.forEach((c: any) => {
+        const classInfo = classes.find((cl) => cl.id === c.class_id);
+        const secId = c.section_id ?? classInfo?.section_id;
+        if (selectedSection === 'all' || String(secId) === String(selectedSection)) {
+          const g = c.grade ?? classInfo?.grade;
+          if (g !== undefined && g !== null) {
+            gradeSet.add(Number(g));
+          }
+        }
+      });
+    }
+
+    return Array.from(gradeSet).sort((a, b) => a - b);
+  }, [classes, dailyData?.classes, selectedSection]);
+
+  // Reset selectedGrade if selected section doesn't have it
+  useEffect(() => {
+    if (selectedGrade !== 'all' && availableGrades.length > 0 && !availableGrades.includes(Number(selectedGrade))) {
+      setSelectedGrade('all');
+    }
+  }, [availableGrades, selectedGrade]);
+
+  // Filtered classes based on section and grade filters
+  const filteredClasses = useMemo(() => {
+    if (!dailyData?.classes) return [];
+    return dailyData.classes.filter((c: any) => {
+      const classInfo = classes.find((cl) => cl.id === c.class_id);
+      const secId = c.section_id ?? classInfo?.section_id;
+      const g = c.grade ?? classInfo?.grade;
+
+      if (selectedSection !== 'all' && String(secId) !== String(selectedSection)) {
+        return false;
+      }
+      if (selectedGrade !== 'all' && String(g) !== String(selectedGrade)) {
+        return false;
+      }
+      return true;
+    });
+  }, [dailyData?.classes, classes, selectedSection, selectedGrade]);
+
+  // Filtered absent students based on section and grade filters
+  const filteredAbsentStudents = useMemo(() => {
+    if (!dailyData?.absentStudents) return [];
+    return dailyData.absentStudents.filter((st: any) => {
+      const classInfo = classes.find((cl) => cl.name === st.class_name || cl.id === st.class_id);
+      const secId = st.section_id ?? classInfo?.section_id;
+      const g = st.grade ?? classInfo?.grade;
+
+      if (selectedSection !== 'all' && String(secId) !== String(selectedSection)) {
+        return false;
+      }
+      if (selectedGrade !== 'all' && String(g) !== String(selectedGrade)) {
+        return false;
+      }
+      return true;
+    });
+  }, [dailyData?.absentStudents, classes, selectedSection, selectedGrade]);
+
+  // Monthly classes filtered by section and grade
+  const monthlyFilteredClasses = useMemo(() => {
+    return classes.filter((c) => {
+      if (selectedSection !== 'all' && String(c.section_id) !== String(selectedSection)) {
+        return false;
+      }
+      if (selectedGrade !== 'all' && String(c.grade) !== String(selectedGrade)) {
+        return false;
+      }
+      return true;
+    });
+  }, [classes, selectedSection, selectedGrade]);
+
+  useEffect(() => {
+    if (monthlyFilteredClasses.length > 0) {
+      const exists = monthlyFilteredClasses.some((c) => c.id === monthlyClassId);
+      if (!exists) {
+        setMonthlyClassId(monthlyFilteredClasses[0].id);
+      }
+    }
+  }, [monthlyFilteredClasses, monthlyClassId]);
+
+  // Calculate daily totals based on filtered classes
   let totalEnrolled = 0;
   let totalPresent = 0;
   let totalAbsent = 0;
   let totalLate = 0;
   let recordedSessions = 0;
 
-  if (dailyData?.classes) {
-    dailyData.classes.forEach((c: any) => {
-      totalEnrolled += Number(c.enrolled_count || 0);
-      if (c.session_id) {
-        recordedSessions++;
-        totalPresent += Number(c.present_count || 0);
-        totalAbsent += Number(c.absent_count || 0);
-        totalLate += Number(c.late_count || 0);
-      }
-    });
-  }
+  filteredClasses.forEach((c: any) => {
+    totalEnrolled += Number(c.enrolled_count || 0);
+    if (c.session_id) {
+      recordedSessions++;
+      totalPresent += Number(c.present_count || 0);
+      totalAbsent += Number(c.absent_count || 0);
+      totalLate += Number(c.late_count || 0);
+    }
+  });
 
   const schoolPercentage =
     recordedSessions > 0 && totalEnrolled > 0
@@ -189,77 +305,175 @@ export const AttendanceReports: React.FC = () => {
         <div className="reports-toolbar-row">
           {activeTab === 'daily' ? (
             <>
-              <div className="reports-control-group">
-                <label className="reports-control-label">Report Date</label>
-                <div className="reports-date-picker-wrap">
-                  <div className="reports-date-input-wrap">
-                    <Calendar size={15} className="reports-date-icon" />
-                    <input
-                      type="date"
-                      className="form-input reports-date-input"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="reports-date-stepper">
-                    <button
-                      type="button"
-                      className="reports-step-btn"
-                      onClick={() => shiftDate(-1)}
-                      title="Previous Day"
-                      aria-label="Previous Day"
-                    >
-                      <ChevronLeft size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className={`reports-today-btn ${isToday ? 'active' : ''}`}
-                      onClick={jumpToToday}
-                      title="Jump to Current Date"
-                    >
-                      Today
-                    </button>
-                    <button
-                      type="button"
-                      className="reports-step-btn"
-                      onClick={() => shiftDate(1)}
-                      title="Next Day"
-                      aria-label="Next Day"
-                    >
-                      <ChevronRight size={15} />
-                    </button>
+              <div className="reports-daily-filters">
+                <div className="reports-control-group">
+                  <label className="reports-control-label">Report Date</label>
+                  <div className="reports-date-picker-wrap">
+                    <div className="reports-date-input-wrap">
+                      <Calendar size={15} className="reports-date-icon" />
+                      <input
+                        type="date"
+                        className="form-input reports-date-input"
+                        value={selectedDate}
+                        max={getColomboCivilDate()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val || val > getColomboCivilDate()) return;
+                          setSelectedDate(val);
+                        }}
+                      />
+                    </div>
+                    <div className="reports-date-stepper">
+                      <button
+                        type="button"
+                        className="reports-step-btn"
+                        onClick={() => shiftDate(-1)}
+                        title="Previous Day"
+                        aria-label="Previous Day"
+                      >
+                        <ChevronLeft size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className={`reports-today-btn ${isToday ? 'active' : ''}`}
+                        onClick={jumpToToday}
+                        title="Jump to Current Date"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        className="reports-step-btn"
+                        disabled={selectedDate >= getColomboCivilDate()}
+                        onClick={() => shiftDate(1)}
+                        title={selectedDate >= getColomboCivilDate() ? 'Future dates cannot be selected' : 'Next Day'}
+                        aria-label="Next Day"
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="reports-status-summary">
-                <Badge
-                  color={recordedSessions > 0 ? 'green' : 'gray'}
-                  variant="light"
-                  size="lg"
-                  className="reports-status-pill"
-                >
-                  <span className="reports-status-dot" />
-                  <span>
-                    {recordedSessions > 0
-                      ? `${recordedSessions} of ${dailyData?.classes?.length || 18} Classes Submitted`
-                      : 'No Registers Submitted for this Date'}
-                  </span>
-                </Badge>
+                <div className="reports-control-group" style={{ minWidth: 170 }}>
+                  <label className="reports-control-label">Section</label>
+                  <select
+                    className="form-select reports-select"
+                    value={selectedSection}
+                    onChange={(e) => setSelectedSection(e.target.value)}
+                    aria-label="Filter by Section"
+                  >
+                    <option value="all">All Sections</option>
+                    {sections.map((sec) => (
+                      <option key={sec.id} value={String(sec.id)}>
+                        {sec.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="reports-control-group" style={{ minWidth: 130 }}>
+                  <label className="reports-control-label">Grade</label>
+                  <select
+                    className="form-select reports-select"
+                    value={selectedGrade}
+                    onChange={(e) => setSelectedGrade(e.target.value)}
+                    aria-label="Filter by Grade"
+                  >
+                    <option value="all">All Grades</option>
+                    {availableGrades.map((g) => (
+                      <option key={g} value={String(g)}>
+                        Grade {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {(selectedSection !== 'all' || selectedGrade !== 'all') && (
+                  <div className="reports-control-group" style={{ alignSelf: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="reports-clear-filter-btn"
+                      onClick={() => {
+                        setSelectedSection('all');
+                        setSelectedGrade('all');
+                      }}
+                      title="Reset filters"
+                    >
+                      <X size={13} />
+                      <span>Clear Filters</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           ) : (
             <div className="reports-monthly-controls">
-              <div className="reports-control-group" style={{ flex: '1 1 240px' }}>
+              <div className="reports-control-group" style={{ minWidth: 170 }}>
+                <label className="reports-control-label">Section</label>
+                <select
+                  className="form-select reports-select"
+                  value={selectedSection}
+                  onChange={(e) => setSelectedSection(e.target.value)}
+                  aria-label="Filter by Section"
+                >
+                  <option value="all">All Sections</option>
+                  {sections.map((sec) => (
+                    <option key={sec.id} value={String(sec.id)}>
+                      {sec.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="reports-control-group" style={{ minWidth: 130 }}>
+                <label className="reports-control-label">Grade</label>
+                <select
+                  className="form-select reports-select"
+                  value={selectedGrade}
+                  onChange={(e) => setSelectedGrade(e.target.value)}
+                  aria-label="Filter by Grade"
+                >
+                  <option value="all">All Grades</option>
+                  {availableGrades.map((g) => (
+                    <option key={g} value={String(g)}>
+                      Grade {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(selectedSection !== 'all' || selectedGrade !== 'all') && (
+                <div className="reports-control-group" style={{ alignSelf: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="reports-clear-filter-btn"
+                    onClick={() => {
+                      setSelectedSection('all');
+                      setSelectedGrade('all');
+                    }}
+                    title="Reset filters"
+                  >
+                    <X size={13} />
+                    <span>Clear Filters</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="reports-control-group" style={{ flex: '1 1 200px' }}>
                 <label className="reports-control-label">Select Class</label>
                 <select
                   className="form-select reports-select"
                   value={monthlyClassId || ''}
                   onChange={(e) => setMonthlyClassId(Number(e.target.value))}
                 >
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {monthlyFilteredClasses.length === 0 ? (
+                    <option value="" disabled>No classes in filter</option>
+                  ) : (
+                    monthlyFilteredClasses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -309,81 +523,80 @@ export const AttendanceReports: React.FC = () => {
             <>
               {/* Daily Summary Stats Grid */}
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
-                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
-                  <Group justify="space-between" align="flex-start" mb="xs">
-                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                      Overall Attendance
-                    </Text>
-                    <Badge color="green" variant="light" size="lg" circle>
-                      <CheckCircle size={18} />
-                    </Badge>
-                  </Group>
-                  <div className="stat-content">
-                    <Text size="2rem" fw={800} lh={1}>
+                {/* 1. Overall Attendance */}
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card reports-stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-card-label">Overall Attendance</span>
+                    <div className="stat-card-icon-badge stat-card-icon--green">
+                      <CheckCircle size={17} />
+                    </div>
+                  </div>
+                  <div className="stat-card-body">
+                    <div className="stat-card-value">
                       {schoolPercentage !== null ? `${schoolPercentage}%` : '—'}
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={4}>
+                    </div>
+                    <div className="stat-card-subtext">
                       {schoolPercentage !== null
-                        ? `${totalPresent + totalLate} / ${totalEnrolled} Pupils present`
+                        ? `${totalPresent} / ${totalEnrolled} Pupils present`
                         : 'No attendance recorded'}
-                    </Text>
+                    </div>
                   </div>
                 </Paper>
 
-                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
-                  <Group justify="space-between" align="flex-start" mb="xs">
-                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                      Students Present
-                    </Text>
-                    <Badge color="blue" variant="light" size="lg" circle>
-                      <UserCheck size={18} />
-                    </Badge>
-                  </Group>
-                  <div className="stat-content">
-                    <Text size="2rem" fw={800} lh={1} c="blue.7">
+                {/* 2. Students Present */}
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card reports-stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-card-label">Students Present</span>
+                    <div className="stat-card-icon-badge stat-card-icon--blue">
+                      <UserCheck size={17} />
+                    </div>
+                  </div>
+                  <div className="stat-card-body">
+                    <div className="stat-card-value stat-card-value--blue">
                       {totalPresent}
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={4}>
+                    </div>
+                    <div className="stat-card-subtext">
                       Confirmed in classrooms
-                    </Text>
+                    </div>
                   </div>
                 </Paper>
 
-                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
-                  <Group justify="space-between" align="flex-start" mb="xs">
-                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                      Students Absent
-                    </Text>
-                    <Badge color="red" variant="light" size="lg" circle>
-                      <AlertCircle size={18} />
-                    </Badge>
-                  </Group>
-                  <div className="stat-content">
-                    <Text size="2rem" fw={800} lh={1} c="red.7">
+                {/* 3. Students Absent */}
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card reports-stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-card-label">Students Absent</span>
+                    <div className="stat-card-icon-badge stat-card-icon--red">
+                      <AlertCircle size={17} />
+                    </div>
+                  </div>
+                  <div className="stat-card-body">
+                    <div className="stat-card-value stat-card-value--red">
                       {totalAbsent}
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={4}>
+                    </div>
+                    <div className="stat-card-subtext">
                       {totalAbsent > 0 ? 'Listed in action directory' : 'Zero reported absences'}
-                    </Text>
+                    </div>
                   </div>
                 </Paper>
 
-                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card">
-                  <Group justify="space-between" align="flex-start" mb="xs">
-                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                      Students Late
-                    </Text>
-                    <Badge color="yellow" variant="light" size="lg" circle>
-                      <Clock size={18} />
-                    </Badge>
-                  </Group>
-                  <div className="stat-content">
-                    <Text size="2rem" fw={800} lh={1} c="yellow.8">
-                      {totalLate}
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={4}>
-                      {totalLate > 0 ? 'Admitted with late record' : 'Zero recorded late arrivals'}
-                    </Text>
+                {/* 4. Submission Status */}
+                <Paper p="md" radius="lg" withBorder shadow="xs" className="stat-card reports-stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-card-label">Submission Status</span>
+                    <div className="stat-card-icon-badge stat-card-icon--emerald">
+                      <CalendarCheck size={17} />
+                    </div>
+                  </div>
+                  <div className="stat-card-body">
+                    <div className="stat-card-value stat-card-value--emerald">
+                      {recordedSessions}
+                      <span className="stat-card-denom">/ {filteredClasses.length} Classes</span>
+                    </div>
+                    <div className="stat-card-subtext">
+                      {filteredClasses.length > 0
+                        ? `${recordedSessions} of ${filteredClasses.length} classes submitted (${Math.round((recordedSessions / filteredClasses.length) * 100)}%)`
+                        : 'No classes in filter'}
+                    </div>
                   </div>
                 </Paper>
               </SimpleGrid>
@@ -395,6 +608,11 @@ export const AttendanceReports: React.FC = () => {
                     <h3 className="reports-card-title">Class-wise Attendance Breakdown</h3>
                     <p className="reports-card-subtext">Roll-call submission status and attendance percentage across classes</p>
                   </div>
+                  {(selectedSection !== 'all' || selectedGrade !== 'all') && (
+                    <Badge color="blue" variant="light" size="sm">
+                      Filtered: {filteredClasses.length} Classes
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="table-responsive">
@@ -403,59 +621,64 @@ export const AttendanceReports: React.FC = () => {
                       <tr>
                         <th>Grade & Class</th>
                         <th>Class Teacher</th>
-                        <th>Status</th>
+                        <th>Submission Status</th>
                         <th>Enrolled</th>
                         <th>Present</th>
                         <th>Absent</th>
-                        <th>Late</th>
                         <th>Attendance %</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {dailyData?.classes?.map((c: any) => {
-                        const enrolled = Number(c.enrolled_count || 0);
-                        const present = Number(c.present_count || 0);
-                        const absent = Number(c.absent_count || 0);
-                        const late = Number(c.late_count || 0);
-                        const pct = enrolled > 0 ? Math.round(((present + late) / enrolled) * 100) : 0;
-                        const isSubmitted = !!c.session_id;
+                      {filteredClasses.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+                            No classes match the selected Section and Grade filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredClasses.map((c: any) => {
+                          const enrolled = Number(c.enrolled_count || 0);
+                          const present = Number(c.present_count || 0);
+                          const absent = Number(c.absent_count || 0);
+                          const pct = enrolled > 0 ? Math.round((present / enrolled) * 100) : 0;
+                          const isSubmitted = !!c.session_id;
 
-                        return (
-                          <tr key={c.class_id}>
-                            <td><strong>{c.class_name}</strong></td>
-                            <td style={{ color: 'var(--text-muted)' }}>
-                              {c.class_teacher_name ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim() : 'Unassigned'}
-                            </td>
-                            <td>
-                              <Badge
-                                color={isSubmitted ? 'green' : 'yellow'}
-                                variant="light"
-                                size="sm"
-                              >
-                                {isSubmitted ? 'Submitted' : 'Pending'}
-                              </Badge>
-                            </td>
-                            <td>{enrolled}</td>
-                            <td style={{ color: 'var(--present)', fontWeight: 600 }}>{present}</td>
-                            <td style={{ color: 'var(--absent)', fontWeight: 600 }}>{absent}</td>
-                            <td style={{ color: 'var(--late)', fontWeight: 600 }}>{late}</td>
-                            <td>
-                              <Group gap="xs" align="center">
-                                <Progress
-                                  value={pct}
-                                  color={pct >= 80 ? 'green' : pct >= 50 ? 'yellow' : 'red'}
+                          return (
+                            <tr key={c.class_id}>
+                              <td><strong>{c.class_name}</strong></td>
+                              <td style={{ color: 'var(--text-muted)' }}>
+                                {c.class_teacher_name ? c.class_teacher_name.replace(/^DEMO ONLY:\s*/i, '').replace(/\s*\(Synthetic Teacher\)/i, '').trim() : 'Unassigned'}
+                              </td>
+                              <td>
+                                <Badge
+                                  color={isSubmitted ? 'green' : 'yellow'}
+                                  variant="light"
                                   size="sm"
-                                  radius="xl"
-                                  style={{ width: 80 }}
-                                />
-                                <Text size="sm" fw={700}>
-                                  {pct}%
-                                </Text>
-                              </Group>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                                >
+                                  {isSubmitted ? 'Submitted' : 'Pending'}
+                                </Badge>
+                              </td>
+                              <td>{enrolled}</td>
+                              <td style={{ color: 'var(--present)', fontWeight: 600 }}>{present}</td>
+                              <td style={{ color: 'var(--absent)', fontWeight: 600 }}>{absent}</td>
+                              <td>
+                                <Group gap="xs" align="center">
+                                  <Progress
+                                    value={pct}
+                                    color={pct >= 80 ? 'green' : pct >= 50 ? 'yellow' : 'red'}
+                                    size="sm"
+                                    radius="xl"
+                                    style={{ width: 80 }}
+                                  />
+                                  <Text size="sm" fw={700}>
+                                    {pct}%
+                                  </Text>
+                                </Group>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -471,7 +694,7 @@ export const AttendanceReports: React.FC = () => {
                     </p>
                   </div>
                   <Badge color="red" variant="filled" size="md">
-                    {dailyData?.absentStudents?.length || 0} Absentees
+                    {filteredAbsentStudents.length} Absentees
                   </Badge>
                 </div>
 
@@ -488,14 +711,14 @@ export const AttendanceReports: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {dailyData?.absentStudents?.length === 0 ? (
+                      {filteredAbsentStudents.length === 0 ? (
                         <tr>
                           <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-                            No absent students recorded for this date.
+                            No absent students recorded for this date{selectedSection !== 'all' || selectedGrade !== 'all' ? ' in selected filters' : ''}.
                           </td>
                         </tr>
                       ) : (
-                        dailyData?.absentStudents?.map((st: any) => (
+                        filteredAbsentStudents.map((st: any) => (
                           <tr key={st.id}>
                             <td><strong>{st.admission_no}</strong></td>
                             <td>{st.full_name}</td>

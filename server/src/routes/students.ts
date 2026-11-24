@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db/database.js';
 import { requireAuth, requireRole, getUserAssignments } from '../middleware/auth.js';
 import { logAudit } from '../utils/audit.js';
+import { recalculateClassRollNumbers, recalculateAllClasses } from '../services/rollNumberService.js';
 
 const router = Router();
 
@@ -40,8 +41,8 @@ router.get('/', requireAuth, (req, res) => {
   // Filters
   if (q && typeof q === 'string') {
     const searchPattern = `%${q.trim()}%`;
-    sql += ` AND (s.admission_no LIKE ? OR s.full_name LIKE ? OR s.calling_name LIKE ? OR s.guardian_phone LIKE ? OR s.guardian_name LIKE ?)`;
-    params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    sql += ` AND (s.admission_no LIKE ? OR s.full_name LIKE ? OR s.name_with_initials LIKE ? OR s.calling_name LIKE ? OR s.guardian_phone LIKE ? OR s.guardian_name LIKE ?)`;
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
   }
 
   if (grade) {
@@ -100,17 +101,14 @@ router.get('/:id', requireAuth, (req, res) => {
     SELECT 
       COUNT(*) as total_days,
       SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_days,
-      SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_days,
-      SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_days,
-      SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_days
+      SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_days
     FROM attendance_records
     WHERE student_id = ?
   `).get(studentId) as any;
 
   const total = Number(attendanceStats?.total_days || 0);
   const present = Number(attendanceStats?.present_days || 0);
-  const late = Number(attendanceStats?.late_days || 0);
-  const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 100) : 100;
+  const attendanceRate = total > 0 ? Math.round((present / total) * 100) : 100;
 
   // Detailed attendance logs for student across the academic year
   const attendanceHistory = db.prepare(`
@@ -136,72 +134,141 @@ router.get('/:id', requireAuth, (req, res) => {
 // Create Student (Admin only)
 router.post('/', requireAuth, requireRole(['admin']), (req, res) => {
   const {
-    admission_no, full_name, calling_name, dob, gender, address,
-    guardian_name, guardian_relation, guardian_phone, guardian_email,
-    guardian_nic, emergency_contact, class_id, roll_number
+    admission_no,
+    full_name,
+    name_with_initials,
+    dob,
+    gender,
+    address,
+    guardian_name,
+    guardian_relation,
+    guardian_occupation,
+    guardian_phone,
+    guardian_phone_2,
+    guardian_email,
+    class_id
   } = req.body;
 
-  if (!admission_no || !full_name || !dob || !gender || !guardian_name || !guardian_phone) {
-    res.status(400).json({ error: 'Missing required student fields.' });
+  // 1. Validate 5-digit Index Number
+  const trimmedIndex = String(admission_no || '').trim();
+  if (!/^\d{5}$/.test(trimmedIndex)) {
+    res.status(400).json({ error: 'Index Number must be exactly 5 digits (e.g. 16087).' });
     return;
   }
 
-  // Check unique admission_no
-  const existing = db.prepare('SELECT id FROM students WHERE admission_no = ?').get(admission_no);
+  // 2. Validate Gender: Strictly Male or Female only
+  const normGender = String(gender || '').trim().toLowerCase();
+  if (normGender !== 'male' && normGender !== 'female') {
+    res.status(400).json({ error: 'Gender must be strictly Male or Female.' });
+    return;
+  }
+  const cleanGender = normGender === 'female' ? 'Female' : 'Male';
+
+  // 3. Validate Required Fields
+  if (!full_name?.trim() || !name_with_initials?.trim() || !dob || !address?.trim() || !class_id || !guardian_name?.trim() || !guardian_phone?.trim()) {
+    res.status(400).json({ error: 'Missing required student or guardian fields.' });
+    return;
+  }
+
+  // 4. Check Unique Index Number
+  const existing = db.prepare('SELECT id FROM students WHERE admission_no = ?').get(trimmedIndex);
   if (existing) {
-    res.status(400).json({ error: `Admission Number ${admission_no} is already assigned to another student.` });
+    res.status(400).json({ error: `Index Number ${trimmedIndex} is already assigned to another student.` });
     return;
   }
 
-  // Duplicate warning detection by full name and dob
-  const nameDobMatch = db.prepare('SELECT id, admission_no FROM students WHERE LOWER(full_name) = LOWER(?) AND dob = ?').get(full_name, dob) as any;
+  // 5. Duplicate Detection (Name + DOB)
+  const nameDobMatch = db
+    .prepare('SELECT id, admission_no FROM students WHERE LOWER(full_name) = LOWER(?) AND dob = ?')
+    .get(full_name.trim(), dob) as any;
   if (nameDobMatch) {
     res.status(409).json({
-      error: `Potential duplicate student: A student with name "${full_name}" and DOB "${dob}" already exists with Admission No: ${nameDobMatch.admission_no}.`
+      error: `Potential duplicate student: A student with name "${full_name}" and DOB "${dob}" already exists with Index No: ${nameDobMatch.admission_no}.`
     });
     return;
   }
 
   const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
+  if (!currentYear) {
+    res.status(500).json({ error: 'No active academic year configured in system.' });
+    return;
+  }
 
   const insertStudent = db.prepare(`
     INSERT INTO students (
-      admission_no, full_name, calling_name, dob, gender, address,
-      guardian_name, guardian_relation, guardian_phone, guardian_email,
-      guardian_nic, emergency_contact, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+      admission_no, full_name, name_with_initials, calling_name, dob, gender, address,
+      guardian_name, guardian_relation, guardian_occupation, guardian_phone, guardian_phone_2, guardian_email,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
   `);
 
   const result = insertStudent.run(
-    admission_no.trim(), full_name.trim(), calling_name?.trim() || full_name.split(' ')[0],
-    dob, gender, address || null, guardian_name.trim(), guardian_relation || 'Parent',
-    guardian_phone.trim(), guardian_email || null, guardian_nic || null,
-    emergency_contact || guardian_phone,
+    trimmedIndex,
+    full_name.trim(),
+    name_with_initials.trim(),
+    name_with_initials.trim().split(' ').pop() || full_name.split(' ')[0],
+    dob,
+    cleanGender,
+    address.trim(),
+    guardian_name.trim(),
+    guardian_relation?.trim() || 'Parent',
+    guardian_occupation?.trim() || null,
+    guardian_phone.trim(),
+    guardian_phone_2?.trim() || null,
+    guardian_email?.trim() || null
   );
 
   const newStudentId = Number(result.lastInsertRowid);
+  const targetClassId = Number(class_id);
 
-  // Enroll in class if provided
-  if (class_id && currentYear) {
-    const enrollStmt = db.prepare(`
-      INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status)
-      VALUES (?, ?, ?, ?, 'enrolled')
-    `);
-    enrollStmt.run(newStudentId, Number(class_id), currentYear.id, roll_number ? Number(roll_number) : null);
-  }
+  // Enroll in class
+  const enrollStmt = db.prepare(`
+    INSERT INTO enrollments (student_id, class_id, academic_year_id, status)
+    VALUES (?, ?, ?, 'enrolled')
+  `);
+  enrollStmt.run(newStudentId, targetClassId, currentYear.id);
 
-  logAudit(req.user!.id, req.user!.username, 'STUDENT_CREATE', 'students', newStudentId, { admission_no, full_name, class_id }, req.ip);
+  // Automatically compute and assign roll numbers (Boys then Girls by Index No)
+  recalculateClassRollNumbers(db, targetClassId, currentYear.id);
 
-  res.status(201).json({ success: true, studentId: newStudentId });
+  // Query assigned roll number
+  const assignedRoll = (
+    db
+      .prepare('SELECT roll_number FROM enrollments WHERE student_id = ? AND academic_year_id = ?')
+      .get(newStudentId, currentYear.id) as { roll_number: number }
+  )?.roll_number;
+
+  logAudit(
+    req.user!.id,
+    req.user!.username,
+    'STUDENT_CREATE',
+    'students',
+    newStudentId,
+    { admission_no: trimmedIndex, full_name, class_id: targetClassId, roll_number: assignedRoll },
+    req.ip
+  );
+
+  res.status(201).json({ success: true, studentId: newStudentId, roll_number: assignedRoll });
 });
 
 // Update Student (Admin only)
 router.put('/:id', requireAuth, requireRole(['admin']), (req, res) => {
   const studentId = Number(req.params.id);
   const {
-    full_name, calling_name, dob, gender, address,
-    guardian_name, guardian_relation, guardian_phone, guardian_email,
-    guardian_nic, emergency_contact, status, class_id, roll_number
+    admission_no,
+    full_name,
+    name_with_initials,
+    dob,
+    gender,
+    address,
+    guardian_name,
+    guardian_relation,
+    guardian_occupation,
+    guardian_phone,
+    guardian_phone_2,
+    guardian_email,
+    status,
+    class_id
   } = req.body;
 
   const current = db.prepare('SELECT * FROM students WHERE id = ?').get(studentId) as any;
@@ -210,48 +277,97 @@ router.put('/:id', requireAuth, requireRole(['admin']), (req, res) => {
     return;
   }
 
+  // Validate index number if changed
+  let newIndex = current.admission_no;
+  if (admission_no && String(admission_no).trim() !== current.admission_no) {
+    const trimmed = String(admission_no).trim();
+    if (!/^\d{5}$/.test(trimmed)) {
+      res.status(400).json({ error: 'Index Number must be exactly 5 digits (e.g. 16087).' });
+      return;
+    }
+    const dup = db.prepare('SELECT id FROM students WHERE admission_no = ? AND id != ?').get(trimmed, studentId);
+    if (dup) {
+      res.status(400).json({ error: `Index Number ${trimmed} is already assigned to another student.` });
+      return;
+    }
+    newIndex = trimmed;
+  }
+
+  let cleanGender = current.gender;
+  if (gender) {
+    const gLower = String(gender).trim().toLowerCase();
+    if (gLower !== 'male' && gLower !== 'female') {
+      res.status(400).json({ error: 'Gender must be strictly Male or Female.' });
+      return;
+    }
+    cleanGender = gLower === 'female' ? 'Female' : 'Male';
+  }
+
   const updateStmt = db.prepare(`
     UPDATE students SET
-      full_name = ?, calling_name = ?, dob = ?, gender = ?, address = ?,
-      guardian_name = ?, guardian_relation = ?, guardian_phone = ?, guardian_email = ?,
-      guardian_nic = ?, emergency_contact = ?, status = ?, updated_at = datetime('now')
+      admission_no = ?,
+      full_name = ?,
+      name_with_initials = ?,
+      dob = ?,
+      gender = ?,
+      address = ?,
+      guardian_name = ?,
+      guardian_relation = ?,
+      guardian_occupation = ?,
+      guardian_phone = ?,
+      guardian_phone_2 = ?,
+      guardian_email = ?,
+      status = ?,
+      updated_at = datetime('now')
     WHERE id = ?
   `);
 
   updateStmt.run(
-    full_name || current.full_name,
-    calling_name || current.calling_name,
+    newIndex,
+    full_name?.trim() || current.full_name,
+    name_with_initials?.trim() || current.name_with_initials || current.calling_name || current.full_name,
     dob || current.dob,
-    gender || current.gender,
+    cleanGender,
     address !== undefined ? address : current.address,
-    guardian_name || current.guardian_name,
-    guardian_relation || current.guardian_relation,
-    guardian_phone || current.guardian_phone,
+    guardian_name?.trim() || current.guardian_name,
+    guardian_relation?.trim() || current.guardian_relation,
+    guardian_occupation !== undefined ? guardian_occupation : current.guardian_occupation,
+    guardian_phone?.trim() || current.guardian_phone,
+    guardian_phone_2 !== undefined ? guardian_phone_2 : current.guardian_phone_2,
     guardian_email !== undefined ? guardian_email : current.guardian_email,
-    guardian_nic !== undefined ? guardian_nic : current.guardian_nic,
-    emergency_contact !== undefined ? emergency_contact : current.emergency_contact,
     status || current.status,
     studentId
   );
 
-  // Update enrollment if class_id is passed
-  if (class_id) {
-    const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
-    if (currentYear) {
-      const existingEnroll = db.prepare('SELECT id FROM enrollments WHERE student_id = ? AND academic_year_id = ?').get(studentId, currentYear.id) as any;
-      if (existingEnroll) {
-        db.prepare('UPDATE enrollments SET class_id = ?, roll_number = ? WHERE id = ?')
-          .run(Number(class_id), roll_number ? Number(roll_number) : null, existingEnroll.id);
-      } else {
-        db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, roll_number, status) VALUES (?, ?, ?, ?, "enrolled")')
-          .run(studentId, Number(class_id), currentYear.id, roll_number ? Number(roll_number) : null);
-      }
+  const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
+
+  // Handle class re-assignment and roll number recalculations
+  if (currentYear) {
+    const existingEnroll = db
+      .prepare('SELECT id, class_id FROM enrollments WHERE student_id = ? AND academic_year_id = ?')
+      .get(studentId, currentYear.id) as { id: number; class_id: number } | undefined;
+
+    const oldClassId = existingEnroll?.class_id;
+    const newClassId: number = class_id ? Number(class_id) : (oldClassId || 0);
+
+    if (existingEnroll && class_id && newClassId !== oldClassId) {
+      db.prepare('UPDATE enrollments SET class_id = ? WHERE id = ?').run(newClassId, existingEnroll.id);
+      // Recalculate old class rolls and new class rolls
+      if (oldClassId) recalculateClassRollNumbers(db, oldClassId, currentYear.id);
+      if (newClassId) recalculateClassRollNumbers(db, newClassId, currentYear.id);
+    } else if (!existingEnroll && class_id) {
+      db.prepare('INSERT INTO enrollments (student_id, class_id, academic_year_id, status) VALUES (?, ?, ?, "enrolled")')
+        .run(studentId, newClassId, currentYear.id);
+      if (newClassId) recalculateClassRollNumbers(db, newClassId, currentYear.id);
+    } else if (cleanGender !== current.gender || newIndex !== current.admission_no) {
+      // Gender or index changed within same class: recalculate roll numbers
+      if (oldClassId) recalculateClassRollNumbers(db, oldClassId, currentYear.id);
     }
   }
 
   logAudit(req.user!.id, req.user!.username, 'STUDENT_UPDATE', 'students', studentId, { changes: req.body }, req.ip);
 
-  res.json({ success: true, message: 'Student updated successfully.' });
+  res.json({ success: true, message: 'Student record updated successfully.' });
 });
 
 // CSV Import & Validation Endpoint
@@ -264,9 +380,9 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
   }
 
   const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
-  const allClasses = db.prepare('SELECT id, name FROM classes').all() as any[];
+  const allClasses = db.prepare('SELECT id, name, grade FROM classes').all() as any[];
   const classMap = new Map<string, number>();
-  allClasses.forEach(c => classMap.set(c.name.toLowerCase().trim(), c.id));
+  allClasses.forEach((c) => classMap.set(c.name.toLowerCase().trim(), c.id));
 
   const validationResults: any[] = [];
   let validCount = 0;
@@ -277,38 +393,68 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
     const row = rows[i];
     const errors: string[] = [];
 
-    const adm = String(row.admission_no || row['Admission No'] || '').trim();
+    const adm = String(
+      row.admission_no || row.index_no || row['Index No'] || row['Index Number'] || row['Admission No'] || ''
+    ).trim();
     const name = String(row.full_name || row['Full Name'] || '').trim();
-    const call = String(row.calling_name || row['Calling Name'] || name.split(' ')[0]).trim();
-    const dob = String(row.dob || row['DOB'] || '').trim();
-    const gender = String(row.gender || row['Gender'] || 'Male').trim();
+    const initialsName = String(
+      row.name_with_initials || row['Name with Initial'] || row['Name with Initials'] || row.calling_name || ''
+    ).trim();
+    const dob = String(row.dob || row['DOB'] || row['Date of Birth'] || '').trim();
+    const rawGender = String(row.gender || row['Gender'] || 'Male').trim().toLowerCase();
     const gName = String(row.guardian_name || row['Guardian Name'] || '').trim();
-    const gRel = String(row.guardian_relation || row['Guardian Relation'] || 'Parent').trim();
-    const phone = String(row.guardian_phone || row['Guardian Phone'] || '').trim();
+    const gRel = String(row.guardian_relation || row['Guardian Relation'] || 'Father').trim();
+    const gOcc = String(row.guardian_occupation || row['Guardian Occupation'] || row['Occupation'] || '').trim();
+    const phone = String(row.guardian_phone || row.phone_1 || row['Phone Number 1'] || row['Phone 1'] || '').trim();
+    const phone2 = String(row.guardian_phone_2 || row.phone_2 || row['Phone Number 2'] || row['Phone 2'] || '').trim();
+    const email = String(row.guardian_email || row.email || row['Guardian Email'] || row['Email'] || '').trim();
     const addr = String(row.address || row['Address'] || '').trim();
-    const className = String(row.class_name || row['Class'] || '').trim();
+    const className = String(row.class_name || row.class || row['Class'] || '').trim();
 
-    if (!adm) errors.push('Admission number is required.');
+    // 1. Index validation (strict 5 digits)
+    if (!adm) {
+      errors.push('5-digit Index Number is required.');
+    } else if (!/^\d{5}$/.test(adm)) {
+      errors.push(`Index Number "${adm}" must be exactly 5 digits (e.g. 16087).`);
+    }
+
+    // 2. Full Name & Initials validation
     if (!name) errors.push('Full name is required.');
+    const finalInitials = initialsName || (name.includes(' ') ? name.split(' ').slice(0, -1).map(p => `${p[0].toUpperCase()}.`).join('') + ' ' + name.split(' ').pop() : name);
+
+    // 3. DOB validation
     if (!dob) errors.push('Date of birth is required.');
+
+    // 4. Gender validation
+    if (rawGender !== 'male' && rawGender !== 'female') {
+      errors.push('Gender must be strictly "Male" or "Female".');
+    }
+    const cleanGender = rawGender === 'female' ? 'Female' : 'Male';
+
+    // 5. Guardian validation
     if (!gName) errors.push('Guardian name is required.');
-    if (!phone) errors.push('Guardian phone is required.');
+    if (!phone) errors.push('Phone Number 1 is required.');
+
+    // 6. Address validation
+    if (!addr) errors.push('Address is required.');
 
     // Duplicate check in database
-    if (adm) {
+    if (adm && /^\d{5}$/.test(adm)) {
       const existing = db.prepare('SELECT id, full_name FROM students WHERE admission_no = ?').get(adm) as any;
       if (existing) {
-        errors.push(`Admission No already exists for student: ${existing.full_name}`);
+        errors.push(`Index No ${adm} already assigned to: ${existing.full_name}`);
         duplicateCount++;
       }
     }
 
-    let matchedClassId = null;
+    let matchedClassId: number | null = null;
     if (className) {
-      matchedClassId = classMap.get(className.toLowerCase());
+      matchedClassId = classMap.get(className.toLowerCase()) || null;
       if (!matchedClassId) {
-        errors.push(`Class "${className}" does not exist in the system.`);
+        errors.push(`Class "${className}" does not exist in the school system.`);
       }
+    } else {
+      errors.push('Class assignment is required.');
     }
 
     const isValid = errors.length === 0;
@@ -323,13 +469,16 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
       data: {
         admission_no: adm,
         full_name: name,
-        calling_name: call,
+        name_with_initials: finalInitials,
         dob,
-        gender: ['Female', 'Other'].includes(gender) ? gender : 'Male',
+        gender: cleanGender,
+        address: addr,
         guardian_name: gName,
         guardian_relation: gRel,
+        guardian_occupation: gOcc || 'Business / Self-Employed',
         guardian_phone: phone,
-        address: addr,
+        guardian_phone_2: phone2 || null,
+        guardian_email: email || null,
         class_id: matchedClassId,
         class_name: className
       },
@@ -342,9 +491,10 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
   if (execute) {
     const studentInsert = db.prepare(`
       INSERT INTO students (
-        admission_no, full_name, calling_name, dob, gender, address,
-        guardian_name, guardian_relation, guardian_phone, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+        admission_no, full_name, name_with_initials, calling_name, dob, gender, address,
+        guardian_name, guardian_relation, guardian_occupation, guardian_phone, guardian_phone_2, guardian_email,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
     `);
 
     const enrollInsert = db.prepare(`
@@ -352,24 +502,31 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
       VALUES (?, ?, ?, 'enrolled')
     `);
 
+    const affectedClassIds = new Set<number>();
     let importedCount = 0;
+
     for (const item of validationResults) {
       if (item.isValid) {
         try {
           const res = studentInsert.run(
             item.data.admission_no,
             item.data.full_name,
-            item.data.calling_name,
+            item.data.name_with_initials,
+            item.data.name_with_initials.split(' ').pop() || item.data.full_name.split(' ')[0],
             item.data.dob,
             item.data.gender,
-            item.data.address || null,
+            item.data.address,
             item.data.guardian_name,
             item.data.guardian_relation,
-            item.data.guardian_phone
+            item.data.guardian_occupation,
+            item.data.guardian_phone,
+            item.data.guardian_phone_2,
+            item.data.guardian_email
           );
           const studentId = Number(res.lastInsertRowid);
           if (item.data.class_id && currentYear) {
             enrollInsert.run(studentId, item.data.class_id, currentYear.id);
+            affectedClassIds.add(item.data.class_id);
           }
           importedCount++;
         } catch (err) {
@@ -378,12 +535,20 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
       }
     }
 
+    // Automatically recalculate roll numbers for all classes affected by the import
+    if (currentYear) {
+      for (const classId of affectedClassIds) {
+        recalculateClassRollNumbers(db, classId, currentYear.id);
+      }
+    }
+
     logAudit(req.user!.id, req.user!.username, 'STUDENT_CSV_IMPORT', 'students', null, { importedCount, totalRows: rows.length }, req.ip);
 
     res.json({
       success: true,
       importedCount,
-      totalRows: rows.length
+      totalRows: rows.length,
+      affectedClasses: Array.from(affectedClassIds)
     });
     return;
   }
@@ -396,6 +561,25 @@ router.post('/import-csv', requireAuth, requireRole(['admin']), (req, res) => {
     errorCount,
     preview: validationResults
   });
+});
+
+// Resequence Roll Numbers for a Class or School-wide
+router.post('/recalculate-rolls', requireAuth, requireRole(['admin']), (req, res) => {
+  const { class_id } = req.body;
+  const currentYear = db.prepare('SELECT id FROM academic_years WHERE is_current = 1').get() as { id: number };
+
+  if (!currentYear) {
+    res.status(500).json({ error: 'No active academic year found.' });
+    return;
+  }
+
+  if (class_id) {
+    const result = recalculateClassRollNumbers(db, Number(class_id), currentYear.id);
+    res.json({ success: true, ...result });
+  } else {
+    const result = recalculateAllClasses(db, currentYear.id);
+    res.json({ success: true, ...result });
+  }
 });
 
 export default router;

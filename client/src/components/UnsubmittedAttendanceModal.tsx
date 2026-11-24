@@ -90,77 +90,19 @@ export const UnsubmittedAttendanceModal: React.FC<UnsubmittedAttendanceModalProp
           </button>
         </div>
 
-        {/* Status Callout Banner */}
-        {canSubmitFinal ? (
-          <div
-            style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '10px',
-              padding: '12px 14px',
-              margin: '8px 0 16px 0'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
-                All {counts.total} Students Marked
-              </span>
-              <span
-                style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  letterSpacing: '0.04em',
-                  background: '#dcfce7',
-                  color: '#15803d',
-                  border: '1px solid #86efac',
-                  borderRadius: '6px',
-                  padding: '2px 8px'
-                }}
-              >
-                100% COMPLETE
-              </span>
-            </div>
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#475569', lineHeight: 1.45 }}>
-              Roll-call is complete. Would you like to submit the official finalized register before leaving?
-            </p>
-          </div>
-        ) : (
-          <div
-            style={{
-              background: '#fffbeb',
-              border: '1px solid #fde68a',
-              borderRadius: '10px',
-              padding: '12px 14px',
-              margin: '8px 0 16px 0'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#92400e' }}>
-                Roll-Call In Progress
-              </span>
-              <span
-                style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  letterSpacing: '0.04em',
-                  background: '#fef3c7',
-                  color: '#b45309',
-                  border: '1px solid #fde68a',
-                  borderRadius: '6px',
-                  padding: '2px 8px'
-                }}
-              >
-                {counts.recorded}/{counts.total} MARKED
-              </span>
-            </div>
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#b45309', lineHeight: 1.45 }}>
-              <strong>{counts.unrecorded} student(s)</strong> remain unmarked. Final submission requires all students to be marked. You can save your progress as a <strong>Draft</strong> so no marks are lost.
-            </p>
-          </div>
-        )}
+        {/* Minimalist Summary Text */}
+        <div style={{ margin: '10px 0 16px 0', fontSize: '0.875rem', color: '#475569', lineHeight: 1.5 }}>
+          {canSubmitFinal ? (
+            <span>All <strong>{counts.total} students</strong> have been marked. Would you like to submit the finalized register before leaving?</span>
+          ) : (
+            <span>
+              <strong>{counts.recorded} of {counts.total} students</strong> marked ({counts.unrecorded} remaining unmarked). Save your progress as a draft so no marks are lost.
+            </span>
+          )}
+        </div>
 
         {/* Action Buttons Stack */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {canSubmitFinal ? (
             <>
               <Button
@@ -171,7 +113,7 @@ export const UnsubmittedAttendanceModal: React.FC<UnsubmittedAttendanceModalProp
                 onClick={onSubmitAndLeave}
                 loading={saving}
                 fullWidth
-                style={{ fontWeight: 700, height: '44px' }}
+                style={{ fontWeight: 700, height: '42px' }}
               >
                 Submit Final Register & Leave
               </Button>
@@ -184,7 +126,7 @@ export const UnsubmittedAttendanceModal: React.FC<UnsubmittedAttendanceModalProp
                 onClick={onSaveDraftAndLeave}
                 loading={saving}
                 fullWidth
-                style={{ fontWeight: 600, height: '42px', color: '#334155' }}
+                style={{ fontWeight: 600, height: '40px', color: '#334155' }}
               >
                 Save Draft & Leave
               </Button>
@@ -198,40 +140,24 @@ export const UnsubmittedAttendanceModal: React.FC<UnsubmittedAttendanceModalProp
               onClick={onSaveDraftAndLeave}
               loading={saving}
               fullWidth
-              style={{ fontWeight: 700, height: '44px' }}
+              style={{ fontWeight: 700, height: '42px' }}
             >
               Save Draft & Leave
             </Button>
           )}
 
-          {/* Balanced Footer Choices: Stay on Register vs Discard Changes */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '2px' }}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="sm"
-              radius="md"
-              onClick={onClose}
-              disabled={saving}
-              fullWidth
-              style={{ fontWeight: 600, height: '38px', color: '#475569' }}
-            >
-              Stay on Register
-            </Button>
-
-            <Button
-              variant="subtle"
-              color="red"
-              size="sm"
-              radius="md"
-              onClick={onDiscardAndLeave}
-              disabled={saving}
-              fullWidth
-              style={{ fontWeight: 600, height: '38px', color: '#dc2626' }}
-            >
-              Discard Changes
-            </Button>
-          </div>
+          <Button
+            variant="subtle"
+            color="red"
+            size="sm"
+            radius="md"
+            onClick={onDiscardAndLeave}
+            disabled={saving}
+            fullWidth
+            style={{ fontWeight: 600, height: '36px', color: '#dc2626', marginTop: '2px' }}
+          >
+            Discard Changes & Leave
+          </Button>
         </div>
       </div>
     </div>

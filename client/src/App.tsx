@@ -164,7 +164,8 @@ export function App() {
     switch (currentTab) {
       case 'dashboard': return 'School Operations Dashboard';
       case 'students': return 'Student Information Records';
-      case 'teachers': return 'Faculty & Teachers Directory';
+      case 'staff':
+      case 'teachers': return 'Staff Directory';
       case 'sections': return 'School Sections & Classroom Assignments';
       case 'attendance': return 'Daily Attendance Register';
       case 'mobile-attendance': return 'Mobile Sequential Student Roll-Call';
@@ -213,16 +214,20 @@ export function App() {
               <Dashboard onNavigate={handleNavigate} user={user} />
             )}
             {currentTab === 'students' && (
-              <Students user={user} />
+              <Students
+                user={user}
+                onNavigate={handleNavigate}
+                registerNavGuard={(guard) => { navGuardRef.current = guard; }}
+              />
             )}
-            {currentTab === 'teachers' && (
+            {(currentTab === 'staff' || currentTab === 'teachers') && (
               user.role === 'admin' ? (
                 <Teachers user={user} onNavigate={handleNavigate} />
               ) : (
                 <PageContainer>
                   <ErrorState
                     title="Administrative Access Required"
-                    message="The comprehensive Faculty and Teachers Directory is restricted to authorized school administrators."
+                    message="The comprehensive Staff Directory is restricted to authorized school administrators."
                     onRetry={() => handleNavigate('dashboard')}
                     retryLabel="Return to Dashboard"
                   />

@@ -219,8 +219,8 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
     userStmt.run('section_head_senior', 'sh.senior@skoolsys.edu', teacherPass, 'Mr. S.H.M. Jameel (Section Head Grades 10-13)', 'class_teacher');
     userStmt.run('it_admin', 'it.admin@skoolsys.edu', adminPass, 'IT Administrator', 'admin');
     userStmt.run('teacher_nimali', 'nimali.perera@skoolsys.edu', teacherPass, 'Mrs. Nimali Perera', 'class_teacher');
-    userStmt.run('teacher_samantha', 'samantha.silva@skoolsys.edu', teacherPass, 'Mr. Samantha Silva', 'subject_teacher');
-    userStmt.run('teacher_priya', 'priya.wickrama@skoolsys.edu', teacherPass, 'Ms. Priyanthi Wickramasinghe', 'subject_teacher');
+    userStmt.run('teacher_samantha', 'samantha.silva@skoolsys.edu', teacherPass, 'Mr. Samantha Silva', 'class_teacher');
+    userStmt.run('teacher_priya', 'priya.wickrama@skoolsys.edu', teacherPass, 'Ms. Priyanthi Wickramasinghe', 'class_teacher');
     userStmt.run('teacher_fathima', 'fathima.rameeza@skoolsys.edu', teacherPass, 'Mrs. Fathima Rameeza', 'class_teacher');
     userStmt.run('teacher_mansoor', 'mansoor.ahmed@skoolsys.edu', teacherPass, 'Mr. M.A. Mansoor', 'class_teacher');
     userStmt.run('teacher_kamal', 'kamal.wickremesooriya@skoolsys.edu', teacherPass, 'Mr. Kamal Wickremesooriya', 'class_teacher');
@@ -710,12 +710,6 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
         if ((sIdx + dayIdx) % 15 === 0) {
           status = 'absent';
           remarks = 'Sick leave requested';
-        } else if ((sIdx + dayIdx) % 11 === 0) {
-          status = 'late';
-          remarks = 'School bus delayed 15 mins';
-        } else if ((sIdx + dayIdx) % 19 === 0) {
-          status = 'excused';
-          remarks = 'Representing school chess team';
         }
         recordInsert.run(sess.id, studentId, status, remarks);
       });
@@ -733,9 +727,6 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
         if ((sIdx + dayIdx) % 14 === 0) {
           status = 'absent';
           remarks = 'Family function';
-        } else if ((sIdx + dayIdx) % 12 === 0) {
-          status = 'late';
-          remarks = 'Rain delay';
         }
         recordInsert.run(sess.id, studentId, status, remarks);
       });
@@ -753,9 +744,6 @@ export function runSeed(options?: { bypassInit?: boolean; targetDbPath?: string;
         if ((sIdx + dayIdx) % 16 === 0) {
           status = 'absent';
           remarks = 'Medical appointment';
-        } else if ((sIdx + dayIdx) % 13 === 0) {
-          status = 'late';
-          remarks = 'Traffic congestion';
         }
         recordInsert.run(sess.id, studentId, status, remarks);
       });

@@ -191,14 +191,14 @@ router.put('/users/:id', (req, res) => {
 // MODULE 1 & 2: TEACHER DATA MANAGEMENT & BULK IMPORT
 // ==========================================
 
-// List Teachers with Assignments
-router.get('/teachers', (req, res) => {
+// List Teachers / Staff with Assignments
+router.get(['/teachers', '/staff'], (req, res) => {
   const { search, role, status } = req.query;
 
   let query = `
     SELECT id, username, email, full_name, role, is_active, token_version, created_at
     FROM users
-    WHERE role IN ('class_teacher', 'subject_teacher', 'admin')
+    WHERE role IN ('class_teacher', 'admin')
   `;
   const params: any[] = [];
 
@@ -263,12 +263,12 @@ router.get('/teachers', (req, res) => {
   res.json({ teachers });
 });
 
-// Teacher CSV Template Download
-router.get('/teachers/template', (req, res) => {
+// Teacher / Staff CSV Template Download
+router.get(['/teachers/template', '/staff/template'], (req, res) => {
   const csvContent = [
     'full_name,staff_id,email,role',
     '"M. I. Mohamed Rifas","T001","rifas@kcc.lk","class_teacher"',
-    '"A. L. Fathima Rizna","T002","rizna@kcc.lk","subject_teacher"',
+    '"A. L. Fathima Rizna","T002","rizna@kcc.lk","class_teacher"',
     '"S. H. Ahmad Farhan","T003","farhan@kcc.lk","class_teacher"'
   ].join('\r\n');
 
@@ -277,8 +277,8 @@ router.get('/teachers/template', (req, res) => {
   res.status(200).send(csvContent);
 });
 
-// Bulk Import Teachers CSV (Preview & Commit)
-router.post('/teachers/import', (req, res) => {
+// Bulk Import Teachers / Staff CSV (Preview & Commit)
+router.post(['/teachers/import', '/staff/import'], (req, res) => {
   const { csvData, mode = 'preview' } = req.body;
 
   if (!csvData || typeof csvData !== 'string') {
@@ -346,8 +346,9 @@ router.post('/teachers/import', (req, res) => {
       continue;
     }
 
-    const validRoles = ['class_teacher', 'subject_teacher', 'admin'];
-    const role = validRoles.includes(roleRaw) ? roleRaw : 'class_teacher';
+    const validRoles = ['class_teacher', 'admin'];
+    const normalizedRole = roleRaw === 'subject_teacher' ? 'class_teacher' : roleRaw;
+    const role = validRoles.includes(normalizedRole) ? normalizedRole : 'class_teacher';
 
     // Duplicate detection in file
     if (seenEmails.has(email) || seenUsernames.has(username)) {
@@ -450,13 +451,13 @@ router.post('/teachers/import', (req, res) => {
   }
 });
 
-// Get Single Teacher by ID
-router.get('/teachers/:id', (req, res) => {
+// Get Single Teacher / Staff by ID
+router.get(['/teachers/:id', '/staff/:id'], (req, res) => {
   const teacherId = Number(req.params.id);
   const teacher = db.prepare(`
     SELECT id, username, email, full_name, role, is_active, token_version, created_at
     FROM users
-    WHERE id = ? AND role IN ('class_teacher', 'subject_teacher', 'admin')
+    WHERE id = ? AND role IN ('class_teacher', 'admin')
   `).get(teacherId) as any;
 
   if (!teacher) {
@@ -488,17 +489,18 @@ router.get('/teachers/:id', (req, res) => {
   res.json({ teacher });
 });
 
-// Create Teacher
-router.post('/teachers', (req, res) => {
-  const { full_name, username, email, role = 'class_teacher', password, is_active } = req.body;
+// Create Teacher / Staff Member
+router.post(['/teachers', '/staff'], (req, res) => {
+  const { full_name, username, email, role, password, is_active } = req.body;
 
   if (!full_name || !username || !email) {
     res.status(400).json({ error: 'full_name, username, and email are required.' });
     return;
   }
 
-  const validRoles = ['class_teacher', 'subject_teacher', 'admin'];
-  if (!validRoles.includes(role)) {
+  const normalizedRole = role === 'subject_teacher' ? 'class_teacher' : (role || 'class_teacher');
+  const validRoles = ['class_teacher', 'admin'];
+  if (!validRoles.includes(normalizedRole)) {
     res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
     return;
   }
@@ -558,14 +560,14 @@ router.post('/teachers', (req, res) => {
   });
 });
 
-// Update Teacher
-router.put('/teachers/:id', (req, res) => {
+// Update Teacher / Staff
+router.put(['/teachers/:id', '/staff/:id'], (req, res) => {
   const teacherId = Number(req.params.id);
   const { full_name, email, role, is_active, newPassword } = req.body;
 
   const current = db.prepare(`
     SELECT * FROM users
-    WHERE id = ? AND role IN ('class_teacher', 'subject_teacher', 'admin')
+    WHERE id = ? AND role IN ('class_teacher', 'admin')
   `).get(teacherId) as any;
 
   if (!current) {
@@ -573,8 +575,9 @@ router.put('/teachers/:id', (req, res) => {
     return;
   }
 
-  const updatedRole = role || current.role;
-  const validRoles = ['class_teacher', 'subject_teacher', 'admin'];
+  const rawRole = role || current.role;
+  const updatedRole = rawRole === 'subject_teacher' ? 'class_teacher' : rawRole;
+  const validRoles = ['class_teacher', 'admin'];
   if (!validRoles.includes(updatedRole)) {
     res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
     return;
@@ -632,8 +635,8 @@ router.put('/teachers/:id', (req, res) => {
   });
 });
 
-// Deactivate Teacher (Soft Delete)
-router.delete('/teachers/:id', (req, res) => {
+// Deactivate Teacher / Staff (Soft Delete)
+router.delete(['/teachers/:id', '/staff/:id'], (req, res) => {
   const teacherId = Number(req.params.id);
   const teacher = db.prepare('SELECT id, full_name, username, role FROM users WHERE id = ?').get(teacherId) as any;
   if (!teacher) {

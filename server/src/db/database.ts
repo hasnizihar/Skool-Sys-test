@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { runMigration004 } from './migrations/004_attendance_integrity.js';
 import { runMigration007 } from './migrations/007_school_sections_and_assignments.js';
 import { runMigration008 } from './migrations/008_classroom_status_tracking.js';
+import { runMigration009 } from './migrations/009_student_metadata_and_roll_numbers.js';
 import { createSafeDatabaseBackup, generateTimestampedBackupPath } from './backupUtils.js';
 
 export function getDbPath(): string {
@@ -212,13 +213,16 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       admission_no TEXT UNIQUE NOT NULL,
       full_name TEXT NOT NULL,
-      calling_name TEXT NOT NULL,
+      name_with_initials TEXT,
+      calling_name TEXT,
       dob TEXT NOT NULL,
-      gender TEXT NOT NULL CHECK(gender IN ('Male', 'Female', 'Other')),
+      gender TEXT NOT NULL CHECK(gender IN ('Male', 'Female')),
       address TEXT,
       guardian_name TEXT NOT NULL,
       guardian_relation TEXT NOT NULL,
+      guardian_occupation TEXT,
       guardian_phone TEXT NOT NULL,
+      guardian_phone_2 TEXT,
       guardian_email TEXT,
       guardian_nic TEXT,
       emergency_contact TEXT,
@@ -614,6 +618,48 @@ export function initDatabase() {
         console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
       }
       throw new Error(`Migration 008 failed: ${migErr.message}. Server startup halted.`);
+    }
+  }
+
+  // Safe migration 009: Student Metadata Refinement & 5-digit Index Re-numbering
+  const vRow9 = db.prepare('PRAGMA user_version;').get() as { user_version: number };
+  const ver9 = Number(vRow9?.user_version || 0);
+
+  const studentColsCheck = db.prepare("SELECT name FROM pragma_table_info('students')").all() as Array<{ name: string }>;
+  const studentColNames = studentColsCheck.map((c) => c.name);
+  const needsMigration009 =
+    ver9 < 9 ||
+    !studentColNames.includes('name_with_initials') ||
+    !studentColNames.includes('guardian_occupation') ||
+    !studentColNames.includes('guardian_phone_2');
+
+  if (needsMigration009) {
+    let backupPath: string | null = null;
+    if (DB_PATH && DB_PATH !== ':memory:' && fs.existsSync(DB_PATH)) {
+      try {
+        const backupDir = path.join(path.dirname(path.resolve(DB_PATH)), 'backups');
+        backupPath = generateTimestampedBackupPath(DB_PATH, backupDir);
+        createSafeDatabaseBackup(db, backupPath);
+        console.log(`[Database Migration] Pre-migration backup verified at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.error('\n❌ FATAL: Pre-migration database backup failed before applying Migration 009!');
+        console.error(backupErr.message);
+        throw new Error(`Pre-migration database backup failed: ${backupErr.message}. Aborting startup.`);
+      }
+    }
+
+    try {
+      const result = runMigration009(db);
+      if (result.applied) {
+        console.log(`[Database Migration] Migration 009 applied successfully (Schema V${result.version}).`);
+      }
+    } catch (migErr: any) {
+      console.error('\n❌ FATAL: Migration 009 failed during server startup!');
+      console.error(migErr.message);
+      if (backupPath) {
+        console.error(`ACTION REQUIRED: Restore database from verified pre-migration backup: ${backupPath}`);
+      }
+      throw new Error(`Migration 009 failed: ${migErr.message}. Server startup halted.`);
     }
   }
 }

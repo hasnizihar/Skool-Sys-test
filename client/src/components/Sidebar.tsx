@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
-  Layers,
   School,
   Settings,
   User
@@ -223,28 +222,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isAdmin && (
             <button
               type="button"
-              className={navClass('teachers')}
-              onClick={() => handleNav('teachers')}
-              aria-current={currentTab === 'teachers' ? 'page' : undefined}
-              data-tooltip="Teaching Faculty"
-              title={isCollapsed ? 'Teaching Faculty' : undefined}
+              className={navClass('staff') || navClass('teachers')}
+              onClick={() => handleNav('staff')}
+              aria-current={currentTab === 'staff' || currentTab === 'teachers' ? 'page' : undefined}
+              data-tooltip="Staff Directory"
+              title={isCollapsed ? 'Staff Directory' : undefined}
             >
-              <School size={18} aria-hidden="true" />
-              <span className="nav-item-label">Teachers</span>
-            </button>
-          )}
-
-          {(isAdmin || isSectionHead) && (
-            <button
-              type="button"
-              className={navClass('sections')}
-              onClick={() => handleNav('sections')}
-              aria-current={currentTab === 'sections' ? 'page' : undefined}
-              data-tooltip="Sections & Classes"
-              title={isCollapsed ? 'Sections & Classes' : undefined}
-            >
-              <Layers size={18} aria-hidden="true" />
-              <span className="nav-item-label">Sections & Classes</span>
+              <Users size={18} aria-hidden="true" />
+              <span className="nav-item-label">Staff</span>
             </button>
           )}
 

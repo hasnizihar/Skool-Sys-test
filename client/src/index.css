@@ -93,6 +93,12 @@
   --text-muted: #64748b;
   --text-inverse: #ffffff;
 
+  /* Mantine Form Inputs Disabled Overrides (High Legibility & Contrast) */
+  --mantine-color-disabled-color: #0f172a;
+  --mantine-color-disabled: #f8fafc;
+  --input-disabled-color: #0f172a;
+  --input-disabled-bg: #f8fafc;
+
   /* Spacing Scale (Density 8/10 — Dashboard Scale) */
   --space-2xs: 2px;
   --space-xs: 4px;
@@ -745,6 +751,53 @@ h1, h2, h3, h4, h5, h6 {
   outline: none;
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+/* ==========================================================================
+   Disabled Form Inputs - Legibility & High Contrast Fix
+   Prevents washed-out/faint text when forms are in read-only / disabled mode
+   ========================================================================== */
+input:disabled,
+input[data-disabled],
+select:disabled,
+select[data-disabled],
+textarea:disabled,
+textarea[data-disabled],
+.mantine-Input-input:disabled,
+.mantine-Input-input[data-disabled],
+.mantine-TextInput-input:disabled,
+.mantine-TextInput-input[data-disabled],
+.mantine-Select-input:disabled,
+.mantine-Select-input[data-disabled],
+.institutional-profile-form input:disabled,
+.institutional-profile-form input[data-disabled],
+.institutional-profile-form select:disabled,
+.institutional-profile-form select[data-disabled] {
+  color: #0f172a !important; /* Deep Slate (14:1 high contrast ratio) */
+  -webkit-text-fill-color: #0f172a !important;
+  background-color: #f8fafc !important; /* Clean light slate background */
+  border-color: #cbd5e1 !important; /* Subtle visible border */
+  opacity: 1 !important; /* Remove Mantine's 0.6 opacity fade */
+  font-weight: 500 !important;
+  cursor: default !important;
+}
+
+input:disabled::placeholder,
+input[data-disabled]::placeholder,
+select:disabled::placeholder,
+select[data-disabled]::placeholder,
+textarea:disabled::placeholder,
+textarea[data-disabled]::placeholder {
+  color: #94a3b8 !important;
+  -webkit-text-fill-color: #94a3b8 !important;
+}
+
+/* Also ensure input sections/icons (e.g. phone, email) remain sharp when input is disabled */
+.mantine-Input-wrapper:has(:disabled) .mantine-Input-section,
+.mantine-Input-wrapper:has([data-disabled]) .mantine-Input-section,
+.institutional-profile-form .mantine-Input-section {
+  color: #475569 !important;
+  opacity: 1 !important;
 }
 
 /* Data Tables */

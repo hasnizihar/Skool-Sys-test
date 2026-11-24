@@ -11,7 +11,8 @@ import {
   Smartphone,
   School,
   Moon,
-  RotateCcw
+  RotateCcw,
+  Clock
 } from 'lucide-react';
 import {
   Paper,
@@ -137,23 +138,16 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
   };
 
   const isSchoolEnded = context?.state === 'after_school' || context?.state === 'weekend';
-  const isViewingLive = selectedPeriod === null;
+  const livePeriodNumber = context?.livePeriodNumber ?? context?.autoSelectedPeriod ?? (context?.isBreak ? null : context?.periodNumber) ?? null;
+  const isReviewingNonLivePeriod = selectedPeriod !== null && (livePeriodNumber === null || selectedPeriod !== livePeriodNumber);
+  const isViewingLive = !isReviewingNonLivePeriod;
 
   // Enforce: only Teaching Periods are selectable for status monitoring
   const teachingPeriods = useMemo(() => {
     const list = context?.availablePeriods || [];
-    const filtered = list.filter((p: any) => p.isTeaching !== false && p.periodType === 'teaching');
+    const filtered = list.filter((p: any) => p.isTeaching && p.periodNumber !== null && p.periodNumber !== undefined);
     if (filtered.length > 0) return filtered;
-    const nonBreaks = list.filter(
-      (p: any) =>
-        p.periodType !== 'interval' &&
-        p.periodType !== 'prayer' &&
-        p.periodType !== 'assembly' &&
-        p.periodType !== 'extra_curricular' &&
-        p.periodType !== 'other'
-    );
-    if (nonBreaks.length > 0) return nonBreaks;
-    return [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({
       periodNumber: n,
       name: `Period ${n}`,
       startTime: '',
@@ -163,28 +157,7 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
     }));
   }, [context?.availablePeriods]);
 
-  // Current schedule status indicator on the right side of the ribbon (only when reviewing a period)
-  const renderCurrentStatusSide = () => {
-    if (selectedPeriod !== null) {
-      return (
-        <Group gap={6}>
-          <Badge color="blue" size="sm" variant="filled">
-            Reviewing: Period {selectedPeriod}
-          </Badge>
-          <Button
-            size="compact-xs"
-            variant="subtle"
-            color="gray"
-            onClick={() => setSelectedPeriod(null)}
-            title="Return to real-time status"
-          >
-            Live View &times;
-          </Button>
-        </Group>
-      );
-    }
-    return null;
-  };
+
 
   return (
     <div className="csm-container">
@@ -280,27 +253,40 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
             {/* Real-time Live Mode Toggle Button */}
             <button
               type="button"
-              className={`csm-live-btn ${selectedPeriod === null ? 'active' : ''} ${isSchoolEnded ? 'ended' : context?.isBreak ? 'break' : 'live'}`}
+              className={`csm-live-btn ${isViewingLive ? 'active' : ''} ${
+                isSchoolEnded
+                  ? 'ended'
+                  : context?.isBreak
+                  ? 'break'
+                  : context?.state === 'before_school'
+                  ? 'before'
+                  : 'live'
+              }`}
               onClick={() => setSelectedPeriod(null)}
-              aria-current={selectedPeriod === null ? 'page' : undefined}
-              title={selectedPeriod !== null ? 'Click to return to real-time status' : 'Viewing real-time status'}
+              aria-current={isViewingLive ? 'page' : undefined}
+              title={!isViewingLive ? 'Click to return to real-time status' : 'Viewing real-time status'}
             >
-              {selectedPeriod === null ? (
+              {isViewingLive ? (
                 <>
                   {isSchoolEnded ? (
                     <>
                       <Moon size={14} aria-hidden="true" />
-                      <span>Live Status</span>
+                      <span>Live &middot; School Ended</span>
                     </>
                   ) : context?.isBreak ? (
                     <>
                       <Coffee size={14} aria-hidden="true" />
                       <span>Live &middot; {context?.periodName || 'Interval'}</span>
                     </>
+                  ) : context?.state === 'before_school' ? (
+                    <>
+                      <Clock size={14} aria-hidden="true" />
+                      <span>Live &middot; Before School</span>
+                    </>
                   ) : (
                     <>
                       <span className="csm-pulse-dot" aria-hidden="true" />
-                      <span>Live &middot; Period {context?.periodNumber || 1}</span>
+                      <span>Live &middot; {context?.periodName || `Period ${livePeriodNumber || 1}`}</span>
                     </>
                   )}
                 </>
@@ -315,21 +301,34 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
             <div className="csm-ribbon-divider" aria-hidden="true" />
 
             <nav className="csm-period-bar" aria-label="School Period Selection">
-              {teachingPeriods.map((pInfo: any, index: number) => {
+              {teachingPeriods.map((pInfo: any) => {
                 const pNum = pInfo.periodNumber;
+                const isCurrentLive = livePeriodNumber === pNum && !isSchoolEnded && !context?.isBreak;
                 const isSelected = selectedPeriod === pNum;
                 const label = pInfo.name && /^Period\s+\d+$/i.test(pInfo.name)
                   ? pInfo.name
-                  : `Period ${index + 1}`;
+                  : `Period ${pNum}`;
 
                 return (
                   <button
                     key={pNum}
                     type="button"
-                    className={`csm-period-btn ${isSelected ? 'active' : ''}`}
-                    onClick={() => setSelectedPeriod(selectedPeriod === pNum ? null : pNum)}
+                    className={`csm-period-btn ${isCurrentLive ? 'is-live-period' : ''} ${isSelected ? 'active' : ''}`}
+                    onClick={() => {
+                      if (pNum === livePeriodNumber) {
+                        setSelectedPeriod(null);
+                      } else {
+                        setSelectedPeriod(selectedPeriod === pNum ? null : pNum);
+                      }
+                    }}
                     aria-current={isSelected ? 'page' : undefined}
-                    title={isSelected ? 'Click again to return to live view' : `Inspect ${label} records`}
+                    title={
+                      isCurrentLive
+                        ? `${label} (Current Live Period)`
+                        : isSelected
+                        ? 'Click again to return to live view'
+                        : `Inspect ${label} records`
+                    }
                   >
                     <span className="csm-pbtn-name">{label}</span>
                   </button>
@@ -337,12 +336,6 @@ export const ClassroomStatusMonitoring: React.FC<Props> = ({ user, onNavigate })
               })}
             </nav>
           </div>
-
-          {selectedPeriod !== null && (
-            <div className="csm-current-status-side">
-              {renderCurrentStatusSide()}
-            </div>
-          )}
         </div>
       </Paper>
 

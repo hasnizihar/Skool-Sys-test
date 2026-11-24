@@ -20,7 +20,8 @@ import {
   School,
   ChevronRight,
   ChevronDown,
-  GraduationCap
+  GraduationCap,
+  Save
 } from 'lucide-react';
 import {
   Modal,
@@ -34,6 +35,7 @@ import {
   Text
 } from '@mantine/core';
 import { useForm, isNotEmpty, isEmail } from '@mantine/form';
+import { useToast } from '../ui';
 import { api } from '../api/client';
 import { ClassManagement } from './ClassManagement';
 import { TeacherDirectory } from './TeacherDirectory';
@@ -43,6 +45,7 @@ interface AdminSettingsProps {
 }
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sections' }) => {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'teachers' | 'sections' | 'classes' | 'users' | 'assignments' | 'backup'>(initialTab);
 
   useEffect(() => {
@@ -56,6 +59,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [editingSection, setEditingSection] = useState<any | null>(null);
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<number>>(() => new Set());
+  const [editingSections, setEditingSections] = useState<Record<number, boolean>>({});
 
   const toggleSectionCollapse = (sectionId: number) => {
     setExpandedSectionIds((prev) => {
@@ -595,6 +599,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {sections.map((sec) => {
                 const isExpanded = expandedSectionIds.has(sec.id);
+                const isEditing = !!editingSections[sec.id];
                 return (
                   <div
                     key={sec.id}
@@ -688,51 +693,70 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
                       </div>
 
                       <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAssignClasses(sec);
-                          }}
-                          className="btn btn-secondary btn-sm"
-                          title="Link classes to this section"
-                        >
-                          <BookOpen size={13} /> Link Classes
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAssignHead(sec);
-                          }}
-                          className="btn btn-secondary btn-sm"
-                          title="Assign Section Head"
-                        >
-                          <UserCheck size={13} /> Assign Head
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEditSection(sec);
-                          }}
-                          className="btn btn-secondary btn-sm"
-                          title="Edit Section details"
-                        >
-                          <Edit3 size={13} /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteSection(sec);
-                          }}
-                          className="btn btn-secondary btn-sm"
-                          style={{ color: '#ef4444' }}
-                          title="Delete Section"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {!isEditing ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingSections((prev) => ({ ...prev, [sec.id]: true }));
+                              setExpandedSectionIds((prev) => new Set([...prev, sec.id]));
+                            }}
+                            className="btn btn-primary btn-sm"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              fontWeight: 600
+                            }}
+                            title="Edit Section, Heads, and Classes"
+                          >
+                            <Edit3 size={13} /> Edit
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditSection(sec);
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              title="Edit Section Name & Details"
+                            >
+                              <Edit3 size={13} /> Edit Info
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSection(sec);
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              style={{ color: '#ef4444' }}
+                              title="Delete Section"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingSections((prev) => ({ ...prev, [sec.id]: false }));
+                                toast.showSuccess(`Section "${sec.name}" changes saved.`);
+                              }}
+                              className="btn btn-primary btn-sm"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontWeight: 600
+                              }}
+                              title="Save Section"
+                            >
+                              <Save size={13} /> Save
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -740,19 +764,38 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
                     {isExpanded && (
                       <div style={{ marginTop: '1rem' }}>
                         {/* Sectional Heads Sub-Section */}
-                        <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px' }}>
+                        <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-subtle, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '6px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                             <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
                               Sectional Heads ({sec.section_heads?.length || 0})
                             </span>
-                            <button onClick={() => handleOpenAssignHead(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
-                              + Add Head
-                            </button>
+                            {isEditing && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAssignHead(sec)}
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  minHeight: '28px',
+                                  padding: '0.25rem 0.65rem',
+                                  borderRadius: '6px',
+                                  background: '#ffffff',
+                                  border: '1px solid var(--border-color, #cbd5e1)',
+                                  color: 'var(--primary, #2563eb)'
+                                }}
+                              >
+                                <UserPlus size={13} /> Add Head
+                              </button>
+                            )}
                           </div>
 
                           {(!sec.section_heads || sec.section_heads.length === 0) ? (
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                              No sectional heads assigned. Click "+ Add Head" to assign a supervisor.
+                              No sectional heads assigned.{isEditing ? ' Click "Add Head" to assign a supervisor.' : ''}
                             </span>
                           ) : (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -771,16 +814,18 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
                                     fontWeight: 500
                                   }}
                                 >
-                                  <UserCheck size={12} style={{ color: 'var(--kcc-primary, #075E3B)' }} />
+                                  <UserCheck size={12} style={{ color: 'var(--primary, #2563eb)' }} />
                                   <span>{head.full_name}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveSectionHead(sec.id, head.id)}
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px' }}
-                                    title="Remove section head assignment"
-                                  >
-                                    <X size={12} />
-                                  </button>
+                                  {isEditing && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSectionHead(sec.id, head.id)}
+                                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px' }}
+                                      title="Remove section head assignment"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  )}
                                 </span>
                               ))}
                             </div>
@@ -793,14 +838,57 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
                             <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
                               Linked Classes ({sec.classes?.length || 0})
                             </span>
-                            <button onClick={() => handleOpenAssignClasses(sec)} className="btn btn-link btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--kcc-primary, #075E3B)' }}>
-                              + Link More Classes
-                            </button>
+                            {isEditing && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAssignClasses(sec)}
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  minHeight: '28px',
+                                  padding: '0.25rem 0.65rem',
+                                  borderRadius: '6px',
+                                  background: '#ffffff',
+                                  border: '1px solid var(--border-color, #cbd5e1)',
+                                  color: 'var(--primary, #2563eb)'
+                                }}
+                              >
+                                <Plus size={13} /> Link More Classes
+                              </button>
+                            )}
                           </div>
 
                           {(!sec.classes || sec.classes.length === 0) ? (
-                            <div style={{ padding: '1rem', textAlign: 'center', background: 'var(--bg-subtle, #f8fafc)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                              No classes linked to this section yet. Click "+ Link More Classes" to assign classes.
+                            <div style={{ padding: '1.25rem', textAlign: 'center', background: 'var(--bg-subtle, #f8fafc)', border: '1px dashed var(--border-color, #cbd5e1)', borderRadius: '6px' }}>
+                              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                No classes linked to this section yet.{isEditing ? ' Click "Link More Classes" to assign classes.' : ''}
+                              </p>
+                              {isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssignClasses(sec)}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    minHeight: '28px',
+                                    padding: '0.25rem 0.65rem',
+                                    borderRadius: '6px',
+                                    background: '#ffffff',
+                                    border: '1px solid var(--border-color, #cbd5e1)',
+                                    color: 'var(--primary, #2563eb)'
+                                  }}
+                                >
+                                  <Plus size={13} /> Link More Classes
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="table-responsive">
@@ -838,8 +926,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
                                                   gap: '0.3rem',
                                                   padding: '0.15rem 0.5rem',
                                                   borderRadius: '4px',
-                                                  background: 'var(--kcc-primary-soft, #e9f5ed)',
-                                                  color: 'var(--kcc-primary, #075E3B)',
+                                                  background: 'var(--primary-light, #eff6ff)',
+                                                  color: 'var(--primary, #2563eb)',
+                                                  border: '1px solid var(--primary-border, #bfdbfe)',
                                                   fontSize: '0.75rem',
                                                   fontWeight: 600
                                                 }}
@@ -851,22 +940,30 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
                                         )}
                                       </td>
                                       <td style={{ textAlign: 'right' }}>
-                                        <button
-                                          onClick={() => handleOpenClassTeachers(cls)}
-                                          className="btn btn-secondary btn-sm"
-                                          style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', marginRight: '0.4rem' }}
-                                          title="Manage teachers for this class"
-                                        >
-                                          Teachers ({cls.class_teachers?.length || 0})
-                                        </button>
-                                        <button
-                                          onClick={() => handleUnassignClassFromSection(sec.id, cls.id)}
-                                          className="btn btn-secondary btn-sm"
-                                          style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--text-muted)' }}
-                                          title="Unassign class from this section"
-                                        >
-                                          Unlink
-                                        </button>
+                                        {isEditing ? (
+                                          <>
+                                            <button
+                                              onClick={() => handleOpenClassTeachers(cls)}
+                                              className="btn btn-secondary btn-sm"
+                                              style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', marginRight: '0.4rem' }}
+                                              title="Manage teachers for this class"
+                                            >
+                                              Teachers ({cls.class_teachers?.length || 0})
+                                            </button>
+                                            <button
+                                              onClick={() => handleUnassignClassFromSection(sec.id, cls.id)}
+                                              className="btn btn-secondary btn-sm"
+                                              style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--text-muted)' }}
+                                              title="Unassign class from this section"
+                                            >
+                                              Unlink
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                            {cls.class_teachers?.length || 0} Teacher(s)
+                                          </span>
+                                        )}
                                       </td>
                                     </tr>
                                   ))}
@@ -1185,8 +1282,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ initialTab = 'sect
               label="System Role"
               required
               data={[
-                { value: 'class_teacher', label: 'Class Teacher' },
-                { value: 'subject_teacher', label: 'Subject Teacher' },
+                { value: 'class_teacher', label: 'Teacher' },
                 { value: 'admin', label: 'Administrator / Principal' },
               ]}
               key={createUserForm.key('role')}

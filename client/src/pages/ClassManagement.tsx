@@ -140,7 +140,7 @@ export const ClassManagement: React.FC<ClassManagementProps> = ({ onClassChanged
       setSections(sectionsRes.sections || []);
       setTeachers(
         (usersRes.users || []).filter(
-          (u: any) => u.is_active && ['class_teacher', 'subject_teacher', 'admin'].includes(u.role)
+          (u: any) => u.is_active && ['class_teacher', 'admin'].includes(u.role)
         )
       );
     } catch (err: any) {

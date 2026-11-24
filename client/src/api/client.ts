@@ -233,25 +233,43 @@ export const api = {
     return apiFetch(`/api/classroom-status/history?${params.toString()}`);
   },
 
-  // Teacher Management & Bulk Import (Phase 4)
+  // Staff & Faculty Directory (Metadata Management)
   getTeachers: (params: { search?: string; role?: string; status?: string } = {}) => {
     const query = new URLSearchParams();
     if (params.search) query.set('search', params.search);
     if (params.role) query.set('role', params.role);
     if (params.status) query.set('status', params.status);
     const qs = query.toString() ? `?${query.toString()}` : '';
-    return apiFetch(`/api/admin/teachers${qs}`);
+    return apiFetch(`/api/admin/staff${qs}`);
   },
-  getTeacher: (id: number) => apiFetch(`/api/admin/teachers/${id}`),
+  getStaff: (params: { search?: string; role?: string; status?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set('search', params.search);
+    if (params.role) query.set('role', params.role);
+    if (params.status) query.set('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiFetch(`/api/admin/staff${qs}`);
+  },
+  getTeacher: (id: number) => apiFetch(`/api/admin/staff/${id}`),
+  getStaffMember: (id: number) => apiFetch(`/api/admin/staff/${id}`),
   createTeacher: (payload: any) =>
-    apiFetch('/api/admin/teachers', { method: 'POST', body: JSON.stringify(payload) }),
+    apiFetch('/api/admin/staff', { method: 'POST', body: JSON.stringify(payload) }),
+  createStaff: (payload: any) =>
+    apiFetch('/api/admin/staff', { method: 'POST', body: JSON.stringify(payload) }),
   updateTeacher: (id: number, payload: any) =>
-    apiFetch(`/api/admin/teachers/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    apiFetch(`/api/admin/staff/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  updateStaff: (id: number, payload: any) =>
+    apiFetch(`/api/admin/staff/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteTeacher: (id: number) =>
-    apiFetch(`/api/admin/teachers/${id}`, { method: 'DELETE' }),
-  getTeacherTemplateUrl: () => '/api/admin/teachers/template',
+    apiFetch(`/api/admin/staff/${id}`, { method: 'DELETE' }),
+  deleteStaff: (id: number) =>
+    apiFetch(`/api/admin/staff/${id}`, { method: 'DELETE' }),
+  getTeacherTemplateUrl: () => '/api/admin/staff/template',
+  getStaffTemplateUrl: () => '/api/admin/staff/template',
   importTeachersCsv: (payload: { csvData: string; mode?: 'preview' | 'commit' }) =>
-    apiFetch('/api/admin/teachers/import', { method: 'POST', body: JSON.stringify(payload) }),
+    apiFetch('/api/admin/staff/import', { method: 'POST', body: JSON.stringify(payload) }),
+  importStaffCsv: (payload: { csvData: string; mode?: 'preview' | 'commit' }) =>
+    apiFetch('/api/admin/staff/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Dashboard Scoped Summary (Phase 4)
   getDashboardSummary: (date?: string) =>

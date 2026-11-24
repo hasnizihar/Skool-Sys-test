@@ -111,6 +111,28 @@
   background: #dbeafe;
 }
 
+.msa-tool-btn--summary {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.msa-tool-btn--summary:hover {
+  background: #dbeafe;
+}
+
+.msa-tool-badge {
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  margin-left: 2px;
+  line-height: 1.2;
+}
+
 /* Row 2: Identity & Session Status */
 .msa-header-identity-row {
   display: flex;
@@ -719,6 +741,17 @@
 }
 
 .msa-step-btn--summary:hover {
+  background: #dbeafe;
+}
+
+.msa-step-btn--roster {
+  flex: 1.3;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.msa-step-btn--roster:hover {
   background: #dbeafe;
 }
 

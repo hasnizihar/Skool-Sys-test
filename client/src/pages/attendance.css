@@ -924,6 +924,26 @@
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.1);
 }
 
+.att-class-card.submitted {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.att-class-card.submitted:hover {
+  border-color: #16a34a;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.15);
+}
+
+.att-class-card.draft {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.att-class-card.draft:hover {
+  border-color: #d97706;
+  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.15);
+}
+
 .attendance-header-date {
   display: inline-flex;
   align-items: center;

@@ -221,9 +221,7 @@ export const TeacherDirectory: React.FC<TeacherDirectoryProps> = ({
       case 'admin':
         return <Badge color="refinedBlue" variant="light" size="sm">Administrator</Badge>;
       case 'class_teacher':
-        return <Badge color="statusGreen" variant="light" size="sm">Class Teacher</Badge>;
-      case 'subject_teacher':
-        return <Badge color="cyan" variant="light" size="sm">Subject Teacher</Badge>;
+        return <Badge color="statusGreen" variant="light" size="sm">Teacher</Badge>;
       default:
         return <Badge color="slate" variant="light" size="sm">{role.replace('_', ' ')}</Badge>;
     }
@@ -398,8 +396,7 @@ export const TeacherDirectory: React.FC<TeacherDirectoryProps> = ({
               style={{ height: 38, width: 'auto', minWidth: 140 }}
             >
               <option value="all">All Roles</option>
-              <option value="class_teacher">Class Teacher</option>
-              <option value="subject_teacher">Subject Teacher</option>
+              <option value="class_teacher">Teacher</option>
               <option value="admin">Administrator</option>
             </select>
 
@@ -411,7 +408,6 @@ export const TeacherDirectory: React.FC<TeacherDirectoryProps> = ({
             >
               <option value="all">All Responsibilities</option>
               <option value="class_teacher">Class Teachers Only</option>
-              <option value="subject_teacher">Subject Teachers Only</option>
               <option value="section_head">Section Heads Only</option>
             </select>
 

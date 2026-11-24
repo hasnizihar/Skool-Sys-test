@@ -97,6 +97,33 @@
   flex-wrap: wrap;
 }
 
+.reports-daily-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  flex-wrap: wrap;
+}
+
+.reports-clear-filter-btn {
+  background: transparent;
+  border: none;
+  color: #2563eb;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px 4px;
+  text-decoration: underline;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.reports-clear-filter-btn:hover {
+  opacity: 0.8;
+}
+
 .reports-control-group {
   display: flex;
   flex-direction: column;
@@ -168,6 +195,12 @@
   border-color: var(--border-hover, #cbd5e1);
 }
 
+.reports-step-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .reports-today-btn {
   height: 38px;
   padding: 0 0.85rem;
@@ -186,27 +219,6 @@
   background: var(--bg-subtle);
   color: var(--primary, #2563eb);
   border-color: var(--primary, #2563eb);
-}
-
-/* Status Pill in Toolbar */
-.reports-status-summary {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-}
-
-.reports-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.reports-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-  background: currentColor;
 }
 
 /* Monthly Controls */
@@ -261,13 +273,115 @@
 }
 
 /* Stat Cards */
-.stat-card {
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+.attendance-reports-page .stat-card,
+.reports-stat-card {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  align-items: stretch !important;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.15rem 1.25rem !important;
+  min-height: 118px;
+  gap: 0.65rem !important;
+  box-shadow: var(--shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.04));
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
 
-.stat-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
+.attendance-reports-page .stat-card:hover,
+.reports-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm, 0 2px 4px rgba(0, 0, 0, 0.06));
+}
+
+.stat-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.stat-card-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #64748b);
+  line-height: 1.2;
+}
+
+.stat-card-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-card-icon--green {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.stat-card-icon--blue {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.stat-card-icon--red {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.stat-card-icon--emerald {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.stat-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-card-value {
+  font-family: var(--font-display, inherit);
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text-main, #0f172a);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: baseline;
+}
+
+.stat-card-value--blue {
+  color: #2563eb;
+}
+
+.stat-card-value--red {
+  color: #dc2626;
+}
+
+.stat-card-value--emerald {
+  color: #16a34a;
+}
+
+.stat-card-denom {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+  margin-left: 6px;
+  letter-spacing: normal;
+}
+
+.stat-card-subtext {
+  font-size: 0.775rem;
+  color: var(--text-muted, #64748b);
+  line-height: 1.35;
 }
 
 /* Phone Button */
@@ -312,11 +426,6 @@
   .reports-toolbar-row {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .reports-status-summary {
-    margin-left: 0;
-    width: 100%;
   }
 
   .reports-date-picker-wrap {

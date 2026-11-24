@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   School,
   Clock,
@@ -14,7 +14,9 @@ import {
   Phone,
   ShieldCheck,
   Layers,
-  Calendar
+  Calendar,
+  Edit2,
+  X
 } from 'lucide-react';
 import {
   Tabs,
@@ -111,12 +113,16 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
   const [activeTab, setActiveTab] = useState<string | null>('profile');
   const [loadingProfile, setLoadingProfile] = useState<boolean>(true);
   const [savingProfile, setSavingProfile] = useState<boolean>(false);
+  const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
+  const savedProfileRef = useRef<any>(null);
 
   // Timetable State
   const [selectedDay, setSelectedDay] = useState<string>('monday');
   const [allSchedules, setAllSchedules] = useState<Record<string, any[]>>({});
   const [loadingTimetable, setLoadingTimetable] = useState<boolean>(true);
   const [savingTimetable, setSavingTimetable] = useState<boolean>(false);
+  const [isEditingTimetable, setIsEditingTimetable] = useState<boolean>(false);
+  const savedSchedulesRef = useRef<Record<string, any[]>>({});
 
   // Copy Schedule Modal
   const [copyModalOpen, setCopyModalOpen] = useState<boolean>(false);
@@ -170,7 +176,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
       setLoadingProfile(true);
       const res = await api.getSchoolProfile();
       if (res?.profile) {
-        profileForm.setValues({
+        const vals = {
           school_name_en: res.profile.school_name_en || '',
           school_name_ta: res.profile.school_name_ta || '',
           school_name_si: res.profile.school_name_si || '',
@@ -193,14 +199,25 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
           student_category: res.profile.student_category || 'Boys',
           medium: res.profile.medium || 'Tamil / English',
           supported_grades: res.profile.supported_grades || 'Grades 6–13'
-        });
+        };
+        profileForm.setValues(vals);
+        savedProfileRef.current = vals;
         profileForm.resetDirty();
+        setIsEditingProfile(false);
       }
     } catch (err: any) {
       toast.showError('Failed to load school profile: ' + (err.message || 'Network error'));
     } finally {
       setLoadingProfile(false);
     }
+  };
+
+  const handleCancelEditProfile = () => {
+    if (savedProfileRef.current) {
+      profileForm.setValues(savedProfileRef.current);
+    }
+    profileForm.resetDirty();
+    setIsEditingProfile(false);
   };
 
   // Fetch Daily Timetable Schedules
@@ -210,12 +227,37 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
       const res = await api.getTimetableSchedules();
       if (res?.schedules) {
         setAllSchedules(res.schedules);
+        savedSchedulesRef.current = JSON.parse(JSON.stringify(res.schedules));
+        setIsEditingTimetable(false);
       }
     } catch (err: any) {
       toast.showError('Failed to load timetable schedules: ' + (err.message || 'Network error'));
     } finally {
       setLoadingTimetable(false);
     }
+  };
+
+  const handleCancelEditTimetable = () => {
+    if (savedSchedulesRef.current && savedSchedulesRef.current[selectedDay]) {
+      setAllSchedules((prev) => ({
+        ...prev,
+        [selectedDay]: JSON.parse(JSON.stringify(savedSchedulesRef.current[selectedDay]))
+      }));
+    }
+    setIsEditingTimetable(false);
+  };
+
+  const handleSelectDay = (day: string) => {
+    if (isEditingTimetable) {
+      if (savedSchedulesRef.current && savedSchedulesRef.current[selectedDay]) {
+        setAllSchedules((prev) => ({
+          ...prev,
+          [selectedDay]: JSON.parse(JSON.stringify(savedSchedulesRef.current[selectedDay]))
+        }));
+      }
+      setIsEditingTimetable(false);
+    }
+    setSelectedDay(day);
   };
 
   useEffect(() => {
@@ -232,7 +274,9 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
       const res = await api.updateSchoolProfile(values);
       if (res?.success) {
         toast.showSuccess('School profile and institutional metadata saved successfully!');
+        savedProfileRef.current = { ...values };
         profileForm.resetDirty();
+        setIsEditingProfile(false);
       }
     } catch (err: any) {
       toast.showError(err.message || 'Failed to update school profile.');
@@ -465,6 +509,8 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
       });
       if (res?.success) {
         toast.showSuccess(res.message || `Schedule for ${selectedDay} saved successfully!`);
+        savedSchedulesRef.current[selectedDay] = JSON.parse(JSON.stringify(sanitizedPeriods));
+        setIsEditingTimetable(false);
       }
     } catch (err: any) {
       toast.showError(err.message || 'Failed to save timetable schedule.');
@@ -602,7 +648,17 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
             <Paper p="xl" radius="md" withBorder style={{ position: 'relative' }}>
               <LoadingOverlay visible={loadingProfile || savingProfile} />
 
-              <form onSubmit={profileForm.onSubmit(handleSaveProfile)}>
+              <form
+                onSubmit={profileForm.onSubmit(
+                  (values) => handleSaveProfile(values),
+                  (validationErrors) => {
+                    const firstKey = Object.keys(validationErrors)[0];
+                    const msg = validationErrors[firstKey];
+                    toast.showError(`Please fix validation error: ${msg || 'Required field missing'}`);
+                  }
+                )}
+                className="institutional-profile-form"
+              >
                 <Stack gap="xl">
                   {/* Top Action Bar */}
                   <div
@@ -623,24 +679,68 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                     </div>
 
                     <Group gap="xs">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        leftSection={<RotateCcw size={14} />}
-                        onClick={fetchProfile}
-                        disabled={loadingProfile || savingProfile}
-                      >
-                        Reload
-                      </Button>
-                      <Button
-                        type="submit"
-                        color="blue"
-                        size="sm"
-                        leftSection={<Save size={14} />}
-                        loading={savingProfile}
-                      >
-                        Save Institutional Profile
-                      </Button>
+                      {!isEditingProfile ? (
+                        <Group gap="xs" key="profile-view-actions">
+                          <Button
+                            key="btn-reload"
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            leftSection={<RotateCcw size={14} />}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              fetchProfile();
+                            }}
+                            disabled={loadingProfile || savingProfile}
+                          >
+                            Reload
+                          </Button>
+                          <Button
+                            key="btn-edit"
+                            type="button"
+                            color="blue"
+                            size="sm"
+                            leftSection={<Edit2 size={14} />}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsEditingProfile(true);
+                            }}
+                            disabled={loadingProfile || savingProfile}
+                          >
+                            Edit
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Group gap="xs" key="profile-edit-actions">
+                          <Button
+                            key="btn-cancel"
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            leftSection={<X size={14} />}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleCancelEditProfile();
+                            }}
+                            disabled={savingProfile}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            key="btn-save"
+                            type="submit"
+                            color="blue"
+                            size="sm"
+                            leftSection={<Save size={14} />}
+                            loading={savingProfile}
+                          >
+                            Save
+                          </Button>
+                        </Group>
+                      )}
                     </Group>
                   </div>
 
@@ -658,6 +758,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="School Name (English)"
                         placeholder="e.g. Kattankudy Central College"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('school_name_en')}
                         {...profileForm.getInputProps('school_name_en')}
                       />
@@ -665,6 +766,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="School Name (Tamil)"
                         placeholder="e.g. காத்தான்குடி மத்திய கல்லூரி"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('school_name_ta')}
                         {...profileForm.getInputProps('school_name_ta')}
                       />
@@ -672,6 +774,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="School Name (Sinhala)"
                         placeholder="e.g. කාත්තන්කුඩි මධ්‍ය මහා විද්‍යාලය"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('school_name_si')}
                         {...profileForm.getInputProps('school_name_si')}
                       />
@@ -679,6 +782,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Secondary Title / Tagline"
                         placeholder="e.g. National School — Kattankudy (1AB)"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('secondary_title')}
                         {...profileForm.getInputProps('secondary_title')}
                       />
@@ -689,6 +793,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="MOE Census Number"
                         placeholder="e.g. 14145"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('census_no')}
                         {...profileForm.getInputProps('census_no')}
                       />
@@ -697,6 +802,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="School Classification / Type"
                         placeholder="e.g. National School (1AB)"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('school_type')}
                         {...profileForm.getInputProps('school_type')}
                       />
@@ -705,6 +811,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Founded Year"
                         placeholder="e.g. 1930"
                         type="number"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('founded_year')}
                         {...profileForm.getInputProps('founded_year')}
                       />
@@ -727,6 +834,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Address Line 1"
                         placeholder="e.g. No. 322, Beach Road"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('address_line1')}
                         {...profileForm.getInputProps('address_line1')}
                       />
@@ -734,6 +842,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Address Line 2"
                         placeholder="e.g. New Kattankudy 06"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('address_line2')}
                         {...profileForm.getInputProps('address_line2')}
                       />
@@ -744,6 +853,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="District"
                         placeholder="e.g. Batticaloa District"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('district')}
                         {...profileForm.getInputProps('district')}
                       />
@@ -752,6 +862,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Province"
                         placeholder="e.g. Eastern Province"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('province')}
                         {...profileForm.getInputProps('province')}
                       />
@@ -759,6 +870,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Country"
                         placeholder="Sri Lanka"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('country')}
                         {...profileForm.getInputProps('country')}
                       />
@@ -766,6 +878,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Postal Code"
                         placeholder="e.g. 30130"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('postal_code')}
                         {...profileForm.getInputProps('postal_code')}
                       />
@@ -776,6 +889,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Educational Zone"
                         placeholder="e.g. Batticaloa Central"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('zone')}
                         {...profileForm.getInputProps('zone')}
                       />
@@ -784,6 +898,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Educational Division"
                         placeholder="e.g. Kattankudy"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('division')}
                         {...profileForm.getInputProps('division')}
                       />
@@ -806,6 +921,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Principal's Full Name"
                         placeholder="e.g. Mr. A. L. M. Sabry"
                         required
+                        disabled={!isEditingProfile}
                         key={profileForm.key('principal_name')}
                         {...profileForm.getInputProps('principal_name')}
                       />
@@ -813,6 +929,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Principal Title / Spelling Notes"
                         placeholder="e.g. Confirmed Ministry of Education 1AB Principal"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('principal_notes')}
                         {...profileForm.getInputProps('principal_notes')}
                       />
@@ -821,6 +938,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Official Telephone / Contact"
                         placeholder="e.g. +94 65 224 5321"
                         required
+                        disabled={!isEditingProfile}
                         leftSection={<Phone size={14} />}
                         key={profileForm.key('phone')}
                         {...profileForm.getInputProps('phone')}
@@ -830,6 +948,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                         label="Official Email Address"
                         placeholder="e.g. info@kcc.sch.lk"
                         required
+                        disabled={!isEditingProfile}
                         leftSection={<Mail size={14} />}
                         key={profileForm.key('email')}
                         {...profileForm.getInputProps('email')}
@@ -856,6 +975,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                           { value: 'Girls', label: 'Girls School' },
                           { value: 'Mixed', label: 'Co-Educational (Mixed)' }
                         ]}
+                        disabled={!isEditingProfile}
                         key={profileForm.key('student_category')}
                         {...profileForm.getInputProps('student_category')}
                       />
@@ -863,6 +983,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Medium of Instruction"
                         placeholder="e.g. Tamil / English"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('medium')}
                         {...profileForm.getInputProps('medium')}
                       />
@@ -870,24 +991,12 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       <TextInput
                         label="Supported Grade Range"
                         placeholder="e.g. Grades 6–13"
+                        disabled={!isEditingProfile}
                         key={profileForm.key('supported_grades')}
                         {...profileForm.getInputProps('supported_grades')}
                       />
                     </SimpleGrid>
                   </div>
-
-                  {/* Save Button */}
-                  <Group justify="flex-end" mt="md" pt="md" style={{ borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
-                    <Button
-                      type="submit"
-                      color="blue"
-                      size="md"
-                      leftSection={<Save size={16} />}
-                      loading={savingProfile}
-                    >
-                      Save Institutional Profile
-                    </Button>
-                  </Group>
                 </Stack>
               </form>
             </Paper>
@@ -908,7 +1017,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                   </Text>
                   <SegmentedControl
                     value={selectedDay}
-                    onChange={setSelectedDay}
+                    onChange={handleSelectDay}
                     data={DAYS_OF_WEEK.map((d) => ({
                       value: d.value,
                       label: (
@@ -953,42 +1062,81 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                     </div>
 
                     <Group gap="xs">
-                      <Button
-                        variant="default"
-                        size="xs"
-                        leftSection={<Copy size={14} />}
-                        onClick={handleOpenCopyModal}
-                        disabled={currentDayPeriods.length === 0}
-                      >
-                        Copy Schedule...
-                      </Button>
-                      <Button
-                        variant="default"
-                        size="xs"
-                        color="red"
-                        leftSection={<RotateCcw size={14} />}
-                        onClick={handleResetDay}
-                      >
-                        Reset Day
-                      </Button>
-                      <Button
-                        color="blue"
-                        size="xs"
-                        leftSection={<Plus size={14} />}
-                        onClick={handleAddPeriod}
-                      >
-                        Add Period
-                      </Button>
-                      <Button
-                        color="teal"
-                        size="xs"
-                        leftSection={<Save size={14} />}
-                        onClick={handleSaveDaySchedule}
-                        loading={savingTimetable}
-                        disabled={!timetableValidation.isValid}
-                      >
-                        Save {currentDayLabel}
-                      </Button>
+                      {!isEditingTimetable ? (
+                        <Group gap="xs" key="timetable-view-actions">
+                          <Button
+                            key="btn-copy-schedule"
+                            type="button"
+                            variant="default"
+                            size="xs"
+                            leftSection={<Copy size={14} />}
+                            onClick={handleOpenCopyModal}
+                            disabled={currentDayPeriods.length === 0 || loadingTimetable || savingTimetable}
+                          >
+                            Copy Schedule...
+                          </Button>
+                          <Button
+                            key="btn-edit-timetable"
+                            type="button"
+                            color="blue"
+                            size="xs"
+                            leftSection={<Edit2 size={14} />}
+                            onClick={() => setIsEditingTimetable(true)}
+                            disabled={loadingTimetable || savingTimetable}
+                          >
+                            Edit Schedule
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Group gap="xs" key="timetable-edit-actions">
+                          <Button
+                            key="btn-cancel-timetable"
+                            type="button"
+                            variant="default"
+                            size="xs"
+                            leftSection={<X size={14} />}
+                            onClick={handleCancelEditTimetable}
+                            disabled={savingTimetable}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            key="btn-reset-day"
+                            type="button"
+                            variant="default"
+                            size="xs"
+                            color="red"
+                            leftSection={<RotateCcw size={14} />}
+                            onClick={handleResetDay}
+                            disabled={savingTimetable}
+                          >
+                            Reset Day
+                          </Button>
+                          <Button
+                            key="btn-add-period"
+                            type="button"
+                            color="blue"
+                            size="xs"
+                            leftSection={<Plus size={14} />}
+                            onClick={handleAddPeriod}
+                            disabled={savingTimetable}
+                          >
+                            Add Period
+                          </Button>
+                          <Button
+                            key="btn-save-timetable"
+                            type="button"
+                            color="teal"
+                            size="xs"
+                            leftSection={<Save size={14} />}
+                            onClick={handleSaveDaySchedule}
+                            loading={savingTimetable}
+                            disabled={!timetableValidation.isValid}
+                          >
+                            Save {currentDayLabel}
+                          </Button>
+                        </Group>
+                      )}
                     </Group>
                   </Group>
                 </Card>
@@ -1096,6 +1244,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                               size="xs"
                               data={PERIOD_TYPES}
                               value={period.period_type}
+                              disabled={!isEditingTimetable}
                               onChange={(val) => handleUpdatePeriod(index, 'period_type', val || 'teaching')}
                             />
                           </div>
@@ -1106,6 +1255,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                               size="xs"
                               type="time"
                               value={period.start_time}
+                              disabled={!isEditingTimetable}
                               error={isInvalidTime}
                               onChange={(e) => handleUpdatePeriod(index, 'start_time', e.currentTarget.value)}
                             />
@@ -1117,6 +1267,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                               size="xs"
                               type="time"
                               value={period.end_time}
+                              disabled={!isEditingTimetable}
                               error={isInvalidTime}
                               onChange={(e) => handleUpdatePeriod(index, 'end_time', e.currentTarget.value)}
                             />
@@ -1134,6 +1285,7 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                             <Switch
                               size="xs"
                               checked={period.is_active !== 0}
+                              disabled={!isEditingTimetable}
                               onChange={(e) =>
                                 handleUpdatePeriod(index, 'is_active', e.currentTarget.checked ? 1 : 0)
                               }
@@ -1142,11 +1294,12 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
 
                           {/* Remove Action */}
                           <div>
-                            <Tooltip label="Delete period">
+                            <Tooltip label={isEditingTimetable ? "Delete period" : "Click Edit Schedule to modify periods"}>
                               <ActionIcon
                                 color="red"
                                 variant="subtle"
                                 size="sm"
+                                disabled={!isEditingTimetable}
                                 onClick={() => handleRemovePeriod(index)}
                               >
                                 <Trash2 size={14} />
@@ -1157,41 +1310,6 @@ export const SchoolSettings: React.FC<SchoolSettingsProps> = ({ user, onNavigate
                       );
                     })}
                   </Stack>
-                )}
-
-                {/* Bottom Actions */}
-                {currentDayPeriods.length > 0 && (
-                  <Group justify="space-between" mt="md" pt="md" style={{ borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      leftSection={<Plus size={14} />}
-                      onClick={handleAddPeriod}
-                    >
-                      Add Period
-                    </Button>
-
-                    <Group gap="xs">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        leftSection={<Copy size={14} />}
-                        onClick={handleOpenCopyModal}
-                      >
-                        Copy Schedule to Other Days...
-                      </Button>
-                      <Button
-                        color="blue"
-                        size="sm"
-                        leftSection={<Save size={16} />}
-                        onClick={handleSaveDaySchedule}
-                        loading={savingTimetable}
-                        disabled={!timetableValidation.isValid}
-                      >
-                        Save {currentDayLabel} Schedule
-                      </Button>
-                    </Group>
-                  </Group>
                 )}
               </Stack>
             </Paper>

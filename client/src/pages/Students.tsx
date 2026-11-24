@@ -5,7 +5,6 @@ import {
   Plus,
   Upload,
   Download,
-  Eye,
   X,
   Phone,
   Calendar,
@@ -40,14 +39,17 @@ import {
 import { useForm, isNotEmpty } from '@mantine/form';
 import { api } from '../api/client';
 import { StudentFullView } from './StudentFullView';
+import { AddStudentView } from './AddStudentView';
 import { EmptyState, LoadingState } from '../ui/mantine';
 import './students.css';
 
 interface StudentsProps {
   user: any;
+  onNavigate?: (tab: string) => void;
+  registerNavGuard?: (guard: ((targetTab: string) => boolean) | null) => void;
 }
 
-export const Students: React.FC<StudentsProps> = ({ user }) => {
+export const Students: React.FC<StudentsProps> = ({ user, onNavigate, registerNavGuard }) => {
   const [students, setStudents] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [grades, setGrades] = useState<number[]>([]);
@@ -62,57 +64,9 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
 
-  // Modals
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
+  // Views & Modals
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
-  const [studentDetails, setStudentDetails] = useState<any | null>(null);
-
-  // Add Student Form State powered by @mantine/form with nested guardian fields
-  const addStudentForm = useForm({
-    mode: 'uncontrolled',
-    initialValues: {
-      admission_no: '',
-      full_name: '',
-      calling_name: '',
-      dob: '2012-05-15',
-      gender: 'Male',
-      address: '',
-      class_id: '',
-      roll_number: '',
-      guardian: {
-        name: '',
-        relation: 'Father',
-        phone: '',
-        email: '',
-      },
-    },
-    validate: {
-      admission_no: isNotEmpty('Admission number is required'),
-      full_name: isNotEmpty('Full name is required'),
-      calling_name: isNotEmpty('Calling name is required'),
-      dob: isNotEmpty('Date of birth is required'),
-      'guardian.name': isNotEmpty('Guardian name is required'),
-      'guardian.relation': isNotEmpty('Guardian relation is required'),
-      'guardian.phone': isNotEmpty('Guardian phone is required'),
-    },
-    transformValues: (values) => ({
-      admission_no: values.admission_no.trim(),
-      full_name: values.full_name.trim(),
-      calling_name: values.calling_name.trim(),
-      dob: values.dob,
-      gender: values.gender,
-      address: values.address.trim(),
-      class_id: values.class_id ? Number(values.class_id) : undefined,
-      roll_number: values.roll_number ? Number(values.roll_number) : undefined,
-      guardian_name: values.guardian.name.trim(),
-      guardian_relation: values.guardian.relation.trim(),
-      guardian_phone: values.guardian.phone.trim(),
-      guardian_email: values.guardian.email.trim(),
-    }),
-  });
-  const [formError, setFormError] = useState<string | null>(null);
 
   // CSV Import State
   const [csvText, setCsvText] = useState('');
@@ -157,28 +111,6 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
     }
   };
 
-  const handleOpenProfile = async (st: any) => {
-    setSelectedStudent(st);
-    setShowProfileModal(true);
-    try {
-      const details = await api.getStudent(st.id);
-      setStudentDetails(details);
-    } catch (err) {
-      console.error('Failed to fetch student details:', err);
-    }
-  };
-
-  const handleAddSubmit = addStudentForm.onSubmit(async (transformedValues) => {
-    try {
-      setFormError(null);
-      await api.createStudent(transformedValues);
-      setShowAddModal(false);
-      addStudentForm.reset();
-      fetchStudents();
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to create student record.');
-    }
-  });
 
   const handleCsvPreview = async () => {
     if (!csvText.trim()) return;
@@ -230,15 +162,36 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
 
   const handleExportCsv = () => {
     if (students.length === 0) return;
-    const headers = ['Admission No', 'Full Name', 'Calling Name', 'Class', 'Gender', 'Guardian Name', 'Guardian Phone', 'Status'];
+    const headers = [
+      'Index No',
+      'Full Name',
+      'Name with Initials',
+      'Date of Birth',
+      'Gender',
+      'Address',
+      'Class',
+      'Guardian Name',
+      'Guardian Relation',
+      'Guardian Occupation',
+      'Phone 1',
+      'Phone 2',
+      'Email',
+      'Status'
+    ];
     const rows = students.map((s) => [
       s.admission_no,
       `"${s.full_name}"`,
-      s.calling_name,
-      s.class_name || '',
+      `"${s.name_with_initials || ''}"`,
+      s.dob,
       s.gender,
-      `"${s.guardian_name}"`,
-      s.guardian_phone,
+      `"${s.address || ''}"`,
+      s.class_name || '',
+      `"${s.guardian_name || ''}"`,
+      `"${s.guardian_relation || ''}"`,
+      `"${s.guardian_occupation || ''}"`,
+      s.guardian_phone || '',
+      s.guardian_phone_2 || '',
+      s.guardian_email || '',
       s.status
     ]);
 
@@ -259,9 +212,9 @@ export const Students: React.FC<StudentsProps> = ({ user }) => {
     setSelectedStatus('');
   };
 
-  const sampleCsvTemplate = `admission_no,full_name,calling_name,dob,gender,guardian_name,guardian_relation,guardian_phone,class_name
-SCH-2026-101,Ravindu Nirmal Perera,Ravindu,2012-06-14,Male,Kamal Perera,Father,0771122334,Grade 8-A
-SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,Mother,0712233445,Grade 8-A`;
+  const sampleCsvTemplate = `index_no,full_name,name_with_initials,dob,gender,address,class_name,guardian_name,guardian_relation,guardian_occupation,phone_1,phone_2,email
+16087,Mohamed Rinas Shihab,M.R. Shihab,2012-05-15,Male,No 45 Beach Rd Kattankudy,6A,Mohamed Shihab,Father,Businessman,0771234567,0652245678,shihab@example.com
+16088,Fathima Zahra Careem,F.Z. Careem,2012-08-20,Female,No 12 Station Rd Kattankudy,6A,Abdul Careem,Father,Teacher,0777654321,,careem@example.com`;
 
   // Summary Metrics
   const metrics = useMemo(() => {
@@ -277,6 +230,23 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
     searchQuery.trim() || selectedGrade || selectedClass || selectedStatus
   );
 
+  // Render Full Page New Student Admission View
+  if (isAddingStudent) {
+    return (
+      <AddStudentView
+        classes={classes}
+        onBack={() => setIsAddingStudent(false)}
+        onSuccess={(newId) => {
+          setIsAddingStudent(false);
+          setFullViewStudentId(newId);
+          fetchStudents();
+        }}
+        onNavigate={onNavigate}
+        registerNavGuard={registerNavGuard}
+      />
+    );
+  }
+
   // Render Full View if a student is selected
   if (fullViewStudentId !== null) {
     return (
@@ -285,6 +255,8 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
         onBack={() => setFullViewStudentId(null)}
         user={user}
         onStudentUpdated={fetchStudents}
+        onNavigate={onNavigate}
+        registerNavGuard={registerNavGuard}
       />
     );
   }
@@ -294,12 +266,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
       {/* Header & Action Bar */}
       <div className="students-header">
         <div className="students-header-titles">
-          <div className="students-title-row">
-            <h2 className="students-title">Student Information Records</h2>
-            <Badge variant="light" color="refinedBlue" size="md">
-              {metrics.total} Registered Pupils
-            </Badge>
-          </div>
+          <h2 className="students-title">Student Information Records</h2>
           <p className="students-subtitle">
             Permanent admission registry, class enrollment rosters, and verified guardian contact records.
           </p>
@@ -330,7 +297,7 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
 
               <button
                 type="button"
-                onClick={() => setShowAddModal(true)}
+                onClick={() => setIsAddingStudent(true)}
                 className="btn btn-primary btn-sm"
                 title="Register a new student admission"
               >
@@ -658,29 +625,16 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                     </td>
 
                     <td>
-                      <div className="students-identity-cell">
+                      <div className="students-identity-info">
                         <div
-                          className="students-avatar"
+                          className="students-name-link"
                           onClick={() => setFullViewStudentId(st.id)}
-                          style={{
-                            backgroundColor: st.gender === 'Female' ? '#db2777' : '#2563eb'
-                          }}
-                          title="Click to view full record"
-                          aria-hidden="true"
+                          title="Click to view comprehensive full record"
                         >
-                          {st.calling_name?.charAt(0) || st.full_name?.charAt(0) || 'S'}
+                          {st.full_name}
                         </div>
-                        <div className="students-identity-info">
-                          <div
-                            className="students-name-link"
-                            onClick={() => setFullViewStudentId(st.id)}
-                            title="Click to view comprehensive full record"
-                          >
-                            {st.full_name}
-                          </div>
-                          <div className="students-sub-info">
-                            Call Name: <strong>{st.calling_name}</strong> • DOB: {st.dob}
-                          </div>
+                        <div className="students-sub-info">
+                          Initials: <strong>{st.name_with_initials || '—'}</strong> • DOB: {st.dob}
                         </div>
                       </div>
                     </td>
@@ -719,28 +673,16 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
                     </td>
 
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          onClick={() => setFullViewStudentId(st.id)}
-                          className="btn btn-primary btn-sm"
-                          style={{ padding: '0.4rem 0.75rem', fontWeight: 600 }}
-                          title="Open comprehensive student dossier"
-                        >
-                          <Maximize2 size={13} />
-                          <span>Full View</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenProfile(st)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '0.4rem 0.6rem' }}
-                          title="Quick preview modal"
-                          aria-label={`Quick preview for ${st.calling_name}`}
-                        >
-                          <Eye size={14} />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFullViewStudentId(st.id)}
+                        className="btn btn-primary btn-sm"
+                        style={{ padding: '0.4rem 0.75rem', fontWeight: 600 }}
+                        title="Open comprehensive student dossier"
+                      >
+                        <Maximize2 size={13} />
+                        <span>Full View</span>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -749,265 +691,6 @@ SCH-2026-102,Hansani Malsha Jayakody,Hansani,2012-09-21,Female,Geetha Jayakody,M
           </table>
         </ScrollArea>
       </Paper>
-
-      {/* Add Student Modal powered by @mantine/form */}
-      <Modal
-        opened={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        title={
-          <Group gap="xs">
-            <School size={20} color="var(--primary, #2563eb)" />
-            <Text fw={650} size="md">Add New Student Admission</Text>
-          </Group>
-        }
-        size="lg"
-        radius="md"
-        centered
-      >
-        <form onSubmit={handleAddSubmit}>
-          <Stack gap="md">
-            {formError && (
-              <Alert icon={<AlertCircle size={16} />} color="red" radius="md">
-                {formError}
-              </Alert>
-            )}
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <TextInput
-                label="Admission Number"
-                placeholder="e.g. SCH-2026-031"
-                required
-                key={addStudentForm.key('admission_no')}
-                {...addStudentForm.getInputProps('admission_no')}
-              />
-
-              <TextInput
-                label="Calling Name"
-                placeholder="e.g. Kasun"
-                required
-                key={addStudentForm.key('calling_name')}
-                {...addStudentForm.getInputProps('calling_name')}
-              />
-            </SimpleGrid>
-
-            <TextInput
-              label="Full Name"
-              placeholder="e.g. Kasun Malinda Ranasinghe"
-              required
-              key={addStudentForm.key('full_name')}
-              {...addStudentForm.getInputProps('full_name')}
-            />
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <TextInput
-                type="date"
-                label="Date of Birth"
-                required
-                key={addStudentForm.key('dob')}
-                {...addStudentForm.getInputProps('dob')}
-              />
-
-              <Select
-                label="Gender"
-                required
-                data={[
-                  { value: 'Male', label: 'Male' },
-                  { value: 'Female', label: 'Female' },
-                  { value: 'Other', label: 'Other' },
-                ]}
-                key={addStudentForm.key('gender')}
-                {...addStudentForm.getInputProps('gender')}
-              />
-            </SimpleGrid>
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <Select
-                label="Class Assignment"
-                placeholder="Select Class"
-                clearable
-                data={classes.map((c) => ({ value: String(c.id), label: c.name }))}
-                key={addStudentForm.key('class_id')}
-                {...addStudentForm.getInputProps('class_id')}
-              />
-
-              <TextInput
-                type="number"
-                label="Roll Number"
-                placeholder="e.g. 21"
-                key={addStudentForm.key('roll_number')}
-                {...addStudentForm.getInputProps('roll_number')}
-              />
-            </SimpleGrid>
-
-            <TextInput
-              label="Residential Address"
-              placeholder="Home address"
-              key={addStudentForm.key('address')}
-              {...addStudentForm.getInputProps('address')}
-            />
-
-            <Divider my="xs" label="Guardian & Emergency Contact (Nested Fields)" labelPosition="left" />
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <TextInput
-                label="Guardian Name"
-                placeholder="Parent / Guardian name"
-                required
-                key={addStudentForm.key('guardian.name')}
-                {...addStudentForm.getInputProps('guardian.name')}
-              />
-
-              <TextInput
-                label="Relation"
-                placeholder="Father / Mother / Guardian"
-                required
-                key={addStudentForm.key('guardian.relation')}
-                {...addStudentForm.getInputProps('guardian.relation')}
-              />
-            </SimpleGrid>
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <TextInput
-                type="tel"
-                label="Guardian Phone Number"
-                placeholder="e.g. 0771234567"
-                required
-                key={addStudentForm.key('guardian.phone')}
-                {...addStudentForm.getInputProps('guardian.phone')}
-              />
-
-              <TextInput
-                type="email"
-                label="Guardian Email"
-                placeholder="guardian@example.com"
-                key={addStudentForm.key('guardian.email')}
-                {...addStudentForm.getInputProps('guardian.email')}
-              />
-            </SimpleGrid>
-
-            <Group justify="flex-end" gap="sm" mt="md">
-              <Button variant="default" onClick={() => setShowAddModal(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" color="refinedBlue" loading={addStudentForm.submitting}>
-                Save Admission Record
-              </Button>
-            </Group>
-          </Stack>
-        </form>
-      </Modal>
-
-      {/* Student Profile Quick Modal */}
-      <Modal
-        opened={showProfileModal && !!selectedStudent}
-        onClose={() => setShowProfileModal(false)}
-        title={
-          selectedStudent && (
-            <Group gap="sm">
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  background: selectedStudent.gender === 'Female' ? '#db2777' : '#2563eb',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 700,
-                  fontSize: '0.9rem'
-                }}
-              >
-                {selectedStudent.calling_name?.charAt(0) || selectedStudent.full_name?.charAt(0)}
-              </div>
-              <Stack gap={0}>
-                <Text fw={700} size="sm">{selectedStudent.full_name}</Text>
-                <Text size="xs" c="dimmed">
-                  Admission ID: <strong>{selectedStudent.admission_no}</strong> • Class: {selectedStudent.class_name || 'N/A'}
-                </Text>
-              </Stack>
-            </Group>
-          )
-        }
-        size="lg"
-        radius="md"
-        centered
-      >
-        {selectedStudent && (
-          <Stack gap="md">
-            {studentDetails ? (
-              <>
-                {/* Attendance & Key Stats */}
-                <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
-                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
-                    <Text size="lg" fw={800} c="statusGreen.7">
-                      {studentDetails.attendance?.attendanceRate ?? 100}%
-                    </Text>
-                    <Text size="xs" c="dimmed">Attendance Rate</Text>
-                  </Paper>
-
-                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
-                    <Text size="lg" fw={800} c="slate.8">
-                      {studentDetails.attendance?.present_days ?? 0}
-                    </Text>
-                    <Text size="xs" c="dimmed">Days Present</Text>
-                  </Paper>
-
-                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
-                    <Text size="lg" fw={800} c="statusRed.7">
-                      {studentDetails.attendance?.absent_days ?? 0}
-                    </Text>
-                    <Text size="xs" c="dimmed">Days Absent</Text>
-                  </Paper>
-
-                  <Paper withBorder p="xs" radius="md" style={{ textAlign: 'center' }}>
-                    <Text size="lg" fw={800} c="statusAmber.7">
-                      {studentDetails.attendance?.late_days ?? 0}
-                    </Text>
-                    <Text size="xs" c="dimmed">Days Late</Text>
-                  </Paper>
-                </SimpleGrid>
-
-                {/* Details Card */}
-                <Paper withBorder p="sm" radius="md" bg="var(--bg-subtle, #f8fafc)">
-                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts="0.04em" mb="xs">
-                    Personal & Guardian Information
-                  </Text>
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-                    <Text size="sm"><strong>Date of Birth:</strong> {selectedStudent.dob}</Text>
-                    <Text size="sm"><strong>Gender:</strong> {selectedStudent.gender}</Text>
-                    <Text size="sm"><strong>Guardian:</strong> {selectedStudent.guardian_name} ({selectedStudent.guardian_relation})</Text>
-                    <Text size="sm"><strong>Phone:</strong> {selectedStudent.guardian_phone}</Text>
-                    <Box style={{ gridColumn: '1 / -1' }}>
-                      <Text size="sm"><strong>Address:</strong> {selectedStudent.address || 'Not provided'}</Text>
-                    </Box>
-                  </SimpleGrid>
-                </Paper>
-              </>
-            ) : (
-              <LoadingState message="Loading full profile details..." minHeight={120} />
-            )}
-
-            <Divider my="xs" />
-
-            <Group justify="space-between" align="center">
-              <Button variant="default" onClick={() => setShowProfileModal(false)}>
-                Close
-              </Button>
-              <Button
-                color="refinedBlue"
-                leftSection={<Maximize2 size={15} />}
-                onClick={() => {
-                  setShowProfileModal(false);
-                  setFullViewStudentId(selectedStudent.id);
-                }}
-              >
-                Open Comprehensive Full View
-              </Button>
-            </Group>
-          </Stack>
-        )}
-      </Modal>
 
       {/* CSV Bulk Import Modal */}
       <Modal

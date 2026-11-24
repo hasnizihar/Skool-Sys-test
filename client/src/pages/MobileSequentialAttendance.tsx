@@ -48,6 +48,7 @@ interface Props {
   initialDate?: string;
   onSwitchToTableMode?: () => void;
   onBackToClasses?: () => void;
+  onAttendanceSaved?: (classId: number, status: 'draft' | 'submitted', summary: any) => void;
 }
 
 
@@ -67,7 +68,8 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
   initialClassId,
   initialDate,
   onSwitchToTableMode,
-  onBackToClasses
+  onBackToClasses,
+  onAttendanceSaved
 }) => {
   const { showSuccess, showError, showWarning } = useToast();
 
@@ -313,6 +315,8 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
         const act = pendingLeaveAction;
         setPendingLeaveAction(null);
         act();
+      } else {
+        onBackToClasses?.();
       }
     }
   };
@@ -341,6 +345,17 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
   const handleStayOnRegister = () => {
     setLeaveModalOpen(false);
     setPendingLeaveAction(null);
+  };
+
+  const handleSwitchToTable = async () => {
+    if (hasMarksRecorded || isDirty) {
+      try {
+        await handleSaveAttendance('draft');
+      } catch (err) {
+        console.warn('Auto-save draft on switch to table mode:', err);
+      }
+    }
+    onSwitchToTableMode?.();
   };
 
   // Actions: PRESENT & ABSENT with instant auto-advance
@@ -531,6 +546,14 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
             ? `Final attendance register submitted (Revision ${res.revision}).`
             : `Draft saved successfully (Revision ${res.revision}).`
         );
+
+        onAttendanceSaved?.(selectedClassId, mode, {
+          class_id: selectedClassId,
+          session_status: mode,
+          present_count: counts.present,
+          enrolled_count: students.length,
+          absent_count: counts.absent
+        });
       } else {
         await queueOfflineAttendance(mutationPayload);
         showWarning(
@@ -593,7 +616,11 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
         setCurrentIndex((prev) => Math.max(0, prev - 1));
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setCurrentIndex((prev) => Math.min(students.length - 1, prev + 1));
+        if (currentIndex < students.length - 1) {
+          setCurrentIndex((prev) => prev + 1);
+        } else {
+          setViewMode('summary');
+        }
       }
     };
 
@@ -624,22 +651,13 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
               <button
                 type="button"
                 className="msa-tool-btn"
-                onClick={() => handleAttemptLeave(() => onSwitchToTableMode())}
+                onClick={handleSwitchToTable}
                 title="Switch to Table Register"
               >
                 <LayoutList size={14} />
                 <span>Table</span>
               </button>
             )}
-            <button
-              type="button"
-              className="msa-tool-btn msa-tool-btn--roster"
-              onClick={() => setJumpDrawerOpen(true)}
-              title="View class roster"
-            >
-              <List size={14} />
-              <span>Roster</span>
-            </button>
           </div>
         </div>
 
@@ -711,7 +729,8 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
               value={selectedDate}
               onChange={(e) => {
                 const nextDate = e.target.value;
-                if (nextDate === selectedDate) return;
+                if (!nextDate || nextDate === selectedDate) return;
+                if (nextDate > getColomboCivilDate()) return;
                 handleAttemptLeave(() => setSelectedDate(nextDate));
               }}
               max={getColomboCivilDate()}
@@ -894,38 +913,36 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
 
               <button
                 type="button"
-                className="msa-step-btn msa-step-btn--summary"
-                onClick={() => setViewMode('summary')}
-                aria-label="Attendance Summary"
+                className="msa-step-btn msa-step-btn--roster"
+                onClick={() => setJumpDrawerOpen(true)}
+                aria-label="View Student Roster"
               >
-                <span>Summary</span>
-                {counts.recorded > 0 && (
-                  <span className="msa-summary-count-badge">
-                    {counts.recorded}/{counts.total}
-                  </span>
-                )}
+                <List size={16} />
+                <span>Roster</span>
               </button>
 
-              <button
-                type="button"
-                className="msa-step-btn msa-step-btn--next"
-                disabled={currentIndex >= students.length - 1}
-                onClick={() => setCurrentIndex((prev) => Math.min(students.length - 1, prev + 1))}
-                aria-label="Next Student"
-              >
-                <span>Next</span>
-                <ChevronRight size={18} />
-              </button>
+              {currentIndex < students.length - 1 ? (
+                <button
+                  type="button"
+                  className="msa-step-btn msa-step-btn--next"
+                  onClick={() => setCurrentIndex((prev) => Math.min(students.length - 1, prev + 1))}
+                  aria-label="Next Student"
+                >
+                  <span>Next</span>
+                  <ChevronRight size={18} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="msa-step-btn msa-step-btn--next"
+                  onClick={() => setViewMode('summary')}
+                  aria-label="View Attendance Summary"
+                >
+                  <span>Summary</span>
+                  <ChevronRight size={18} />
+                </button>
+              )}
             </div>
-
-            <button
-              type="button"
-              className="msa-view-roster-link"
-              onClick={() => setJumpDrawerOpen(true)}
-            >
-              <List size={14} />
-              <span>View Student Roster</span>
-            </button>
           </div>
         </main>
       ) : (
@@ -1059,7 +1076,12 @@ export const MobileSequentialAttendance: React.FC<Props> = ({
                 color="blue"
                 size="md"
                 leftSection={<Send size={16} />}
-                onClick={() => handleSaveAttendance('submitted')}
+                onClick={async () => {
+                  const success = await handleSaveAttendance('submitted');
+                  if (success) {
+                    onBackToClasses?.();
+                  }
+                }}
                 loading={saving}
                 disabled={saving || counts.unrecorded > 0}
                 className="msa-summary-action-btn"
